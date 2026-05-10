@@ -16,11 +16,10 @@ module.exports = (client) => {
 
       // ── Select menus ────────────────────────────────────────────────────────
       if (interaction.isStringSelectMenu()) {
-        if (interaction.customId === 'slash_help_category') {
+        if (interaction.customId === 'help_category' || interaction.customId === 'slash_help_category') {
           const helpCmd = client.commands.get('help');
-          if (helpCmd && helpCmd.handleSelect) {
-            await helpCmd.handleSelect(interaction, client);
-          }
+          if (helpCmd?.handleInteraction) await helpCmd.handleInteraction(interaction);
+          else if (helpCmd?.handleSelect) await helpCmd.handleSelect(interaction, client);
           return;
         }
 
@@ -45,6 +44,13 @@ module.exports = (client) => {
       // ── Buttons ─────────────────────────────────────────────────────────────
       if (interaction.isButton()) {
         const id = interaction.customId;
+
+        // Help pagination / close
+        if (id.startsWith('help_page_') || id === 'help_close') {
+          const helpCmd = client.commands.get('help');
+          if (helpCmd?.handleInteraction) await helpCmd.handleInteraction(interaction);
+          return;
+        }
 
         // Ticket buttons
         if (id === 'open_ticket') {
@@ -148,27 +154,57 @@ module.exports = (client) => {
           return;
         }
 
-        // Nuke schedule confirm
+        // Nuke confirm
         if (id.startsWith('nuke_confirm_')) {
           const channelId = id.replace('nuke_confirm_', '');
           const channel = interaction.guild.channels.cache.get(channelId);
           if (!channel) {
-            await interaction.update({ content: '❌ Channel not found.', components: [] });
+            await interaction.update({ embeds: [new EmbedBuilder().setColor('#ED4245').setDescription('❌ Channel not found.')], components: [] });
             return;
           }
+
+          await interaction.update({
+            embeds: [new EmbedBuilder().setColor('#F0A500').setTitle('💥 Nuking Channel...').setDescription(`Recreating ${channel} with the same settings and permissions.`).setTimestamp()],
+            components: [],
+          });
+
           try {
-            const newChannel = await channel.clone();
-            await channel.delete();
-            await newChannel.send('💥 Channel nuked!');
-            await interaction.update({ content: `✅ Channel ${newChannel} has been nuked.`, components: [] });
+            const pos = channel.rawPosition;
+            const newChannel = await channel.clone({ reason: `Nuked by ${interaction.user.tag}` });
+            await newChannel.setPosition(pos).catch(() => {});
+
+            let deleteErr = null;
+            await channel.delete(`Nuked by ${interaction.user.tag}`).catch(e => { deleteErr = e; });
+
+            const nukedEmbed = new EmbedBuilder()
+              .setColor('#ED4245')
+              .setTitle('💥 Channel Nuked')
+              .setDescription(`This channel was recreated by <@${interaction.user.id}>.`)
+              .addFields(
+                { name: 'Old Channel ID', value: `\`${channelId}\``, inline: true },
+                { name: 'Reason', value: 'No reason provided', inline: true },
+              )
+              .setTimestamp();
+
+            await newChannel.send({ embeds: [nukedEmbed] });
+
+            if (deleteErr) {
+              await newChannel.send({ embeds: [new EmbedBuilder().setColor('#ED4245')
+                .setTitle('❌ Nuke Partially Failed')
+                .setDescription('The new channel was created, but something failed after that.')
+                .addFields({ name: '​', value: `\`${deleteErr.message}\``, inline: false })
+                .setTimestamp()] });
+            }
+
+            await interaction.editReply({ embeds: [new EmbedBuilder().setColor('#57F287').setDescription(`✅ ${newChannel} has been nuked.`)], components: [] }).catch(() => {});
           } catch (e) {
-            await interaction.update({ content: `❌ Failed to nuke: ${e.message}`, components: [] });
+            await interaction.editReply({ embeds: [new EmbedBuilder().setColor('#ED4245').setTitle('❌ Nuke Failed').setDescription(`\`${e.message}\``)], components: [] }).catch(() => {});
           }
           return;
         }
 
         if (id === 'nuke_cancel') {
-          await interaction.update({ content: '❌ Nuke cancelled.', components: [] });
+          await interaction.update({ embeds: [new EmbedBuilder().setColor('#FEE75C').setDescription('❌ Nuke cancelled.')], components: [] });
           return;
         }
       }

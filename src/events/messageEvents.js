@@ -12,8 +12,8 @@ module.exports = (client) => {
     const content = message.content || '[no text content]';
     db.setSnipe(
       message.guild.id, message.channel.id, content,
-      message.author?.id, message.author?.tag,
-      message.author?.displayAvatarURL(), 'delete'
+      message.author?.id ?? null, message.author?.tag ?? null,
+      message.author?.displayAvatarURL() ?? null, 'delete'
     );
 
     const settings = db.getGuildSettings(message.guild.id);
@@ -44,8 +44,8 @@ module.exports = (client) => {
     db.setSnipe(
       oldMsg.guild.id, oldMsg.channel.id,
       oldMsg.content || '[no text]',
-      oldMsg.author?.id, oldMsg.author?.tag,
-      oldMsg.author?.displayAvatarURL(), 'edit'
+      oldMsg.author?.id ?? null, oldMsg.author?.tag ?? null,
+      oldMsg.author?.displayAvatarURL() ?? null, 'edit'
     );
 
     const settings = db.getGuildSettings(oldMsg.guild.id);
