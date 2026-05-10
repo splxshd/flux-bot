@@ -1,0 +1,126 @@
+'use strict';
+
+const { EmbedBuilder } = require('discord.js');
+const db = require('../database');
+
+const YELLOW = '#FEE75C';
+const GREEN  = '#57F287';
+
+// Anti-raid mention tracker
+const mentionTracker = new Map(); // userId -> count (reset per guild, simple per-message check)
+
+module.exports = (client) => {
+  client.on('messageCreate', async (message) => {
+    if (!message.guild || message.author.bot) return;
+
+    db.trackMessage(message.guild.id, message.author.id, message.channel.id);
+
+    const guild = message.guild;
+
+    // 1. Anti-raid mention spam
+    const antiraid = db.getAntiraid(guild.id);
+    if (antiraid && antiraid.enabled && antiraid.mention_threshold > 0) {
+      const mentionCount = message.mentions.users.size + message.mentions.roles.size;
+      if (mentionCount >= antiraid.mention_threshold) {
+        await message.delete().catch(() => {});
+        const member = message.member;
+        if (member) {
+          if (antiraid.action === 'ban') await member.ban({ reason: 'Mention spam' }).catch(() => {});
+          else if (antiraid.action === 'kick') await member.kick('Mention spam').catch(() => {});
+          else if (antiraid.action === 'timeout') await member.timeout(10 * 60 * 1000, 'Mention spam').catch(() => {});
+        }
+        if (antiraid.log_channel) {
+          const logCh = guild.channels.cache.get(antiraid.log_channel);
+          if (logCh) logCh.send(`⚠️ **Mention spam** by <@${message.author.id}> — ${mentionCount} mentions. Action: **${antiraid.action}**`).catch(() => {});
+        }
+        return;
+      }
+    }
+
+    // 2. AFK mention check
+    if (message.mentions.users.size > 0) {
+      for (const [, user] of message.mentions.users) {
+        if (user.id === message.author.id) continue;
+        const afkRow = db.getAfk(guild.id, user.id);
+        if (!afkRow) continue;
+
+        const member = guild.members.cache.get(user.id);
+        const displayName = member?.displayName || user.username;
+        const setAt = new Date(afkRow.set_at * 1000);
+        const elapsedSec = Math.floor(Date.now() / 1000 - afkRow.set_at);
+        const elapsed = elapsedSec < 60
+          ? 'just now'
+          : elapsedSec < 3600
+            ? `${Math.floor(elapsedSec / 60)}m ago`
+            : elapsedSec < 86400
+              ? `${Math.floor(elapsedSec / 3600)}h ago`
+              : `${Math.floor(elapsedSec / 86400)}d ago`;
+
+        const embed = new EmbedBuilder()
+          .setColor(YELLOW)
+          .setAuthor({ name: `${displayName} (@${user.username}) is currently AFK`, iconURL: user.displayAvatarURL() })
+          .setDescription(afkRow.reason || 'No reason given.')
+          .setFooter({ text: `AFK for ${elapsed}` })
+          .setTimestamp(setAt);
+
+        await message.reply({ embeds: [embed], allowedMentions: { repliedUser: false } }).catch(() => {});
+      }
+    }
+
+    // 3. AFK removal (when AFK user sends a message)
+    const myAfk = db.getAfk(guild.id, message.author.id);
+    if (myAfk) {
+      db.removeAfk(guild.id, message.author.id);
+      const embed = new EmbedBuilder()
+        .setColor(GREEN)
+        .setAuthor({ name: `Welcome back, ${message.member?.displayName || message.author.username}!`, iconURL: message.author.displayAvatarURL() })
+        .setDescription('Your AFK status has been removed.')
+        .setFooter({ text: 'flux bot' })
+        .setTimestamp();
+      await message.reply({ embeds: [embed], allowedMentions: { repliedUser: false } }).catch(() => {});
+    }
+
+    // 4. Prefix commands
+    const prefix = db.getPrefix(message.guild.id);
+    if (message.content.startsWith(prefix)) {
+      const args = message.content.slice(prefix.length).trim().split(/\s+/);
+      const commandName = args.shift().toLowerCase();
+      const cmd = message.client.prefixCommands?.get(commandName);
+      if (cmd) {
+        await cmd.execute(message, args, message.client).catch(e => {
+          console.error(`[Prefix:${commandName}]`, e);
+          message.reply(`❌ Error: ${e.message}`).catch(() => {});
+        });
+        return;
+      }
+    }
+
+    // 5. Autoresponder
+    const responders = db.getAutoresponders(guild.id);
+    for (const row of responders) {
+      if (message.content.toLowerCase().includes(row.trigger.toLowerCase())) {
+        await message.channel.send(row.response).catch(() => {});
+        break;
+      }
+    }
+
+    // 5. Auto reactions
+    const reactions = db.getReactions(guild.id);
+    for (const row of reactions) {
+      if (message.content.toLowerCase().includes(row.trigger.toLowerCase())) {
+        await message.react(row.emoji).catch(() => {});
+      }
+    }
+
+    // 6. Sticky messages
+    const sticky = db.getStickyMessage(guild.id, message.channel.id);
+    if (sticky && message.id !== sticky.last_message_id) {
+      if (sticky.last_message_id) {
+        const lastMsg = await message.channel.messages.fetch(sticky.last_message_id).catch(() => null);
+        if (lastMsg) await lastMsg.delete().catch(() => {});
+      }
+      const sent = await message.channel.send(sticky.content).catch(() => null);
+      if (sent) db.updateStickyLastMessage(guild.id, message.channel.id, sent.id);
+    }
+  });
+};

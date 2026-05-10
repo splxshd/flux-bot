@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" width="128" height="128">
+  <rect width="128" height="128" rx="28" fill="#000"/>
+  <!-- Crown base -->
+  <path d="M18 86 L18 96 L110 96 L110 86 Z" fill="#fff"/>
+  <!-- Crown points -->
+  <path d="M18 86 L18 42 L40 62 L64 20 L88 62 L110 42 L110 86 Z"
+        fill="none" stroke="#fff" stroke-width="7"
+        stroke-linejoin="round"/>
+  <path d="M18 86 L18 42 L40 62 L64 20 L88 62 L110 42 L110 86 Z" fill="#fff" opacity="0.15"/>
+  <!-- Gems -->
+  <circle cx="40" cy="80" r="5" fill="#000"/>
+  <circle cx="64" cy="80" r="5" fill="#000"/>
+  <circle cx="88" cy="80" r="5" fill="#000"/>
+</svg>

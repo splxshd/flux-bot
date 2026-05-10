@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" width="128" height="128">
+  <rect width="128" height="128" rx="28" fill="#000"/>
+  <!-- Ticket shape -->
+  <path d="M14 44 L14 84 C24 84 24 96 34 96 L114 96 L114 56 C104 56 104 44 94 44 Z"
+        fill="none" stroke="#fff" stroke-width="7" stroke-linejoin="round"/>
+  <!-- Perforation line -->
+  <line x1="34" y1="44" x2="34" y2="96" stroke="#fff" stroke-width="5" stroke-dasharray="6 5"/>
+  <!-- Lines -->
+  <line x1="50" y1="62" x2="98" y2="62" stroke="#fff" stroke-width="6" stroke-linecap="round"/>
+  <line x1="50" y1="76" x2="82" y2="76" stroke="#fff" stroke-width="6" stroke-linecap="round"/>
+</svg>

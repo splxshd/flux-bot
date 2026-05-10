@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" width="128" height="128">
+  <rect width="128" height="128" rx="28" fill="#000"/>
+  <!-- Star -->
+  <polygon points="64,16 76,50 114,50 84,70 95,105 64,84 33,105 44,70 14,50 52,50"
+           fill="none" stroke="#fff" stroke-width="7"
+           stroke-linejoin="round"/>
+</svg>

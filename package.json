@@ -1,0 +1,24 @@
+{
+  "name": "nightsbot",
+  "version": "1.0.0",
+  "description": "nights — production Discord bot",
+  "main": "src/index.js",
+  "scripts": {
+    "start": "node src/index.js",
+    "deploy": "node src/deploy.js"
+  },
+  "dependencies": {
+    "@napi-rs/canvas": "^1.0.0",
+    "axios": "^1.6.0",
+    "bcrypt": "^5.1.1",
+    "discord.js": "^14.14.1",
+    "dotenv": "^16.3.1",
+    "ecpair": "^2.1.0",
+    "ms": "^2.1.3",
+    "node-cron": "^3.0.3",
+    "node-sqlite3-wasm": "^0.8.0",
+    "qrcode": "^1.5.3",
+    "tiny-secp256k1": "^2.2.3",
+    "uuid": "^9.0.0"
+  }
+}
