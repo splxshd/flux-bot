@@ -189,9 +189,12 @@ function startCrons() {
 }
 
 // ─── Login ────────────────────────────────────────────────────────────────────
+const { startApi } = require('./api');
+
 client.login(process.env.BOT_TOKEN).then(async () => {
   console.log('[flux] Logged in. Deploying commands...');
   await deploySlashCommands().catch(e => console.error('[Deploy Error]', e));
   startCrons();
+  startApi(client);
   console.log('[flux] Ready.');
 });
