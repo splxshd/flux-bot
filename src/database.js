@@ -1053,6 +1053,24 @@ function upsertWelcomeSettings(guildId, fields) {
   }
 }
 
+// Auto-cleanup old stats to prevent disk bloat (runs every 24h)
+function pruneOldData() {
+  const cutoff30 = Math.floor(Date.now() / 1000) - 86400 * 30;
+  const cutoff7  = Math.floor(Date.now() / 1000) - 86400 * 7;
+  try {
+    run('DELETE FROM message_stats WHERE sent_at < ?', [cutoff30]);
+    run('DELETE FROM voice_stats WHERE joined_at < ?', [cutoff30]);
+    run('DELETE FROM mod_history WHERE created_at < ?', [cutoff30]);
+    run('DELETE FROM snipes WHERE deleted_at < ?', [cutoff7]);
+    run('DELETE FROM deposit_monitors WHERE expires_at < ?', [Math.floor(Date.now() / 1000)]);
+    db.run('VACUUM');
+  } catch (e) {
+    console.error('[DB] Prune error:', e.message);
+  }
+}
+setInterval(pruneOldData, 86400 * 1000);
+pruneOldData(); // run once on startup
+
 module.exports = {
   db,
   get, all, run,
