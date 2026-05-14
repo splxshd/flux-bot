@@ -265,15 +265,36 @@ const COMMANDS = [
         })
       );
 
-      const avatarUrl = target.displayAvatarURL({ extension: 'png', size: 128 });
-      const buf = await generateStatsCard({
-        username: member?.displayName || target.username,
-        avatarUrl, rank, msgStats, voiceStats,
-        topChannels: topChannels.length ? topChannels : [{ name: 'none', count: 0 }],
-      });
+      // Try image card first, fall back to embed if canvas unavailable
+      try {
+        const avatarUrl = target.displayAvatarURL({ extension: 'png', size: 128 });
+        const buf = await generateStatsCard({
+          username: member?.displayName || target.username,
+          avatarUrl, rank, msgStats, voiceStats,
+          topChannels: topChannels.length ? topChannels : [{ name: 'none', count: 0 }],
+        });
+        const attachment = new AttachmentBuilder(buf, { name: 'stats.png' });
+        return await message.reply({ files: [attachment] });
+      } catch {}
 
-      const attachment = new AttachmentBuilder(buf, { name: 'stats.png' });
-      await message.reply({ files: [attachment] });
+      // Embed fallback
+      const rankText = rank ? `Rank #${rank}` : 'Unranked';
+      const topChStr = topChannels.length
+        ? topChannels.map((c, i) => `\`#${i + 1}\` #${c.name} — **${c.count}**`).join('\n')
+        : 'No data';
+
+      const embed = new EmbedBuilder()
+        .setColor(BLUE)
+        .setAuthor({ name: `${member?.displayName || target.username} — Message Stats`, iconURL: target.displayAvatarURL() })
+        .addFields(
+          { name: '💬 Messages', value: `1d: **${msgStats.d1}**\n7d: **${msgStats.d7}**\n30d: **${msgStats.d30}**`, inline: true },
+          { name: '🎙 Voice', value: `1d: **${voiceStats.d1.toFixed(1)}h**\n7d: **${voiceStats.d7.toFixed(1)}h**\n30d: **${voiceStats.d30.toFixed(1)}h**`, inline: true },
+          { name: '📊 Rank', value: rankText, inline: true },
+          { name: '📍 Top Channels (30d)', value: topChStr, inline: false },
+        )
+        .setFooter({ text: 'flux · 1d / 7d / 30d · UTC' })
+        .setTimestamp();
+      await message.reply({ embeds: [embed] });
     },
   },
 
