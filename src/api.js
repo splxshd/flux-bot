@@ -203,6 +203,30 @@ app.get('/api/guild/:guildId/tickets', auth, (req, res) => {
   }
 });
 
+// ─── Bot Status ───────────────────────────────────────────────────────────────
+let botStatus = {
+  status: 'online',       // online | degraded | maintenance | offline
+  message: 'All systems operational',
+  updatedAt: new Date().toISOString(),
+  updatedBy: 'system',
+};
+
+app.get('/api/status', (req, res) => {
+  res.json({
+    ...botStatus,
+    uptime: process.uptime(),
+    ping: Date.now(),
+  });
+});
+
+app.post('/api/status', auth, (req, res) => {
+  const { status, message, updatedBy } = req.body;
+  const valid = ['online', 'degraded', 'maintenance', 'offline'];
+  if (!valid.includes(status)) return res.status(400).json({ error: 'Invalid status' });
+  botStatus = { status, message: message || botStatus.message, updatedAt: new Date().toISOString(), updatedBy: updatedBy || 'owner' };
+  res.json({ ok: true, botStatus });
+});
+
 // ─── Health check ─────────────────────────────────────────────────────────────
 app.get('/health', (_, res) => res.json({ status: 'ok', uptime: process.uptime() }));
 
