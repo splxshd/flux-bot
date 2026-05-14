@@ -99,7 +99,25 @@ module.exports = (client) => {
     const responders = db.getAutoresponders(guild.id);
     for (const row of responders) {
       if (message.content.toLowerCase().includes(row.trigger.toLowerCase())) {
-        await message.channel.send(row.response).catch(() => {});
+        // Detect JSON embed responses (saved from dashboard embed builder)
+        let parsed = null;
+        try { parsed = JSON.parse(row.response); } catch {}
+        if (parsed && typeof parsed === 'object' && (parsed.title || parsed.description || parsed.color)) {
+          const embed = new EmbedBuilder();
+          if (parsed.title)       embed.setTitle(parsed.title);
+          if (parsed.description) embed.setDescription(parsed.description);
+          if (parsed.color)       embed.setColor(parsed.color);
+          if (parsed.footer)      embed.setFooter({ text: parsed.footer });
+          if (parsed.thumbnail)   embed.setThumbnail(parsed.thumbnail);
+          if (parsed.image)       embed.setImage(parsed.image);
+          if (parsed.author)      embed.setAuthor({ name: parsed.author });
+          if (Array.isArray(parsed.fields)) {
+            for (const f of parsed.fields) embed.addFields({ name: f.name, value: f.value, inline: !!f.inline });
+          }
+          await message.channel.send({ embeds: [embed] }).catch(() => {});
+        } else {
+          await message.channel.send(row.response).catch(() => {});
+        }
         break;
       }
     }
