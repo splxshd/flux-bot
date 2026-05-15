@@ -5,7 +5,6 @@ const {
   ActionRowBuilder, StringSelectMenuBuilder, StringSelectMenuOptionBuilder,
 } = require('discord.js');
 const db = require('../database');
-const { generateStatsCard } = require('../utils/statsCard');
 
 const BLUE  = '#5865F2';
 const GREEN = '#57F287';
@@ -265,19 +264,6 @@ const COMMANDS = [
         })
       );
 
-      // Try image card first, fall back to embed if canvas unavailable
-      try {
-        const avatarUrl = target.displayAvatarURL({ extension: 'png', size: 128 });
-        const buf = await generateStatsCard({
-          username: member?.displayName || target.username,
-          avatarUrl, rank, msgStats, voiceStats,
-          topChannels: topChannels.length ? topChannels : [{ name: 'none', count: 0 }],
-        });
-        const attachment = new AttachmentBuilder(buf, { name: 'stats.png' });
-        return await message.reply({ files: [attachment] });
-      } catch {}
-
-      // Embed fallback
       const rankText = rank ? `Rank #${rank}` : 'Unranked';
       const topChStr = topChannels.length
         ? topChannels.map((c, i) => `\`#${i + 1}\` #${c.name} — **${c.count}**`).join('\n')
