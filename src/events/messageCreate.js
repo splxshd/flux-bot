@@ -47,6 +47,8 @@ module.exports = (client) => {
 async function handleMessage(client, message) {
     if (!message.guild || message.author.bot) return;
 
+    console.log(`[MC] msg from ${message.author.tag} | content: ${message.content.slice(0,30)}`);
+
     db.trackMessage(message.guild.id, message.author.id, message.channel.id, message.channel.name);
 
     const guild = message.guild;
@@ -116,10 +118,12 @@ async function handleMessage(client, message) {
 
     // 4. Prefix commands
     const prefix = db.getPrefix(message.guild.id);
+    console.log(`[MC] prefix="${prefix}" starts=${message.content.startsWith(prefix)}`);
     if (message.content.startsWith(prefix)) {
       const args = message.content.slice(prefix.length).trim().split(/\s+/);
       const commandName = args.shift().toLowerCase();
       const cmd = message.client.prefixCommands?.get(commandName);
+      console.log(`[MC] cmd="${commandName}" found=${!!cmd}`);
       if (cmd) {
         // ── Permission gate ───────────────────────────────────────────────
         try {
