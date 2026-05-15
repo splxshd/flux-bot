@@ -13,9 +13,11 @@ const FONT_DIR   = '/app/fonts';
 const REGULAR    = path.join(FONT_DIR, 'DejaVuSans.ttf');
 const BOLD       = path.join(FONT_DIR, 'DejaVuSans-Bold.ttf');
 
-// CDN URLs for DejaVu Sans (jsDelivr mirrors the official GitHub repo)
-const CDN_REGULAR = 'https://cdn.jsdelivr.net/gh/dejavu-fonts/dejavu-fonts@2.37/fonts/DejaVuSans.ttf';
-const CDN_BOLD    = 'https://cdn.jsdelivr.net/gh/dejavu-fonts/dejavu-fonts@2.37/fonts/DejaVuSans-Bold.ttf';
+// CDN URLs for DejaVu Sans — jsDelivr (no tag = latest commit), GitHub raw as fallback
+const CDN_REGULAR = 'https://cdn.jsdelivr.net/gh/dejavu-fonts/dejavu-fonts/fonts/DejaVuSans.ttf';
+const CDN_BOLD    = 'https://cdn.jsdelivr.net/gh/dejavu-fonts/dejavu-fonts/fonts/DejaVuSans-Bold.ttf';
+const CDN_REGULAR_FB = 'https://raw.githubusercontent.com/dejavu-fonts/dejavu-fonts/master/fonts/DejaVuSans.ttf';
+const CDN_BOLD_FB    = 'https://raw.githubusercontent.com/dejavu-fonts/dejavu-fonts/master/fonts/DejaVuSans-Bold.ttf';
 
 let fontReady = false; // set to true once at least regular is registered
 
@@ -35,12 +37,19 @@ function httpsGet(url) {
   });
 }
 
-async function downloadFont(url, dest) {
-  console.log(`[statsCard] downloading font from ${url} …`);
-  const buf = await httpsGet(url);
-  fs.mkdirSync(FONT_DIR, { recursive: true });
-  fs.writeFileSync(dest, buf);
-  return buf;
+async function downloadFont(urls, dest) {
+  for (const url of urls) {
+    try {
+      console.log(`[statsCard] downloading font from ${url} …`);
+      const buf = await httpsGet(url);
+      fs.mkdirSync(FONT_DIR, { recursive: true });
+      fs.writeFileSync(dest, buf);
+      return buf;
+    } catch (e) {
+      console.warn(`[statsCard] failed (${url}): ${e.message} — trying next …`);
+    }
+  }
+  throw new Error('All font download URLs failed');
 }
 
 async function ensureFont() {
@@ -53,7 +62,7 @@ async function ensureFont() {
       regularBuf = fs.readFileSync(REGULAR);
       console.log('[statsCard] loaded regular font from', REGULAR);
     } else {
-      regularBuf = await downloadFont(CDN_REGULAR, REGULAR);
+      regularBuf = await downloadFont([CDN_REGULAR, CDN_REGULAR_FB], REGULAR);
       console.log('[statsCard] downloaded & cached regular font');
     }
     GlobalFonts.register(regularBuf, 'DejaVu Sans');
@@ -63,7 +72,7 @@ async function ensureFont() {
     if (fs.existsSync(BOLD)) {
       boldBuf = fs.readFileSync(BOLD);
     } else {
-      boldBuf = await downloadFont(CDN_BOLD, BOLD);
+      boldBuf = await downloadFont([CDN_BOLD, CDN_BOLD_FB], BOLD);
     }
     GlobalFonts.register(boldBuf, 'DejaVu Sans');
 
