@@ -59,7 +59,8 @@ function drawHashIcon(ctx, cx, cy, size) {
   ctx.restore();
 }
 
-// Draws a microphone silhouette matching the reference design
+// Draws a microphone silhouette matching the reference icon exactly:
+// wide pill body, thick wide U-arc, short stem — no base bar
 function drawMicIcon(ctx, cx, cy, size) {
   ctx.save();
   ctx.fillStyle   = MUTED;
@@ -67,39 +68,33 @@ function drawMicIcon(ctx, cx, cy, size) {
   ctx.lineCap     = 'round';
   ctx.lineJoin    = 'round';
 
-  // ── Capsule body (taller, narrower pill) ─────────────────────────────────
-  const bw  = size * 0.38;
-  const bh  = size * 0.58;
+  // ── Pill body ─────────────────────────────────────────────────────────────
+  const bw  = size * 0.46;      // wider pill like the reference
+  const bh  = size * 0.56;
   const br  = bw / 2;
-  const top = cy - size * 0.50;
+  const top = cy - size * 0.48;
 
   ctx.beginPath();
-  ctx.arc(cx, top + br,      br, Math.PI, 0);          // top arc
+  ctx.arc(cx,      top + br,      br, Math.PI, 0);
   ctx.lineTo(cx + br, top + bh - br);
-  ctx.arc(cx, top + bh - br, br, 0, Math.PI);          // bottom arc
+  ctx.arc(cx,      top + bh - br, br, 0,      Math.PI);
   ctx.closePath();
   ctx.fill();
 
-  // ── Stand arc ────────────────────────────────────────────────────────────
-  ctx.lineWidth = size * 0.10;
-  const arcR   = size * 0.28;
-  const arcY   = top + bh - br;
+  // ── Wide U-arc stand (extends noticeably beyond pill width) ───────────────
+  const arcR  = size * 0.34;   // wider than the pill
+  const arcCY = top + bh - br; // pivot at base of pill
+  ctx.lineWidth = size * 0.13;
   ctx.beginPath();
-  ctx.arc(cx, arcY, arcR, Math.PI, 0, false);
+  ctx.arc(cx, arcCY, arcR, Math.PI, 0, false);
   ctx.stroke();
 
-  // ── Stem ─────────────────────────────────────────────────────────────────
-  const stemY1 = arcY + arcR;
-  const stemY2 = stemY1 + size * 0.13;
+  // ── Short stem ───────────────────────────────────────────────────────────
+  const stemY1 = arcCY + arcR;
+  ctx.lineWidth = size * 0.13;
   ctx.beginPath();
   ctx.moveTo(cx, stemY1);
-  ctx.lineTo(cx, stemY2);
-  ctx.stroke();
-
-  // ── Base ─────────────────────────────────────────────────────────────────
-  ctx.beginPath();
-  ctx.moveTo(cx - size * 0.20, stemY2);
-  ctx.lineTo(cx + size * 0.20, stemY2);
+  ctx.lineTo(cx, stemY1 + size * 0.09);
   ctx.stroke();
 
   ctx.restore();
@@ -251,10 +246,11 @@ async function generateStatsCard({ username, avatarUrl, rank, msgStats, voiceSta
     ctx.textBaseline = 'middle';
     ctx.fillText(medals[i] || `#${i + 1}`, tcX + 24, ry + 17);
 
-    // channel name
-    ctx.fillStyle = WHITE;
+    // channel name — deleted channels show <#id> instead of raw number
+    const chLabel = ch.deleted ? `<#${ch.id}>` : `#${ch.name}`;
+    ctx.fillStyle = ch.deleted ? MUTED : WHITE;
     ctx.font      = F(14, true);
-    ctx.fillText(`#${ch.name}`, tcX + 68, ry + 17);
+    ctx.fillText(chLabel, tcX + 68, ry + 17);
 
     // message count (right)
     const cntStr = String(ch.count);

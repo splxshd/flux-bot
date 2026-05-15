@@ -434,7 +434,9 @@ const COMMANDS = [
       const topChannels = await Promise.all(
         msgStats.topChannels.map(async r => {
           const ch = message.guild.channels.cache.get(r.channel_id);
-          return { name: ch ? ch.name : r.channel_id, count: r.cnt };
+          return ch
+            ? { name: ch.name, id: r.channel_id, count: r.cnt, deleted: false }
+            : { name: null,    id: r.channel_id, count: r.cnt, deleted: true  };
         })
       );
 
@@ -453,7 +455,7 @@ const COMMANDS = [
       // Embed fallback
       const rankText = rank ? `Rank #${rank}` : 'Unranked';
       const topChStr = topChannels.length
-        ? topChannels.map((c, i) => `\`#${i + 1}\` #${c.name} — **${c.count}**`).join('\n')
+        ? topChannels.map((c, i) => `\`#${i + 1}\` ${c.deleted ? `<#${c.id}>` : `#${c.name}`} — **${c.count}**`).join('\n')
         : 'No data';
       const embed = new EmbedBuilder()
         .setColor(BLUE)
