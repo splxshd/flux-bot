@@ -1,6 +1,7 @@
 'use strict';
 
 const { EmbedBuilder, PermissionFlagsBits, ModalBuilder, TextInputBuilder, TextInputStyle, ActionRowBuilder } = require('discord.js');
+const db = require('../database');
 
 const BLUE   = '#5865F2';
 const GREEN  = '#57F287';
@@ -33,7 +34,9 @@ const ce = {
       return message.reply({ embeds: [embed] });
     }
 
-    const script = args.join(' ');
+    // Use raw content to preserve newlines (args.join splits on \n)
+    const prefix = db.getPrefix(message.guild.id);
+    const script = message.content.slice(prefix.length).trim().replace(/^ce\s+/i, '');
     const titleMatch = script.match(/\{title:\s*([^}]+)\}/i);
     const descMatch  = script.match(/\{description:\s*([^}]+)\}/i) || script.match(/\{desc:\s*([^}]+)\}/i);
     const colorMatch = script.match(/\{color:\s*#?([0-9a-fA-F]{6})\}/i);
