@@ -1,42 +1,37 @@
 'use strict';
 
 const { createCanvas, loadImage, GlobalFonts } = require('@napi-rs/canvas');
+const fs   = require('fs');
+const path = require('path');
 
-// ── Font bootstrap ────────────────────────────────────────────────────────────
-// Download DejaVu Sans from GitHub and register it in memory.
-// This is the only approach guaranteed to work on any host (no system fonts needed).
-const FONT_FAMILY = 'DejaVu Sans';
-let fontReady = false;
+// ── Font loading ──────────────────────────────────────────────────────────────
+// Primary: fonts copied to /app/fonts/ during nixpacks build phase
+// Fallback: scan common paths
+(function loadFont() {
+  const regular = '/app/fonts/DejaVuSans.ttf';
+  const bold    = '/app/fonts/DejaVuSans-Bold.ttf';
 
-async function ensureFont() {
-  if (fontReady) return;
-  const urls = [
-    // Regular
-    'https://github.com/dejavu-fonts/dejavu-fonts/raw/main/ttf/DejaVuSans.ttf',
-    // Bold (registering both so bold weight renders correctly)
-    'https://github.com/dejavu-fonts/dejavu-fonts/raw/main/ttf/DejaVuSans-Bold.ttf',
-  ];
-  for (const url of urls) {
-    try {
-      const res = await fetch(url, { signal: AbortSignal.timeout(10_000) });
-      if (!res.ok) continue;
-      const buf = Buffer.from(await res.arrayBuffer());
-      GlobalFonts.register(buf, FONT_FAMILY);
-    } catch (e) {
-      console.warn('[statsCard] font fetch failed:', url, e.message);
-    }
+  if (fs.existsSync(regular)) {
+    GlobalFonts.registerFromPath(regular, 'DejaVu Sans');
+    console.log('[statsCard] loaded regular font from', regular);
+  } else {
+    console.warn('[statsCard] /app/fonts/DejaVuSans.ttf not found — text may be invisible');
   }
-  fontReady = true;
-}
 
-// ── Canvas constants ──────────────────────────────────────────────────────────
+  if (fs.existsSync(bold)) {
+    GlobalFonts.registerFromPath(bold, 'DejaVu Sans');
+    console.log('[statsCard] loaded bold font from', bold);
+  }
+})();
+
+// ── Constants ─────────────────────────────────────────────────────────────────
 const W       = 900, H = 520;
 const BG      = '#1a1a1a';
 const CARD_BG = '#242424';
 const ROW_BG  = '#2e2e2e';
 const WHITE   = '#ffffff';
 const MUTED   = '#888888';
-const F       = (size, bold = false) => `${bold ? 'bold ' : ''}${size}px "${FONT_FAMILY}", sans-serif`;
+const F       = (size, bold = false) => `${bold ? 'bold ' : ''}${size}px "DejaVu Sans", sans-serif`;
 
 function roundRect(ctx, x, y, w, h, r) {
   ctx.beginPath();
@@ -53,12 +48,9 @@ function roundRect(ctx, x, y, w, h, r) {
 }
 
 async function generateStatsCard({ username, avatarUrl, rank, msgStats, voiceStats, topChannels }) {
-  await ensureFont();
-
   const canvas = createCanvas(W, H);
   const ctx    = canvas.getContext('2d');
 
-  // Background
   ctx.fillStyle = BG;
   ctx.fillRect(0, 0, W, H);
 
@@ -86,7 +78,7 @@ async function generateStatsCard({ username, avatarUrl, rank, msgStats, voiceSta
   const rankText = rank ? `Rank #${rank} this month` : 'Unranked this month';
   ctx.fillText(`${rankText}  ·  message stats`, ax + sz + 14, ay + 44);
 
-  // ── Stat cards ───────────────────────────────────────────────────────────────
+  // ── Cards ───────────────────────────────────────────────────────────────────
   const cardY = 104, cardH = 168, gap = 16;
   const col1X = 24, col2X = W / 2 + gap / 2;
   const colW  = W / 2 - gap / 2 - 24;
@@ -113,9 +105,12 @@ async function generateStatsCard({ username, avatarUrl, rank, msgStats, voiceSta
       const valStr = String(value);
       ctx.font = F(14, true);
       const valW  = ctx.measureText(valStr).width;
+
+      ctx.font = F(14);
       const unitW = ctx.measureText(unit).width;
 
       ctx.fillStyle = WHITE;
+      ctx.font = F(14, true);
       ctx.fillText(valStr, x + colW - 20 - unitW - valW - 6, ry + 21);
 
       ctx.fillStyle = MUTED;
@@ -167,7 +162,7 @@ async function generateStatsCard({ username, avatarUrl, rank, msgStats, voiceSta
     ctx.fillText(cntStr, W - 68 - ctx.measureText(cntStr).width, ry + 21);
   });
 
-  // ── Footer ────────────────────────────────────────────────────────────────────
+  // ── Footer ───────────────────────────────────────────────────────────────────
   ctx.fillStyle = MUTED;
   ctx.font = F(13);
   ctx.fillText('Period:  1d / 7d / 30d  ·  UTC', 34, tcY + tcH + 14);

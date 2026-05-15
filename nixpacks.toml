@@ -2,4 +2,9 @@
 nixPkgs = ["dejavu_fonts", "fontconfig"]
 
 [phases.build]
-cmds = ["fc-cache -f -v 2>/dev/null || true"]
+cmds = [
+  "fc-cache -f -v",
+  "mkdir -p /app/fonts",
+  "cp $(fc-match 'DejaVu Sans' --format='%{file}') /app/fonts/DejaVuSans.ttf 2>/dev/null && echo 'Copied regular' || echo 'Regular copy failed'",
+  "cp $(fc-match 'DejaVu Sans:bold' --format='%{file}') /app/fonts/DejaVuSans-Bold.ttf 2>/dev/null && echo 'Copied bold' || echo 'Bold copy failed'"
+]
