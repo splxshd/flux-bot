@@ -25,9 +25,9 @@ function ensureFont() {
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 const W       = 900;
-const BG      = '#0f0f0f';
-const CARD_BG = '#1c1c1c';
-const ROW_BG  = '#252525';
+const BG      = '#080808';
+const CARD_BG = '#121212';
+const ROW_BG  = '#1a1a1a';
 const WHITE   = '#ffffff';
 const MUTED   = '#888888';
 const F = (size, bold = false) =>
@@ -59,39 +59,47 @@ function drawHashIcon(ctx, cx, cy, size) {
   ctx.restore();
 }
 
-// Draws a simple microphone silhouette (used on Voice Activity card)
+// Draws a microphone silhouette matching the reference design
 function drawMicIcon(ctx, cx, cy, size) {
   ctx.save();
   ctx.fillStyle   = MUTED;
   ctx.strokeStyle = MUTED;
   ctx.lineCap     = 'round';
+  ctx.lineJoin    = 'round';
 
-  const bw  = size * 0.42;        // body width
-  const bh  = size * 0.52;        // body height
-  const br  = bw / 2;             // body corner radius (full pill)
-  const top = cy - size * 0.46;   // top of mic body
+  // ── Capsule body (taller, narrower pill) ─────────────────────────────────
+  const bw  = size * 0.38;
+  const bh  = size * 0.58;
+  const br  = bw / 2;
+  const top = cy - size * 0.50;
 
-  // ── Mic capsule (filled pill) ────────────────────────────────────────────
-  roundRect(ctx, cx - br, top, bw, bh, br);
+  ctx.beginPath();
+  ctx.arc(cx, top + br,      br, Math.PI, 0);          // top arc
+  ctx.lineTo(cx + br, top + bh - br);
+  ctx.arc(cx, top + bh - br, br, 0, Math.PI);          // bottom arc
+  ctx.closePath();
   ctx.fill();
 
-  // ── Arc stand ────────────────────────────────────────────────────────────
-  ctx.lineWidth = size * 0.11;
+  // ── Stand arc ────────────────────────────────────────────────────────────
+  ctx.lineWidth = size * 0.10;
+  const arcR   = size * 0.28;
+  const arcY   = top + bh - br;
   ctx.beginPath();
-  ctx.arc(cx, top + bh, size * 0.31, Math.PI, 0, false);
+  ctx.arc(cx, arcY, arcR, Math.PI, 0, false);
   ctx.stroke();
 
   // ── Stem ─────────────────────────────────────────────────────────────────
-  const stemTop = top + bh + size * 0.31;
+  const stemY1 = arcY + arcR;
+  const stemY2 = stemY1 + size * 0.13;
   ctx.beginPath();
-  ctx.moveTo(cx, stemTop);
-  ctx.lineTo(cx, stemTop + size * 0.16);
+  ctx.moveTo(cx, stemY1);
+  ctx.lineTo(cx, stemY2);
   ctx.stroke();
 
-  // ── Base bar ─────────────────────────────────────────────────────────────
+  // ── Base ─────────────────────────────────────────────────────────────────
   ctx.beginPath();
-  ctx.moveTo(cx - size * 0.23, stemTop + size * 0.16);
-  ctx.lineTo(cx + size * 0.23, stemTop + size * 0.16);
+  ctx.moveTo(cx - size * 0.20, stemY2);
+  ctx.lineTo(cx + size * 0.20, stemY2);
   ctx.stroke();
 
   ctx.restore();
