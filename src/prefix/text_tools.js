@@ -107,7 +107,7 @@ const sticky = {
       const prefix = db.getPrefix(message.guild.id);
       const text = message.content.slice(prefix.length).trim().replace(/^sticky\s+set\s*/i, '');
       if (!text) return message.reply('Usage: `,sticky set <message>`');
-      db.setSticky?.(message.guild.id, message.channel.id, text);
+      db.setStickyMessage(message.guild.id, message.channel.id, text);
       // Post the sticky immediately, with embed support
       const sent = await sendStickyContent(message.channel, text);
       if (sent) db.updateStickyLastMessage(message.guild.id, message.channel.id, sent.id);
@@ -115,12 +115,12 @@ const sticky = {
     }
 
     if (sub === 'clear' || sub === 'remove') {
-      db.clearSticky?.(message.guild.id, message.channel.id);
+      db.removeStickyMessage(message.guild.id, message.channel.id);
       return message.reply({ embeds: [new EmbedBuilder().setColor(GREEN).setDescription('📌 Sticky message cleared.')] });
     }
 
     if (sub === 'list') {
-      const stickies = db.getStickies?.(message.guild.id) || [];
+      const stickies = db.getAllStickyMessages(message.guild.id) || [];
       const desc = stickies.length
         ? stickies.map(s => `<#${s.channel_id}> — ${s.content.slice(0,60)}...`).join('\n')
         : 'No sticky messages set.';
