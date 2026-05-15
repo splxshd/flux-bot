@@ -216,6 +216,109 @@ function buildCategoryEmbed(key, client) {
     .setTimestamp();
 }
 
+// ── Reverse map: command name → module label ───────────────────────────────────
+const CMD_MODULE = {};
+for (const [, cat] of Object.entries(HELP_CATS)) {
+  for (const c of cat.cmds) CMD_MODULE[c] = cat.label;
+}
+
+// ── Central command metadata table ────────────────────────────────────────────
+// Fields: description, params, example, permission, aliases
+// Commands not listed here get auto-generated defaults.
+const CMD_META = {
+  // Moderation
+  ban:        { description: 'Ban a member from the server',                    params: '<@user> [duration] [reason]', example: ',ban @user 7d spamming',     permission: 'Ban Members' },
+  unban:      { description: 'Unban a user by ID',                              params: '<userID> [reason]',           example: ',unban 123456789 appealed',   permission: 'Ban Members' },
+  kick:       { description: 'Kick a member from the server',                   params: '<@user> [reason]',            example: ',kick @user rule breaking',   permission: 'Kick Members' },
+  mute:       { description: 'Timeout a member',                                params: '<@user> <duration> [reason]', example: ',mute @user 1h spamming',    permission: 'Moderate Members' },
+  unmute:     { description: 'Remove a timeout from a member',                  params: '<@user>',                     example: ',unmute @user',               permission: 'Moderate Members' },
+  warn:       { description: 'Issue a warning to a member',                     params: '<@user> <reason>',            example: ',warn @user bad behaviour',   permission: 'Manage Messages' },
+  warnings:   { description: 'View all warnings for a member',                  params: '<@user>',                     example: ',warnings @user',             permission: 'Manage Messages' },
+  clearwarns: { description: 'Clear all warnings for a member',                 params: '<@user>',                     example: ',clearwarns @user',           permission: 'Manage Guild' },
+  nuke:       { description: 'Clone and delete a channel to purge all messages', params: '[#channel]',                  example: ',nuke #general',             permission: 'Manage Channels' },
+  purge:      { description: 'Delete messages in bulk',                         params: '<amount> [filter]',           example: ',purge 50 bots',              permission: 'Manage Messages' },
+  hardban:    { description: 'Ban and delete 7 days of messages',               params: '<@user> [reason]',            example: ',hardban @user raiding',     permission: 'Ban Members' },
+  massban:    { description: 'Ban multiple users by ID',                        params: '<id1> <id2> ...',             example: ',massban 111 222 333',        permission: 'Ban Members' },
+  masskick:   { description: 'Kick multiple members at once',                   params: '<@user1> <@user2> ...',       example: ',masskick @a @b',             permission: 'Kick Members' },
+  jail:       { description: 'Restrict a member to jail channel',               params: '<@user> [reason]',            example: ',jail @user raiding',        permission: 'Manage Roles' },
+  unjail:     { description: 'Release a member from jail',                      params: '<@user>',                     example: ',unjail @user',               permission: 'Manage Roles' },
+  history:    { description: 'View moderation history for a member',            params: '<@user>',                     example: ',history @user',              permission: 'Manage Messages' },
+  reason:     { description: 'Update the reason for a mod case',                params: '<caseID> <reason>',           example: ',reason 12 updated reason',  permission: 'Manage Messages' },
+  snipe:      { description: 'Retrieve the last deleted message',               params: '[#channel]',                  example: ',snipe',                      permission: 'None' },
+  // Information
+  userinfo:   { description: 'Show detailed info about a user',                 params: '[@user]',                     example: ',userinfo @user',             permission: 'None' },
+  serverinfo: { description: 'Show server information',                         params: '',                            example: ',serverinfo',                 permission: 'None' },
+  avatar:     { description: 'Show a user\'s avatar',                           params: '[@user]',                     example: ',avatar @user',               permission: 'None' },
+  banner:     { description: 'Show a user\'s banner',                           params: '[@user]',                     example: ',banner @user',               permission: 'None' },
+  roleinfo:   { description: 'Show information about a role',                   params: '<@role>',                     example: ',roleinfo @Moderator',        permission: 'None' },
+  // Utility
+  ping:       { description: 'Check the bot\'s latency',                        params: '',                            example: ',ping',                       permission: 'None' },
+  help:       { description: 'Show all commands or detail on one command',      params: '[command]',                   example: ',help ban',                   permission: 'None' },
+  prefix:     { description: 'Change or view the server prefix',                params: '[newprefix]',                 example: ',prefix !',                   permission: 'Manage Guild' },
+  // Stats
+  msgstats:   { description: 'Show message and voice stats card for a user',    params: '[@user]',                     example: ',msgstats @user',             permission: 'None', aliases: ['ms', 'stats'] },
+  // Giveaways
+  gw:         { description: 'Giveaway manager',                                params: '<start|end|reroll|list>',     example: ',gw start 1h 1w Prize name',  permission: 'Manage Guild' },
+  // Tickets
+  ticket:     { description: 'Ticket panel management',                         params: '<setup|add|remove|panel>',    example: ',ticket setup',               permission: 'Manage Guild' },
+  close:      { description: 'Close the current support ticket',                params: '[reason]',                    example: ',close resolved',             permission: 'None' },
+  // Roles
+  role:       { description: 'Add or remove a role from a member',              params: '<@user> <@role>',             example: ',role @user @Member',         permission: 'Manage Roles' },
+  // Slots
+  slots:      { description: 'Slot management system',                          params: '<subcommand>',                example: ',slots setup',                permission: 'Manage Guild', aliases: ['slot'] },
+  // Welcome
+  welcome:    { description: 'Configure the welcome message system',            params: '<setup|disable|test>',        example: ',welcome setup',              permission: 'Manage Guild' },
+  // Autoresponder
+  ar:         { description: 'Add or remove auto-response triggers',            params: '<add|remove|list>',           example: ',ar add hello Hi there!',    permission: 'Manage Guild' },
+  // Logging
+  log:        { description: 'Configure server event logging',                  params: '<setup|disable|ignore>',      example: ',log setup #logs',            permission: 'Manage Guild' },
+  // Fun
+  '8ball':    { description: 'Ask the magic 8-ball a yes/no question',          params: '<question>',                  example: ',8ball will I win today?',    permission: 'None' },
+  ship:       { description: 'Ship two users and get a compatibility %',        params: '[@user1] [@user2]',           example: ',ship @a @b',                 permission: 'None' },
+  // Wallet
+  wallet:     { description: 'Manage your LTC wallet',                          params: '<create|balance|address>',    example: ',wallet create',              permission: 'None' },
+};
+
+// ── Build per-command detail embed (screenshot style) ─────────────────────────
+function buildCommandEmbed(cmd, prefix, client) {
+  // Merge: CMD_META entry > cmd own fields > smart defaults
+  const meta   = CMD_META[cmd.name] ?? {};
+  const desc   = meta.description ?? cmd.description ?? 'No description.';
+  const params = meta.params      ?? cmd.params      ?? 'None';
+  const perm   = meta.permission  ?? cmd.permission  ?? 'None';
+  const aliases = (meta.aliases ?? cmd.aliases ?? []);
+
+  // Build syntax string
+  const syntaxParts = [`${prefix}${cmd.name}`];
+  if (params && params !== 'None') syntaxParts.push(params);
+  const syntax = meta.syntax ?? cmd.syntax ?? syntaxParts.join(' ');
+
+  // Build example
+  const example = meta.example ?? cmd.example ?? syntax;
+
+  const aliasStr   = aliases.length ? aliases.map(a => `\`${a}\``).join(', ') : '`None`';
+  const paramsStr  = params !== 'None' ? `\`${params}\`` : '`None`';
+  const permDisplay = perm === 'None' ? '`None`' : `⚠️ ${perm}`;
+  const moduleName  = CMD_MODULE[cmd.name] ?? 'General';
+
+  // Strip any trailing " — `,cmd ...`" hint from the description
+  const cleanDesc = desc.replace(/\s+—\s+`.+`$/, '').trim();
+
+  const usageBlock = `Syntax : ${syntax}\nExample: ${example}`;
+
+  return new EmbedBuilder()
+    .setAuthor({ name: client.user.username, iconURL: client.user.displayAvatarURL() })
+    .setColor(BLUE)
+    .setDescription(`**Command: ${cmd.name}**\n${cleanDesc}`)
+    .addFields(
+      { name: 'Aliases',     value: aliasStr,   inline: true },
+      { name: 'Parameters',  value: paramsStr,  inline: true },
+      { name: 'Information', value: permDisplay, inline: true },
+      { name: 'Usage', value: `\`\`\`\n${usageBlock}\n\`\`\`` },
+    )
+    .setFooter({ text: `Page 1/1 (1 entry) • Module: ${moduleName}` });
+}
+
 // ── Export helpers so interactionCreate can use them ───────────────────────────
 const COMMANDS = [
   // ── ,ping ──────────────────────────────────────────────────────────────────
@@ -246,8 +349,24 @@ const COMMANDS = [
   {
     name: 'help',
     aliases: ['h', 'commands'],
-    description: 'Show all bot commands by category',
+    description: 'Show commands — `,help [command]`',
+    params: '[command]',
+    example: ',help ban',
     async execute(message, args, client) {
+      const prefix = db.getPrefix(message.guild.id);
+
+      // ── ,help <command> → detailed command card ──────────────────────────
+      if (args[0]) {
+        const query = args[0].toLowerCase();
+        const cmd   = client.prefixCommands?.get(query);
+        if (!cmd) {
+          return message.reply(`❌ No command found for \`${query}\`.`);
+        }
+        const embed = buildCommandEmbed(cmd, prefix, client);
+        return message.reply({ embeds: [embed] });
+      }
+
+      // ── ,help → home menu ────────────────────────────────────────────────
       const row   = new ActionRowBuilder().addComponents(buildSelectMenu());
       const embed = buildHomeEmbed(client);
       await message.reply({ embeds: [embed], components: [row] });
@@ -482,6 +601,8 @@ const COMMANDS = [
 COMMANDS.buildHomeEmbed    = buildHomeEmbed;
 COMMANDS.buildCategoryEmbed = buildCategoryEmbed;
 COMMANDS.buildSelectMenu   = buildSelectMenu;
+COMMANDS.buildCommandEmbed = buildCommandEmbed;
 COMMANDS.HELP_CATS         = HELP_CATS;
+COMMANDS.CMD_MODULE        = CMD_MODULE;
 
 module.exports = COMMANDS;
