@@ -1,7 +1,7 @@
 'use strict';
 
 const { EmbedBuilder, PermissionFlagsBits } = require('discord.js');
-const { sendStickyContent } = require('../prefix/text_tools');
+const { sendStickyContent } = require('../utils/sendSticky');
 const db = require('../database');
 
 // Lazy-loaded so there's no circular-require issue at startup
