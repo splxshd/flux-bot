@@ -1,68 +1,33 @@
 'use strict';
 
 const { createCanvas, loadImage, GlobalFonts } = require('@napi-rs/canvas');
-const { execSync } = require('child_process');
-const fs   = require('fs');
-const path = require('path');
 
-// ── Font loading — try every known strategy until one works ──────────────────
-(function loadFont() {
-  const FAMILY = 'DejaVu Sans';
+// ── Font bootstrap ────────────────────────────────────────────────────────────
+// Download DejaVu Sans from GitHub and register it in memory.
+// This is the only approach guaranteed to work on any host (no system fonts needed).
+const FONT_FAMILY = 'DejaVu Sans';
+let fontReady = false;
 
-  // Strategy 1: fc-match (fontconfig is installed via nixpacks.toml)
-  try {
-    const p = execSync(`fc-match "${FAMILY}" --format="%{file}"`, {
-      encoding: 'utf8', timeout: 3000, stdio: ['pipe', 'pipe', 'ignore'],
-    }).trim();
-    if (p && fs.existsSync(p)) {
-      GlobalFonts.registerFromPath(p, FAMILY);
-      return;
-    }
-  } catch {}
-
-  // Strategy 2: fc-list — find any DejaVuSans.ttf
-  try {
-    const p = execSync(`fc-list : file | grep -i "DejaVuSans.ttf" | head -1`, {
-      encoding: 'utf8', timeout: 3000, stdio: ['pipe', 'pipe', 'ignore'],
-    }).trim().split(':')[0].trim();
-    if (p && fs.existsSync(p)) {
-      GlobalFonts.registerFromPath(p, FAMILY);
-      return;
-    }
-  } catch {}
-
-  // Strategy 3: find in nix store
-  try {
-    const p = execSync(`find /nix -name "DejaVuSans.ttf" 2>/dev/null | head -1`, {
-      encoding: 'utf8', timeout: 5000, stdio: ['pipe', 'pipe', 'ignore'],
-    }).trim();
-    if (p && fs.existsSync(p)) {
-      GlobalFonts.registerFromPath(p, FAMILY);
-      return;
-    }
-  } catch {}
-
-  // Strategy 4: check hard-coded common paths
-  const PATHS = [
-    '/nix/var/nix/profiles/default/share/fonts/truetype/DejaVuSans.ttf',
-    '/run/current-system/sw/share/fonts/truetype/DejaVuSans.ttf',
-    '/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf',
-    '/usr/share/fonts/dejavu/DejaVuSans.ttf',
-    '/usr/share/fonts/DejaVuSans.ttf',
+async function ensureFont() {
+  if (fontReady) return;
+  const urls = [
+    // Regular
+    'https://github.com/dejavu-fonts/dejavu-fonts/raw/main/ttf/DejaVuSans.ttf',
+    // Bold (registering both so bold weight renders correctly)
+    'https://github.com/dejavu-fonts/dejavu-fonts/raw/main/ttf/DejaVuSans-Bold.ttf',
   ];
-  for (const p of PATHS) {
-    if (fs.existsSync(p)) {
-      GlobalFonts.registerFromPath(p, FAMILY);
-      return;
+  for (const url of urls) {
+    try {
+      const res = await fetch(url, { signal: AbortSignal.timeout(10_000) });
+      if (!res.ok) continue;
+      const buf = Buffer.from(await res.arrayBuffer());
+      GlobalFonts.register(buf, FONT_FAMILY);
+    } catch (e) {
+      console.warn('[statsCard] font fetch failed:', url, e.message);
     }
   }
-
-  // Strategy 5: loadSystemFonts broad sweep
-  try { GlobalFonts.loadSystemFonts(); } catch {}
-  for (const dir of ['/usr/share/fonts', '/nix/var/nix/profiles/default/share/fonts']) {
-    try { GlobalFonts.loadFontsFromDir(dir); } catch {}
-  }
-})();
+  fontReady = true;
+}
 
 // ── Canvas constants ──────────────────────────────────────────────────────────
 const W       = 900, H = 520;
@@ -71,8 +36,7 @@ const CARD_BG = '#242424';
 const ROW_BG  = '#2e2e2e';
 const WHITE   = '#ffffff';
 const MUTED   = '#888888';
-const ACCENT  = '#5865F2';
-const FONT    = '"DejaVu Sans", sans-serif';
+const F       = (size, bold = false) => `${bold ? 'bold ' : ''}${size}px "${FONT_FAMILY}", sans-serif`;
 
 function roundRect(ctx, x, y, w, h, r) {
   ctx.beginPath();
@@ -89,6 +53,8 @@ function roundRect(ctx, x, y, w, h, r) {
 }
 
 async function generateStatsCard({ username, avatarUrl, rank, msgStats, voiceStats, topChannels }) {
+  await ensureFont();
+
   const canvas = createCanvas(W, H);
   const ctx    = canvas.getContext('2d');
 
@@ -96,31 +62,31 @@ async function generateStatsCard({ username, avatarUrl, rank, msgStats, voiceSta
   ctx.fillStyle = BG;
   ctx.fillRect(0, 0, W, H);
 
-  // ── Header ─────────────────────────────────────────────────────────────────
-  const avatarSize = 56, avatarX = 32, avatarY = 28;
+  // ── Header ──────────────────────────────────────────────────────────────────
+  const sz = 56, ax = 32, ay = 28;
 
   if (avatarUrl) {
     try {
       const img = await loadImage(avatarUrl);
       ctx.save();
       ctx.beginPath();
-      ctx.arc(avatarX + avatarSize / 2, avatarY + avatarSize / 2, avatarSize / 2, 0, Math.PI * 2);
+      ctx.arc(ax + sz / 2, ay + sz / 2, sz / 2, 0, Math.PI * 2);
       ctx.clip();
-      ctx.drawImage(img, avatarX, avatarY, avatarSize, avatarSize);
+      ctx.drawImage(img, ax, ay, sz, sz);
       ctx.restore();
     } catch {}
   }
 
   ctx.fillStyle = WHITE;
-  ctx.font = `bold 28px ${FONT}`;
-  ctx.fillText(username, avatarX + avatarSize + 14, avatarY + 22);
+  ctx.font = F(28, true);
+  ctx.fillText(username, ax + sz + 14, ay + 22);
 
   ctx.fillStyle = MUTED;
-  ctx.font = `15px ${FONT}`;
+  ctx.font = F(15);
   const rankText = rank ? `Rank #${rank} this month` : 'Unranked this month';
-  ctx.fillText(`${rankText}  ·  message stats`, avatarX + avatarSize + 14, avatarY + 44);
+  ctx.fillText(`${rankText}  ·  message stats`, ax + sz + 14, ay + 44);
 
-  // ── Cards (messages + voice) ───────────────────────────────────────────────
+  // ── Stat cards ───────────────────────────────────────────────────────────────
   const cardY = 104, cardH = 168, gap = 16;
   const col1X = 24, col2X = W / 2 + gap / 2;
   const colW  = W / 2 - gap / 2 - 24;
@@ -131,7 +97,7 @@ async function generateStatsCard({ username, avatarUrl, rank, msgStats, voiceSta
     ctx.fill();
 
     ctx.fillStyle = WHITE;
-    ctx.font = `bold 16px ${FONT}`;
+    ctx.font = F(16, true);
     ctx.fillText(title, x + 16, cardY + 26);
 
     rows.forEach(([label, value, unit], i) => {
@@ -141,17 +107,19 @@ async function generateStatsCard({ username, avatarUrl, rank, msgStats, voiceSta
       ctx.fill();
 
       ctx.fillStyle = MUTED;
-      ctx.font = `bold 14px ${FONT}`;
+      ctx.font = F(14, true);
       ctx.fillText(label, x + 22, ry + 21);
 
       const valStr = String(value);
-      ctx.font = `bold 14px ${FONT}`;
-      const valW   = ctx.measureText(valStr).width;
-      const unitW  = ctx.measureText(unit).width;
+      ctx.font = F(14, true);
+      const valW  = ctx.measureText(valStr).width;
+      const unitW = ctx.measureText(unit).width;
+
       ctx.fillStyle = WHITE;
       ctx.fillText(valStr, x + colW - 20 - unitW - valW - 6, ry + 21);
+
       ctx.fillStyle = MUTED;
-      ctx.font = `14px ${FONT}`;
+      ctx.font = F(14);
       ctx.fillText(unit, x + colW - 20 - unitW, ry + 21);
     });
   }
@@ -168,7 +136,7 @@ async function generateStatsCard({ username, avatarUrl, rank, msgStats, voiceSta
     ['30d', voiceStats.d30.toFixed(1), ' hours'],
   ]);
 
-  // ── Top Channels ───────────────────────────────────────────────────────────
+  // ── Top Channels ─────────────────────────────────────────────────────────────
   const tcY = cardY + cardH + gap;
   const tcH = 46 + topChannels.length * 42 + 10;
 
@@ -177,7 +145,7 @@ async function generateStatsCard({ username, avatarUrl, rank, msgStats, voiceSta
   ctx.fill();
 
   ctx.fillStyle = WHITE;
-  ctx.font = `bold 16px ${FONT}`;
+  ctx.font = F(16, true);
   ctx.fillText('Top Channels', 40, tcY + 26);
 
   const medals = ['#1', '#2', '#3'];
@@ -188,22 +156,21 @@ async function generateStatsCard({ username, avatarUrl, rank, msgStats, voiceSta
     ctx.fill();
 
     ctx.fillStyle = MUTED;
-    ctx.font = `bold 13px ${FONT}`;
+    ctx.font = F(13, true);
     ctx.fillText(medals[i] || `#${i + 1}`, 48, ry + 21);
 
     ctx.fillStyle = WHITE;
-    ctx.font = `bold 14px ${FONT}`;
+    ctx.font = F(14, true);
     ctx.fillText(`#${ch.name}`, 90, ry + 21);
 
     const cntStr = String(ch.count);
     ctx.fillText(cntStr, W - 68 - ctx.measureText(cntStr).width, ry + 21);
   });
 
-  // ── Footer ─────────────────────────────────────────────────────────────────
-  const footerY = tcY + tcH + 14;
+  // ── Footer ────────────────────────────────────────────────────────────────────
   ctx.fillStyle = MUTED;
-  ctx.font = `13px ${FONT}`;
-  ctx.fillText('Period:  1d / 7d / 30d  ·  UTC', 34, footerY);
+  ctx.font = F(13);
+  ctx.fillText('Period:  1d / 7d / 30d  ·  UTC', 34, tcY + tcH + 14);
 
   return canvas.toBuffer('image/png');
 }
