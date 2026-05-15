@@ -5,7 +5,8 @@ const {
   ActionRowBuilder, StringSelectMenuBuilder, StringSelectMenuOptionBuilder,
 } = require('discord.js');
 const db = require('../database');
-const { generateStatsCard } = require('../utils/statsCard');
+const { generateStatsCard }      = require('../utils/statsCard');
+const { generateLeaderboardCard } = require('../utils/leaderboardCard');
 
 const BLUE  = '#5865F2';
 const GREEN = '#57F287';
@@ -486,20 +487,38 @@ const COMMANDS = [
         return message.reply({ embeds: [new EmbedBuilder().setColor(BLUE).setDescription('No message data yet.')] });
       }
 
-      const medals = ['🥇', '🥈', '🥉'];
-      const lines  = await Promise.all(rows.map(async (r, i) => {
-        let name;
+      // Resolve member names + avatar URLs
+      const entries = await Promise.all(rows.map(async r => {
         try {
           const m = await message.guild.members.fetch(r.user_id);
-          name = m.displayName;
+          return {
+            username:  m.displayName,
+            avatarUrl: m.user.displayAvatarURL({ extension: 'png', size: 64 }),
+            count:     r.cnt,
+          };
         } catch {
-          name = `<@${r.user_id}>`;
+          return { username: `Unknown`, avatarUrl: null, count: r.cnt };
         }
-        const badge = medals[i] ?? `\`#${i + 1}\``;
-        return `${badge} **${name}** — ${r.cnt.toLocaleString()} messages`;
       }));
 
+      // Canvas card
+      try {
+        const buf = await generateLeaderboardCard({
+          guildName:    message.guild.name,
+          guildIconUrl: message.guild.iconURL({ extension: 'png', size: 64 }),
+          period,
+          entries,
+        });
+        const attachment = new AttachmentBuilder(buf, { name: 'leaderboard.png' });
+        return await message.reply({ files: [attachment] });
+      } catch (e) {
+        console.error('[mslb canvas]', e);
+      }
+
+      // Embed fallback
+      const medals      = ['🥇', '🥈', '🥉'];
       const periodLabel = { '1d': 'Last 24 hours', '7d': 'Last 7 days', '30d': 'Last 30 days' }[period];
+      const lines       = entries.map((e, i) => `${medals[i] ?? `\`#${i + 1}\``} **${e.username}** — ${e.count.toLocaleString()} messages`);
 
       const embed = new EmbedBuilder()
         .setColor(BLUE)
