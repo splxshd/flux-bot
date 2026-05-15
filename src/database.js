@@ -352,6 +352,12 @@ db.run(`CREATE TABLE IF NOT EXISTS message_stats (
   sent_at INTEGER NOT NULL
 )`);
 
+// Stores the last-known name of every channel we've seen a message in
+db.run(`CREATE TABLE IF NOT EXISTS channel_name_cache (
+  channel_id TEXT PRIMARY KEY,
+  name TEXT NOT NULL
+)`);
+
 db.run(`CREATE INDEX IF NOT EXISTS idx_msgstats ON message_stats (guild_id, user_id, sent_at)`);
 
 db.run(`CREATE TABLE IF NOT EXISTS voice_stats (
@@ -970,9 +976,18 @@ function markDepositNotified(id) {
 }
 
 // message_stats
-function trackMessage(guildId, userId, channelId) {
-  return run('INSERT INTO message_stats (guild_id, user_id, channel_id, sent_at) VALUES (?, ?, ?, ?)',
+function trackMessage(guildId, userId, channelId, channelName) {
+  run('INSERT INTO message_stats (guild_id, user_id, channel_id, sent_at) VALUES (?, ?, ?, ?)',
     [guildId, userId, channelId, Math.floor(Date.now() / 1000)]);
+  // Cache the channel name so deleted channels still show a readable name
+  if (channelName) {
+    run('INSERT OR REPLACE INTO channel_name_cache (channel_id, name) VALUES (?, ?)',
+      [channelId, channelName]);
+  }
+}
+
+function getCachedChannelName(channelId) {
+  return get('SELECT name FROM channel_name_cache WHERE channel_id = ?', [channelId])?.name ?? null;
 }
 
 function getMessageStats(guildId, userId) {
@@ -1105,7 +1120,7 @@ module.exports = {
   setPaymentAddress, getPaymentAddress, getPaymentAddresses,
   setPaypal, getPaypal,
   setSellAuth, getSellAuth, updateSellAuth,
-  trackMessage, getMessageStats, getMessageRank,
+  trackMessage, getMessageStats, getMessageRank, getCachedChannelName,
   trackVoiceJoin, trackVoiceLeave, getVoiceStats,
   getPrefix, setPrefix,
   setVouch, setVouchExch, getVouch,

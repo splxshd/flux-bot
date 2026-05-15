@@ -434,9 +434,9 @@ const COMMANDS = [
       const topChannels = await Promise.all(
         msgStats.topChannels.map(async r => {
           const ch = message.guild.channels.cache.get(r.channel_id);
-          return ch
-            ? { name: ch.name, id: r.channel_id, count: r.cnt, deleted: false }
-            : { name: null,    id: r.channel_id, count: r.cnt, deleted: true  };
+          if (ch) return { name: ch.name, id: r.channel_id, count: r.cnt, deleted: false };
+          const cached = db.getCachedChannelName(r.channel_id);
+          return { name: cached, id: r.channel_id, count: r.cnt, deleted: !cached };
         })
       );
 

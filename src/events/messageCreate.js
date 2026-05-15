@@ -35,7 +35,7 @@ module.exports = (client) => {
   client.on('messageCreate', async (message) => {
     if (!message.guild || message.author.bot) return;
 
-    db.trackMessage(message.guild.id, message.author.id, message.channel.id);
+    db.trackMessage(message.guild.id, message.author.id, message.channel.id, message.channel.name);
 
     const guild = message.guild;
 

@@ -69,16 +69,47 @@ async function getMicImg() {
 }
 
 async function drawMicIcon(ctx, cx, cy, size) {
+  // Try image asset first
   try {
     const img = await getMicImg();
-    // Draw centred on (cx, cy), tinted via globalAlpha (image is white on black)
     ctx.save();
-    ctx.globalAlpha = 0.7; // match MUTED tone
+    ctx.globalAlpha = 0.7;
     ctx.drawImage(img, cx - size / 2, cy - size / 2, size, size);
     ctx.restore();
-  } catch {
-    // asset missing — silent fallback, no crash
-  }
+    return;
+  } catch {}
+
+  // Fallback: draw mic shape with canvas paths
+  ctx.save();
+  ctx.fillStyle   = MUTED;
+  ctx.strokeStyle = MUTED;
+  ctx.lineCap     = 'butt';
+  ctx.lineJoin    = 'round';
+
+  const br  = size * 0.17;
+  const bh  = size * 0.50;
+  const top = cy - size * 0.48;
+
+  ctx.beginPath();
+  ctx.arc(cx, top + br,      br, Math.PI, 0);
+  ctx.lineTo(cx + br, top + bh - br);
+  ctx.arc(cx, top + bh - br, br, 0,      Math.PI);
+  ctx.closePath();
+  ctx.fill();
+
+  const arcCY = top + bh - br;
+  ctx.lineWidth = size * 0.16;
+  ctx.beginPath();
+  ctx.arc(cx, arcCY, size * 0.42, Math.PI, 0, false);
+  ctx.stroke();
+
+  const stemY = arcCY + size * 0.42;
+  ctx.beginPath();
+  ctx.moveTo(cx, stemY);
+  ctx.lineTo(cx, stemY + size * 0.13);
+  ctx.stroke();
+
+  ctx.restore();
 }
 
 // ── Main generator ────────────────────────────────────────────────────────────
@@ -227,10 +258,10 @@ async function generateStatsCard({ username, avatarUrl, rank, msgStats, voiceSta
     ctx.textBaseline = 'middle';
     ctx.fillText(medals[i] || `#${i + 1}`, tcX + 24, ry + 17);
 
-    // channel name — deleted channels show "deleted channel" in muted
-    const chLabel = ch.deleted ? 'deleted channel' : `#${ch.name}`;
-    ctx.fillStyle = ch.deleted ? MUTED : WHITE;
-    ctx.font      = ch.deleted ? F(13) : F(14, true);
+    // channel name — use cached name if available, "deleted channel" as last resort
+    const chLabel = ch.name ? `#${ch.name}` : 'deleted channel';
+    ctx.fillStyle = ch.name ? WHITE : MUTED;
+    ctx.font      = ch.name ? F(14, true) : F(13);
     ctx.fillText(chLabel, tcX + 68, ry + 17);
 
     // message count (right)
