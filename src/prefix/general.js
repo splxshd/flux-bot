@@ -604,5 +604,6 @@ COMMANDS.buildSelectMenu   = buildSelectMenu;
 COMMANDS.buildCommandEmbed = buildCommandEmbed;
 COMMANDS.HELP_CATS         = HELP_CATS;
 COMMANDS.CMD_MODULE        = CMD_MODULE;
+COMMANDS.CMD_META          = CMD_META;
 
 module.exports = COMMANDS;

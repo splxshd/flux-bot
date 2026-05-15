@@ -1,7 +1,29 @@
 'use strict';
 
-const { EmbedBuilder } = require('discord.js');
+const { EmbedBuilder, PermissionFlagsBits } = require('discord.js');
 const db = require('../database');
+
+// Lazy-loaded so there's no circular-require issue at startup
+let _generalCmds = null;
+function getGeneral() {
+  if (!_generalCmds) _generalCmds = require('../prefix/general');
+  return _generalCmds;
+}
+
+// Permission string → PermissionFlagsBits value
+const PERM_FLAGS = {
+  'Ban Members':      PermissionFlagsBits.BanMembers,
+  'Kick Members':     PermissionFlagsBits.KickMembers,
+  'Manage Messages':  PermissionFlagsBits.ManageMessages,
+  'Manage Guild':     PermissionFlagsBits.ManageGuild,
+  'Manage Roles':     PermissionFlagsBits.ManageRoles,
+  'Manage Channels':  PermissionFlagsBits.ManageChannels,
+  'Moderate Members': PermissionFlagsBits.ModerateMembers,
+  'Administrator':    PermissionFlagsBits.Administrator,
+  'Manage Nicknames': PermissionFlagsBits.ManageNicknames,
+  'Manage Webhooks':  PermissionFlagsBits.ManageWebhooks,
+  'View Audit Log':   PermissionFlagsBits.ViewAuditLog,
+};
 
 const YELLOW = '#FEE75C';
 const GREEN  = '#57F287';
@@ -87,6 +109,18 @@ module.exports = (client) => {
       const commandName = args.shift().toLowerCase();
       const cmd = message.client.prefixCommands?.get(commandName);
       if (cmd) {
+        // ── Permission gate ───────────────────────────────────────────────
+        const { CMD_META, buildCommandEmbed } = getGeneral();
+        const meta     = CMD_META[cmd.name];
+        const permName = meta?.permission;
+        const flag     = permName && PERM_FLAGS[permName];
+
+        if (flag && !message.member.permissions.has(flag)) {
+          const embed = buildCommandEmbed(cmd, prefix, message.client);
+          return message.reply({ embeds: [embed] });
+        }
+
+        // ── Execute ───────────────────────────────────────────────────────
         await cmd.execute(message, args, message.client).catch(e => {
           console.error(`[Prefix:${commandName}]`, e);
           message.reply(`❌ Error: ${e.message}`).catch(() => {});
