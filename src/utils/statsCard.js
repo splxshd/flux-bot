@@ -59,45 +59,26 @@ function drawHashIcon(ctx, cx, cy, size) {
   ctx.restore();
 }
 
-// Microphone icon — pixel-faithful to the reference image:
-// tall narrow pill, wide U-arc (flat horizontal ends from thick stroke),
-// short stem, no base bar.
-function drawMicIcon(ctx, cx, cy, size) {
-  ctx.save();
-  ctx.fillStyle   = MUTED;
-  ctx.strokeStyle = MUTED;
-  ctx.lineCap     = 'butt';   // flat ends = the "horizontal ears" in the reference
-  ctx.lineJoin    = 'round';
+// Mic icon image — loaded once and cached
+const MIC_PATH = path.join(__dirname, '..', 'assets', 'mic.png');
+let _micImg = null;
+async function getMicImg() {
+  if (_micImg) return _micImg;
+  _micImg = await loadImage(MIC_PATH);
+  return _micImg;
+}
 
-  // ── Tall narrow pill ──────────────────────────────────────────────────────
-  const br  = size * 0.17;          // half-width (narrow pill)
-  const bh  = size * 0.50;          // tall
-  const top = cy - size * 0.48;
-
-  ctx.beginPath();
-  ctx.arc(cx, top + br,      br, Math.PI, 0);
-  ctx.lineTo(cx + br, top + bh - br);
-  ctx.arc(cx, top + bh - br, br, 0,      Math.PI);
-  ctx.closePath();
-  ctx.fill();
-
-  // ── Wide U-arc (2.5× the pill half-width on each side) ───────────────────
-  const arcCY  = top + bh - br;     // pivot at pill bottom
-  const arcR   = size * 0.42;       // 2.47× pill half-width → very wide arc
-  ctx.lineWidth = size * 0.16;
-  ctx.beginPath();
-  ctx.arc(cx, arcCY, arcR, Math.PI, 0, false);
-  ctx.stroke();
-
-  // ── Stem ──────────────────────────────────────────────────────────────────
-  ctx.lineCap = 'butt';
-  const stemY = arcCY + arcR;
-  ctx.beginPath();
-  ctx.moveTo(cx, stemY);
-  ctx.lineTo(cx, stemY + size * 0.13);
-  ctx.stroke();
-
-  ctx.restore();
+async function drawMicIcon(ctx, cx, cy, size) {
+  try {
+    const img = await getMicImg();
+    // Draw centred on (cx, cy), tinted via globalAlpha (image is white on black)
+    ctx.save();
+    ctx.globalAlpha = 0.7; // match MUTED tone
+    ctx.drawImage(img, cx - size / 2, cy - size / 2, size, size);
+    ctx.restore();
+  } catch {
+    // asset missing — silent fallback, no crash
+  }
 }
 
 // ── Main generator ────────────────────────────────────────────────────────────
@@ -155,7 +136,7 @@ async function generateStatsCard({ username, avatarUrl, rank, msgStats, voiceSta
   const ICON_S = 26; // icon size
   const ICON_Y = cardY + 27; // icon vertical centre
 
-  function drawCard(x, title, rows, iconType) {
+  async function drawCard(x, title, rows, iconType) {
     // card bg
     ctx.fillStyle = CARD_BG;
     roundRect(ctx, x, cardY, colW, CARD_H, 10);
@@ -171,7 +152,7 @@ async function generateStatsCard({ username, avatarUrl, rank, msgStats, voiceSta
     if (iconType === 'hash') {
       drawHashIcon(ctx, x + colW - 24, ICON_Y, ICON_S);
     } else if (iconType === 'mic') {
-      drawMicIcon(ctx,  x + colW - 28, ICON_Y, ICON_S);
+      await drawMicIcon(ctx, x + colW - 26, ICON_Y, ICON_S);
     }
 
     // rows
@@ -204,13 +185,13 @@ async function generateStatsCard({ username, avatarUrl, rank, msgStats, voiceSta
     });
   }
 
-  drawCard(col1X, 'Messages', [
+  await drawCard(col1X, 'Messages', [
     ['1d',  msgStats.d1,               ' messages'],
     ['7d',  msgStats.d7,               ' messages'],
     ['30d', msgStats.d30,              ' messages'],
   ], 'hash');
 
-  drawCard(col2X, 'Voice Activity', [
+  await drawCard(col2X, 'Voice Activity', [
     ['1d',  voiceStats.d1.toFixed(1),  ' hours'],
     ['7d',  voiceStats.d7.toFixed(1),  ' hours'],
     ['30d', voiceStats.d30.toFixed(1), ' hours'],
@@ -246,10 +227,10 @@ async function generateStatsCard({ username, avatarUrl, rank, msgStats, voiceSta
     ctx.textBaseline = 'middle';
     ctx.fillText(medals[i] || `#${i + 1}`, tcX + 24, ry + 17);
 
-    // channel name — deleted channels show <#id> instead of raw number
-    const chLabel = ch.deleted ? `<#${ch.id}>` : `#${ch.name}`;
+    // channel name — deleted channels show "deleted channel" in muted
+    const chLabel = ch.deleted ? 'deleted channel' : `#${ch.name}`;
     ctx.fillStyle = ch.deleted ? MUTED : WHITE;
-    ctx.font      = F(14, true);
+    ctx.font      = ch.deleted ? F(13) : F(14, true);
     ctx.fillText(chLabel, tcX + 68, ry + 17);
 
     // message count (right)

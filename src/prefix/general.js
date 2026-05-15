@@ -455,7 +455,7 @@ const COMMANDS = [
       // Embed fallback
       const rankText = rank ? `Rank #${rank}` : 'Unranked';
       const topChStr = topChannels.length
-        ? topChannels.map((c, i) => `\`#${i + 1}\` ${c.deleted ? `<#${c.id}>` : `#${c.name}`} — **${c.count}**`).join('\n')
+        ? topChannels.map((c, i) => `\`#${i + 1}\` ${c.deleted ? 'deleted channel' : `#${c.name}`} — **${c.count}**`).join('\n')
         : 'No data';
       const embed = new EmbedBuilder()
         .setColor(BLUE)
