@@ -51,7 +51,20 @@ const ce = {
     if (thumbMatch) built.setThumbnail(thumbMatch[1].trim());
     if (imageMatch) built.setImage(imageMatch[1].trim());
 
-    if (!titleMatch && !descMatch) built.setDescription(script.slice(0, 2000));
+    // Only use leftover text as description if it isn't just recognised tags
+    if (!titleMatch && !descMatch) {
+      const leftover = script
+        .replace(/\{title:\s*[^}]+\}/gi, '')
+        .replace(/\{desc(?:ription)?:\s*[^}]+\}/gi, '')
+        .replace(/\{color:\s*#?[0-9a-fA-F]{6}\}/gi, '')
+        .replace(/\{footer:\s*[^}]+\}/gi, '')
+        .replace(/\{thumbnail:\s*[^}]+\}/gi, '')
+        .replace(/\{image:\s*[^}]+\}/gi, '')
+        .replace(/\{author:\s*[^}]+\}/gi, '')
+        .replace(/\{field:\s*[^}]+\}/gi, '')
+        .trim();
+      if (leftover) built.setDescription(leftover.slice(0, 2000));
+    }
 
     await message.channel.send({ embeds: [built] });
     await message.delete().catch(() => {});
