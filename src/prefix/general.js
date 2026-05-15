@@ -42,7 +42,7 @@ const HELP_CATS = {
     emoji: '📊', label: 'Levels & Stats', desc: 'XP, ranks, message and voice stats',
     prefix: ',',
     cmds: ['rank','leaderboard','xplb','levels','msgchart','msgrank','msgreset',
-           'servermessages','topchannels','topmessages','usermessages','msgstats'],
+           'servermessages','topchannels','topmessages','usermessages','msgstats','mslb'],
   },
   tickets: {
     emoji: '🎟️', label: 'Tickets', desc: 'Support ticket panel system',
@@ -257,6 +257,7 @@ const CMD_META = {
   prefix:     { description: 'Change or view the server prefix',                params: '[newprefix]',                 example: ',prefix !',                   permission: 'Manage Guild' },
   // Stats
   msgstats:   { description: 'Show message and voice stats card for a user',    params: '[@user]',                     example: ',msgstats @user',             permission: 'None', aliases: ['ms', 'stats'] },
+  mslb:       { description: 'Top message senders leaderboard',                 params: '[1d|7d|30d]',                 example: ',mslb 7d',                    permission: 'None', aliases: ['msleaderboard', 'msglb'] },
   // Giveaways
   gw:         { description: 'Giveaway manager',                                params: '<start|end|reroll|list>',     example: ',gw start 1h 1w Prize name',  permission: 'Manage Guild' },
   // Tickets
@@ -468,6 +469,45 @@ const COMMANDS = [
         )
         .setFooter({ text: 'flux · 1d / 7d / 30d · UTC' })
         .setTimestamp();
+      await message.reply({ embeds: [embed] });
+    },
+  },
+
+  // ── ,mslb (message leaderboard) ───────────────────────────────────────────
+  {
+    name: 'mslb',
+    aliases: ['mslb', 'msleaderboard', 'msglb', 'msgleaderboard'],
+    description: 'Top message senders — `,mslb [1d|7d|30d]`',
+    async execute(message, args) {
+      const period = ['1d', '7d', '30d'].includes(args[0]) ? args[0] : '30d';
+      const rows   = db.getMessageLeaderboard(message.guild.id, period, 10);
+
+      if (!rows.length) {
+        return message.reply({ embeds: [new EmbedBuilder().setColor(BLUE).setDescription('No message data yet.')] });
+      }
+
+      const medals = ['🥇', '🥈', '🥉'];
+      const lines  = await Promise.all(rows.map(async (r, i) => {
+        let name;
+        try {
+          const m = await message.guild.members.fetch(r.user_id);
+          name = m.displayName;
+        } catch {
+          name = `<@${r.user_id}>`;
+        }
+        const badge = medals[i] ?? `\`#${i + 1}\``;
+        return `${badge} **${name}** — ${r.cnt.toLocaleString()} messages`;
+      }));
+
+      const periodLabel = { '1d': 'Last 24 hours', '7d': 'Last 7 days', '30d': 'Last 30 days' }[period];
+
+      const embed = new EmbedBuilder()
+        .setColor(BLUE)
+        .setAuthor({ name: `📊 Message Leaderboard · ${message.guild.name}`, iconURL: message.guild.iconURL() })
+        .setDescription(lines.join('\n'))
+        .setFooter({ text: `Period: ${periodLabel}  ·  flux` })
+        .setTimestamp();
+
       await message.reply({ embeds: [embed] });
     },
   },

@@ -1016,6 +1016,16 @@ function getMessageRank(guildId, userId) {
   return idx === -1 ? null : idx + 1;
 }
 
+function getMessageLeaderboard(guildId, period = '30d', limit = 10) {
+  const periods = { '1d': 86400, '7d': 86400 * 7, '30d': 86400 * 30 };
+  const secs = periods[period] ?? periods['30d'];
+  const since = Math.floor(Date.now() / 1000) - secs;
+  return all(
+    'SELECT user_id, COUNT(*) as cnt FROM message_stats WHERE guild_id=? AND sent_at>=? GROUP BY user_id ORDER BY cnt DESC LIMIT ?',
+    [guildId, since, limit]
+  );
+}
+
 // voice_stats
 function trackVoiceJoin(guildId, userId) {
   return run('INSERT INTO voice_stats (guild_id, user_id, joined_at) VALUES (?, ?, ?)',
@@ -1120,7 +1130,7 @@ module.exports = {
   setPaymentAddress, getPaymentAddress, getPaymentAddresses,
   setPaypal, getPaypal,
   setSellAuth, getSellAuth, updateSellAuth,
-  trackMessage, getMessageStats, getMessageRank, getCachedChannelName,
+  trackMessage, getMessageStats, getMessageRank, getMessageLeaderboard, getCachedChannelName,
   trackVoiceJoin, trackVoiceLeave, getVoiceStats,
   getPrefix, setPrefix,
   setVouch, setVouchExch, getVouch,
