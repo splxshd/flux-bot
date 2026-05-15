@@ -59,43 +59,42 @@ function drawHashIcon(ctx, cx, cy, size) {
   ctx.restore();
 }
 
-// Microphone icon — matches the reference image:
-// - Squarish pill (wider, shorter)
-// - Arc radius ~2× the pill half-width, extends well beyond the body
-// - Thick strokes, short stem, no base bar
+// Microphone icon — pixel-faithful to the reference image:
+// tall narrow pill, wide U-arc (flat horizontal ends from thick stroke),
+// short stem, no base bar.
 function drawMicIcon(ctx, cx, cy, size) {
   ctx.save();
   ctx.fillStyle   = MUTED;
   ctx.strokeStyle = MUTED;
-  ctx.lineCap     = 'round';
+  ctx.lineCap     = 'butt';   // flat ends = the "horizontal ears" in the reference
   ctx.lineJoin    = 'round';
 
-  // ── Pill body ─────────────────────────────────────────────────────────────
-  // Reference: pill is fairly square — width ≈ 0.44×size, height ≈ 0.48×size
-  const br  = size * 0.22;          // pill half-width = corner radius (full pill)
-  const bh  = size * 0.48;          // pill height
-  const top = cy - size * 0.44;     // top of pill
+  // ── Tall narrow pill ──────────────────────────────────────────────────────
+  const br  = size * 0.17;          // half-width (narrow pill)
+  const bh  = size * 0.50;          // tall
+  const top = cy - size * 0.48;
 
   ctx.beginPath();
-  ctx.arc(cx, top + br,       br, Math.PI, 0);        // top semicircle
+  ctx.arc(cx, top + br,      br, Math.PI, 0);
   ctx.lineTo(cx + br, top + bh - br);
-  ctx.arc(cx, top + bh - br,  br, 0,      Math.PI);   // bottom semicircle
+  ctx.arc(cx, top + bh - br, br, 0,      Math.PI);
   ctx.closePath();
   ctx.fill();
 
-  // ── U-arc stand — extends ~2× beyond pill half-width ─────────────────────
-  const arcCY  = top + bh - br;     // arc pivot = bottom of pill
-  const arcR   = size * 0.44;       // much wider than pill (ref: ~2× half-width)
-  ctx.lineWidth = size * 0.15;
+  // ── Wide U-arc (2.5× the pill half-width on each side) ───────────────────
+  const arcCY  = top + bh - br;     // pivot at pill bottom
+  const arcR   = size * 0.42;       // 2.47× pill half-width → very wide arc
+  ctx.lineWidth = size * 0.16;
   ctx.beginPath();
   ctx.arc(cx, arcCY, arcR, Math.PI, 0, false);
   ctx.stroke();
 
-  // ── Short stem ────────────────────────────────────────────────────────────
+  // ── Stem ──────────────────────────────────────────────────────────────────
+  ctx.lineCap = 'butt';
   const stemY = arcCY + arcR;
   ctx.beginPath();
   ctx.moveTo(cx, stemY);
-  ctx.lineTo(cx, stemY + size * 0.12);
+  ctx.lineTo(cx, stemY + size * 0.13);
   ctx.stroke();
 
   ctx.restore();
