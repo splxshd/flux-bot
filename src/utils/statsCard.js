@@ -1,28 +1,78 @@
 'use strict';
 
 const { createCanvas, loadImage, GlobalFonts } = require('@napi-rs/canvas');
-const fs   = require('fs');
-const path = require('path');
+const fs    = require('fs');
+const path  = require('path');
+const https = require('https');
 
 // ── Font loading ──────────────────────────────────────────────────────────────
-// Primary: fonts copied to /app/fonts/ during nixpacks build phase
-// Fallback: scan common paths
-(function loadFont() {
-  const regular = '/app/fonts/DejaVuSans.ttf';
-  const bold    = '/app/fonts/DejaVuSans-Bold.ttf';
+// Strategy 1: build-time copy at /app/fonts/ (nixpacks)
+// Strategy 2: download from jsDelivr at runtime and cache to /app/fonts/
 
-  if (fs.existsSync(regular)) {
-    GlobalFonts.registerFromPath(regular, 'DejaVu Sans');
-    console.log('[statsCard] loaded regular font from', regular);
-  } else {
-    console.warn('[statsCard] /app/fonts/DejaVuSans.ttf not found — text may be invisible');
-  }
+const FONT_DIR   = '/app/fonts';
+const REGULAR    = path.join(FONT_DIR, 'DejaVuSans.ttf');
+const BOLD       = path.join(FONT_DIR, 'DejaVuSans-Bold.ttf');
 
-  if (fs.existsSync(bold)) {
-    GlobalFonts.registerFromPath(bold, 'DejaVu Sans');
-    console.log('[statsCard] loaded bold font from', bold);
+// CDN URLs for DejaVu Sans (jsDelivr mirrors the official GitHub repo)
+const CDN_REGULAR = 'https://cdn.jsdelivr.net/gh/dejavu-fonts/dejavu-fonts@2.37/fonts/DejaVuSans.ttf';
+const CDN_BOLD    = 'https://cdn.jsdelivr.net/gh/dejavu-fonts/dejavu-fonts@2.37/fonts/DejaVuSans-Bold.ttf';
+
+let fontReady = false; // set to true once at least regular is registered
+
+function httpsGet(url) {
+  return new Promise((resolve, reject) => {
+    const chunks = [];
+    https.get(url, { headers: { 'User-Agent': 'nightsbot/1.0' } }, (res) => {
+      if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
+        // follow one redirect
+        return httpsGet(res.headers.location).then(resolve).catch(reject);
+      }
+      if (res.statusCode !== 200) return reject(new Error(`HTTP ${res.statusCode}`));
+      res.on('data', c => chunks.push(c));
+      res.on('end',  () => resolve(Buffer.concat(chunks)));
+      res.on('error', reject);
+    }).on('error', reject);
+  });
+}
+
+async function downloadFont(url, dest) {
+  console.log(`[statsCard] downloading font from ${url} …`);
+  const buf = await httpsGet(url);
+  fs.mkdirSync(FONT_DIR, { recursive: true });
+  fs.writeFileSync(dest, buf);
+  return buf;
+}
+
+async function ensureFont() {
+  if (fontReady) return;
+
+  try {
+    // ── Regular ──────────────────────────────────────────────────────────────
+    let regularBuf;
+    if (fs.existsSync(REGULAR)) {
+      regularBuf = fs.readFileSync(REGULAR);
+      console.log('[statsCard] loaded regular font from', REGULAR);
+    } else {
+      regularBuf = await downloadFont(CDN_REGULAR, REGULAR);
+      console.log('[statsCard] downloaded & cached regular font');
+    }
+    GlobalFonts.register(regularBuf, 'DejaVu Sans');
+
+    // ── Bold ─────────────────────────────────────────────────────────────────
+    let boldBuf;
+    if (fs.existsSync(BOLD)) {
+      boldBuf = fs.readFileSync(BOLD);
+    } else {
+      boldBuf = await downloadFont(CDN_BOLD, BOLD);
+    }
+    GlobalFonts.register(boldBuf, 'DejaVu Sans');
+
+    fontReady = true;
+    console.log('[statsCard] fonts ready');
+  } catch (e) {
+    console.warn('[statsCard] font load failed — text may be invisible:', e.message);
   }
-})();
+}
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 const W       = 900, H = 520;
@@ -48,6 +98,8 @@ function roundRect(ctx, x, y, w, h, r) {
 }
 
 async function generateStatsCard({ username, avatarUrl, rank, msgStats, voiceStats, topChannels }) {
+  await ensureFont();
+
   const canvas = createCanvas(W, H);
   const ctx    = canvas.getContext('2d');
 
