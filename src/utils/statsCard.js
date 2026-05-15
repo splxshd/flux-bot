@@ -152,8 +152,8 @@ async function generateStatsCard({ username, avatarUrl, rank, msgStats, voiceSta
   const colW   = (W - PAD * 2 - GAP) / 2;
   const col1X  = PAD;
   const col2X  = PAD + colW + GAP;
-  const ICON_S = 18; // icon size
-  const ICON_Y = cardY + 26; // icon vertical centre
+  const ICON_S = 22; // icon size — larger so mic arc is visible
+  const ICON_Y = cardY + 27; // icon vertical centre
 
   function drawCard(x, title, rows, iconType) {
     // card bg
@@ -169,9 +169,9 @@ async function generateStatsCard({ username, avatarUrl, rank, msgStats, voiceSta
 
     // icon top-right
     if (iconType === 'hash') {
-      drawHashIcon(ctx, x + colW - 18, ICON_Y, ICON_S);
+      drawHashIcon(ctx, x + colW - 22, ICON_Y, ICON_S);
     } else if (iconType === 'mic') {
-      drawMicIcon(ctx,  x + colW - 18, ICON_Y, ICON_S);
+      drawMicIcon(ctx,  x + colW - 22, ICON_Y, ICON_S);
     }
 
     // rows
@@ -231,7 +231,7 @@ async function generateStatsCard({ username, avatarUrl, rank, msgStats, voiceSta
   ctx.textBaseline = 'middle';
   ctx.fillText('Top Channels', tcX + 16, tcIconY);
 
-  drawHashIcon(ctx, tcX + tcW - 18, tcIconY, ICON_S);
+  drawHashIcon(ctx, tcX + tcW - 22, tcIconY, ICON_S);
 
   const medals = ['#1', '#2', '#3'];
   topChannels.forEach((ch, i) => {
