@@ -37,9 +37,10 @@ const stickyCounter = new Map(); // channelId -> count
 const STICKY_INTERVAL = 10;
 
 module.exports = (client) => {
+  console.log('[messageCreate] handler registered');
   client.on('messageCreate', async (message) => {
     try { await handleMessage(client, message); }
-    catch (e) { console.error('[messageCreate]', e); }
+    catch (e) { console.error('[messageCreate fatal]', e); }
   });
 };
 
