@@ -1,6 +1,15 @@
 'use strict';
 
-const { createCanvas, loadImage } = require('@napi-rs/canvas');
+const { createCanvas, loadImage, GlobalFonts } = require('@napi-rs/canvas');
+
+// Load system fonts (DejaVu available via nixpacks on Railway)
+try {
+  GlobalFonts.loadSystemFonts();
+  // Also try common Linux font paths
+  for (const dir of ['/usr/share/fonts', '/usr/share/fonts/truetype/dejavu', '/nix/var/nix/profiles/default/share/fonts']) {
+    try { GlobalFonts.loadFontsFromDir(dir); } catch {}
+  }
+} catch {}
 
 const W = 900, H = 520;
 const BG       = '#1a1a1a';
@@ -51,12 +60,12 @@ async function generateStatsCard({ username, avatarUrl, rank, msgStats, voiceSta
 
   // Username
   ctx.fillStyle = WHITE;
-  ctx.font = 'bold 28px sans-serif';
+  ctx.font = 'bold 28px DejaVu Sans, sans-serif';
   ctx.fillText(username, avatarX + avatarSize + 14, avatarY + 22);
 
   // Subtitle
   ctx.fillStyle = MUTED;
-  ctx.font = '15px sans-serif';
+  ctx.font = '15px DejaVu Sans, sans-serif';
   const rankText = rank ? `Rank #${rank} this month` : 'Unranked this month';
   ctx.fillText(`${rankText}  ·  message stats`, avatarX + avatarSize + 14, avatarY + 44);
 
@@ -72,12 +81,12 @@ async function generateStatsCard({ username, avatarUrl, rank, msgStats, voiceSta
 
     // Card title
     ctx.fillStyle = WHITE;
-    ctx.font = 'bold 16px sans-serif';
+    ctx.font = 'bold 16px DejaVu Sans, sans-serif';
     ctx.fillText(title, x + 16, cardY + 26);
 
     // Icon (text emoji substitute)
     ctx.fillStyle = MUTED;
-    ctx.font = '16px sans-serif';
+    ctx.font = '16px DejaVu Sans, sans-serif';
     ctx.fillText(icon, x + colW - 32, cardY + 26);
 
     // Rows
@@ -88,17 +97,17 @@ async function generateStatsCard({ username, avatarUrl, rank, msgStats, voiceSta
       ctx.fill();
 
       ctx.fillStyle = MUTED;
-      ctx.font = 'bold 14px sans-serif';
+      ctx.font = 'bold 14px DejaVu Sans, sans-serif';
       ctx.fillText(label, x + 22, ry + 21);
 
       // Value (bold) + unit (muted)
       const valStr = String(value);
-      ctx.font = 'bold 14px sans-serif';
+      ctx.font = 'bold 14px DejaVu Sans, sans-serif';
       const valW = ctx.measureText(valStr).width;
       ctx.fillStyle = WHITE;
       ctx.fillText(valStr, x + colW - 20 - ctx.measureText(unit).width - valW - 6, ry + 21);
       ctx.fillStyle = MUTED;
-      ctx.font = '14px sans-serif';
+      ctx.font = '14px DejaVu Sans, sans-serif';
       ctx.fillText(unit, x + colW - 20 - ctx.measureText(unit).width, ry + 21);
     });
   }
@@ -124,11 +133,11 @@ async function generateStatsCard({ username, avatarUrl, rank, msgStats, voiceSta
   ctx.fill();
 
   ctx.fillStyle = WHITE;
-  ctx.font = 'bold 16px sans-serif';
+  ctx.font = 'bold 16px DejaVu Sans, sans-serif';
   ctx.fillText('Top Channels', 40, tcY + 26);
 
   ctx.fillStyle = MUTED;
-  ctx.font = '16px sans-serif';
+  ctx.font = '16px DejaVu Sans, sans-serif';
   ctx.fillText('#', W - 48, tcY + 26);
 
   const medals = ['#1', '#2', '#3'];
@@ -139,15 +148,15 @@ async function generateStatsCard({ username, avatarUrl, rank, msgStats, voiceSta
     ctx.fill();
 
     ctx.fillStyle = MUTED;
-    ctx.font = 'bold 13px sans-serif';
+    ctx.font = 'bold 13px DejaVu Sans, sans-serif';
     ctx.fillText(medals[i] || `#${i + 1}`, 48, ry + 21);
 
     ctx.fillStyle = WHITE;
-    ctx.font = 'bold 14px sans-serif';
+    ctx.font = 'bold 14px DejaVu Sans, sans-serif';
     ctx.fillText(`#${ch.name}`, 90, ry + 21);
 
     ctx.fillStyle = WHITE;
-    ctx.font = 'bold 14px sans-serif';
+    ctx.font = 'bold 14px DejaVu Sans, sans-serif';
     const cntStr = String(ch.count);
     ctx.fillText(cntStr, W - 68 - ctx.measureText(cntStr).width, ry + 21);
   });
@@ -155,7 +164,7 @@ async function generateStatsCard({ username, avatarUrl, rank, msgStats, voiceSta
   // ── Footer ────────────────────────────────────────────────────────────────
   const footerY = tcY + tcH + 14;
   ctx.fillStyle = MUTED;
-  ctx.font = '13px sans-serif';
+  ctx.font = '13px DejaVu Sans, sans-serif';
   ctx.fillText('Period:  1d / 7d / 30d  ·  UTC', 34, footerY);
 
   return canvas.toBuffer('image/png');

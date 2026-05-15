@@ -6,8 +6,8 @@ const {
   ButtonBuilder, ButtonStyle,
 } = require('discord.js');
 
-const SUPPORT_URL = 'https://discord.gg/yourserver';
-const WEBSITE_URL = 'https://fluxbot.xyz';
+const SUPPORT_URL = 'https://discord.gg/wsHdqsysF7';
+const WEBSITE_URL = 'https://flux-website-production.up.railway.app';
 
 // ─── Command registry ─────────────────────────────────────────────────────────
 // Each entry: { name, description, aliases, params, permission, usage, example, module }

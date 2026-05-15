@@ -5,12 +5,13 @@ const {
   ActionRowBuilder, StringSelectMenuBuilder, StringSelectMenuOptionBuilder,
 } = require('discord.js');
 const db = require('../database');
+const { generateStatsCard } = require('../utils/statsCard');
 
 const BLUE  = '#5865F2';
 const GREEN = '#57F287';
 
-const SUPPORT_URL = 'https://discord.gg/yourserver';
-const WEBSITE_URL = 'https://yourwebsite.com';
+const SUPPORT_URL = 'https://discord.gg/wsHdqsysF7';
+const WEBSITE_URL = 'https://flux-website-production.up.railway.app';
 
 // ── Help categories ────────────────────────────────────────────────────────────
 const HELP_CATS = {
@@ -264,11 +265,23 @@ const COMMANDS = [
         })
       );
 
+      // Try canvas image card, fall back to embed if fonts unavailable
+      try {
+        const avatarUrl = target.displayAvatarURL({ extension: 'png', size: 128 });
+        const buf = await generateStatsCard({
+          username: member?.displayName || target.username,
+          avatarUrl, rank, msgStats, voiceStats,
+          topChannels: topChannels.length ? topChannels : [{ name: 'none', count: 0 }],
+        });
+        const attachment = new AttachmentBuilder(buf, { name: 'stats.png' });
+        return await message.reply({ files: [attachment] });
+      } catch {}
+
+      // Embed fallback
       const rankText = rank ? `Rank #${rank}` : 'Unranked';
       const topChStr = topChannels.length
         ? topChannels.map((c, i) => `\`#${i + 1}\` #${c.name} — **${c.count}**`).join('\n')
         : 'No data';
-
       const embed = new EmbedBuilder()
         .setColor(BLUE)
         .setAuthor({ name: `${member?.displayName || target.username} — Message Stats`, iconURL: target.displayAvatarURL() })
