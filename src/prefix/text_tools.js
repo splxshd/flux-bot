@@ -101,9 +101,14 @@ const sticky = {
     const sub = args[0]?.toLowerCase();
 
     if (sub === 'set') {
-      const text = args.slice(1).join(' ');
+      // Read raw content to preserve newlines and formatting
+      const prefix = db.getPrefix(message.guild.id);
+      const text = message.content.slice(prefix.length).trim().replace(/^sticky\s+set\s*/i, '');
       if (!text) return message.reply('Usage: `,sticky set <message>`');
       db.setSticky?.(message.guild.id, message.channel.id, text);
+      // Post the sticky immediately
+      const sent = await message.channel.send(text).catch(() => null);
+      if (sent) db.updateStickyLastMessage(message.guild.id, message.channel.id, sent.id);
       return message.reply({ embeds: [new EmbedBuilder().setColor(GREEN).setDescription(`📌 Sticky message set in ${message.channel}.`)] });
     }
 

@@ -171,7 +171,36 @@ module.exports = (client) => {
         const lastMsg = await message.channel.messages.fetch(sticky.last_message_id).catch(() => null);
         if (lastMsg) await lastMsg.delete().catch(() => {});
       }
-      const sent = await message.channel.send(sticky.content).catch(() => null);
+
+      // Support embed-style sticky (same tag syntax as ,ce)
+      const sc = sticky.content;
+      const titleMatch  = sc.match(/\{title:\s*([^}]+)\}/i);
+      const descMatch   = sc.match(/\{desc(?:ription)?:\s*([^}]+)\}/i);
+      const colorMatch  = sc.match(/\{color:\s*#?([0-9a-fA-F]{6})\}/i);
+      const footerMatch = sc.match(/\{footer:\s*([^}]+)\}/i);
+      const thumbMatch  = sc.match(/\{thumbnail:\s*([^}]+)\}/i);
+      const imageMatch  = sc.match(/\{image:\s*([^}]+)\}/i);
+      const authorMatch = sc.match(/\{author:\s*([^}]+)\}/i);
+
+      let sent = null;
+      if (titleMatch || descMatch || colorMatch || footerMatch || thumbMatch || imageMatch || authorMatch) {
+        const emb = new EmbedBuilder().setColor(colorMatch ? parseInt(colorMatch[1], 16) : 0x5865F2);
+        if (titleMatch)  emb.setTitle(titleMatch[1].trim());
+        if (descMatch)   emb.setDescription(descMatch[1].trim());
+        if (footerMatch) emb.setFooter({ text: footerMatch[1].trim() });
+        if (thumbMatch)  emb.setThumbnail(thumbMatch[1].trim());
+        if (imageMatch)  emb.setImage(imageMatch[1].trim());
+        if (authorMatch) emb.setAuthor({ name: authorMatch[1].trim() });
+        // If no title/desc, use leftover plain text
+        if (!titleMatch && !descMatch) {
+          const leftover = sc.replace(/\{[^}]+\}/g, '').trim();
+          if (leftover) emb.setDescription(leftover.slice(0, 2000));
+        }
+        sent = await message.channel.send({ embeds: [emb] }).catch(() => null);
+      } else {
+        sent = await message.channel.send(sc).catch(() => null);
+      }
+
       if (sent) db.updateStickyLastMessage(guild.id, message.channel.id, sent.id);
     }
   });
