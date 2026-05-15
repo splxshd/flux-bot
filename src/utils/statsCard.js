@@ -59,8 +59,10 @@ function drawHashIcon(ctx, cx, cy, size) {
   ctx.restore();
 }
 
-// Draws a microphone silhouette matching the reference icon exactly:
-// wide pill body, thick wide U-arc, short stem — no base bar
+// Microphone icon — matches the reference image:
+// - Squarish pill (wider, shorter)
+// - Arc radius ~2× the pill half-width, extends well beyond the body
+// - Thick strokes, short stem, no base bar
 function drawMicIcon(ctx, cx, cy, size) {
   ctx.save();
   ctx.fillStyle   = MUTED;
@@ -69,32 +71,31 @@ function drawMicIcon(ctx, cx, cy, size) {
   ctx.lineJoin    = 'round';
 
   // ── Pill body ─────────────────────────────────────────────────────────────
-  const bw  = size * 0.46;      // wider pill like the reference
-  const bh  = size * 0.56;
-  const br  = bw / 2;
-  const top = cy - size * 0.48;
+  // Reference: pill is fairly square — width ≈ 0.44×size, height ≈ 0.48×size
+  const br  = size * 0.22;          // pill half-width = corner radius (full pill)
+  const bh  = size * 0.48;          // pill height
+  const top = cy - size * 0.44;     // top of pill
 
   ctx.beginPath();
-  ctx.arc(cx,      top + br,      br, Math.PI, 0);
+  ctx.arc(cx, top + br,       br, Math.PI, 0);        // top semicircle
   ctx.lineTo(cx + br, top + bh - br);
-  ctx.arc(cx,      top + bh - br, br, 0,      Math.PI);
+  ctx.arc(cx, top + bh - br,  br, 0,      Math.PI);   // bottom semicircle
   ctx.closePath();
   ctx.fill();
 
-  // ── Wide U-arc stand (extends noticeably beyond pill width) ───────────────
-  const arcR  = size * 0.34;   // wider than the pill
-  const arcCY = top + bh - br; // pivot at base of pill
-  ctx.lineWidth = size * 0.13;
+  // ── U-arc stand — extends ~2× beyond pill half-width ─────────────────────
+  const arcCY  = top + bh - br;     // arc pivot = bottom of pill
+  const arcR   = size * 0.44;       // much wider than pill (ref: ~2× half-width)
+  ctx.lineWidth = size * 0.15;
   ctx.beginPath();
   ctx.arc(cx, arcCY, arcR, Math.PI, 0, false);
   ctx.stroke();
 
-  // ── Short stem ───────────────────────────────────────────────────────────
-  const stemY1 = arcCY + arcR;
-  ctx.lineWidth = size * 0.13;
+  // ── Short stem ────────────────────────────────────────────────────────────
+  const stemY = arcCY + arcR;
   ctx.beginPath();
-  ctx.moveTo(cx, stemY1);
-  ctx.lineTo(cx, stemY1 + size * 0.09);
+  ctx.moveTo(cx, stemY);
+  ctx.lineTo(cx, stemY + size * 0.12);
   ctx.stroke();
 
   ctx.restore();
@@ -152,7 +153,7 @@ async function generateStatsCard({ username, avatarUrl, rank, msgStats, voiceSta
   const colW   = (W - PAD * 2 - GAP) / 2;
   const col1X  = PAD;
   const col2X  = PAD + colW + GAP;
-  const ICON_S = 22; // icon size — larger so mic arc is visible
+  const ICON_S = 26; // icon size
   const ICON_Y = cardY + 27; // icon vertical centre
 
   function drawCard(x, title, rows, iconType) {
@@ -169,9 +170,9 @@ async function generateStatsCard({ username, avatarUrl, rank, msgStats, voiceSta
 
     // icon top-right
     if (iconType === 'hash') {
-      drawHashIcon(ctx, x + colW - 22, ICON_Y, ICON_S);
+      drawHashIcon(ctx, x + colW - 24, ICON_Y, ICON_S);
     } else if (iconType === 'mic') {
-      drawMicIcon(ctx,  x + colW - 22, ICON_Y, ICON_S);
+      drawMicIcon(ctx,  x + colW - 28, ICON_Y, ICON_S);
     }
 
     // rows
@@ -231,7 +232,7 @@ async function generateStatsCard({ username, avatarUrl, rank, msgStats, voiceSta
   ctx.textBaseline = 'middle';
   ctx.fillText('Top Channels', tcX + 16, tcIconY);
 
-  drawHashIcon(ctx, tcX + tcW - 22, tcIconY, ICON_S);
+  drawHashIcon(ctx, tcX + tcW - 24, tcIconY, ICON_S);
 
   const medals = ['#1', '#2', '#3'];
   topChannels.forEach((ch, i) => {
