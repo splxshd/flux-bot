@@ -38,6 +38,12 @@ const STICKY_INTERVAL = 10;
 
 module.exports = (client) => {
   client.on('messageCreate', async (message) => {
+    try { await handleMessage(client, message); }
+    catch (e) { console.error('[messageCreate]', e); }
+  });
+};
+
+async function handleMessage(client, message) {
     if (!message.guild || message.author.bot) return;
 
     db.trackMessage(message.guild.id, message.author.id, message.channel.id, message.channel.name);
@@ -115,15 +121,16 @@ module.exports = (client) => {
       const cmd = message.client.prefixCommands?.get(commandName);
       if (cmd) {
         // ── Permission gate ───────────────────────────────────────────────
-        const { CMD_META, buildCommandEmbed } = getGeneral();
-        const meta     = CMD_META[cmd.name];
-        const permName = meta?.permission;
-        const flag     = permName && PERM_FLAGS[permName];
-
-        if (flag && !message.member.permissions.has(flag)) {
-          const embed = buildCommandEmbed(cmd, prefix, message.client);
-          return message.reply({ embeds: [embed] });
-        }
+        try {
+          const { CMD_META, buildCommandEmbed } = getGeneral();
+          const meta     = CMD_META[cmd.name];
+          const permName = meta?.permission;
+          const flag     = permName && PERM_FLAGS[permName];
+          if (flag && !message.member.permissions.has(flag)) {
+            const embed = buildCommandEmbed(cmd, prefix, message.client);
+            return message.reply({ embeds: [embed] });
+          }
+        } catch (e) { console.error('[PermGate]', e); }
 
         // ── Execute ───────────────────────────────────────────────────────
         await cmd.execute(message, args, message.client).catch(e => {
@@ -184,5 +191,4 @@ module.exports = (client) => {
         if (sent) db.updateStickyLastMessage(guild.id, message.channel.id, sent.id);
       }
     }
-  });
-};
+}
