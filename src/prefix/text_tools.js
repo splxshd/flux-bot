@@ -8,6 +8,33 @@ const GREEN = '#57F287';
 const RED   = '#ED4245';
 const YELLOW = '#FEE75C';
 
+// Shared helper: parse embed tags from sticky content and send appropriately
+async function sendStickyContent(channel, sc) {
+  const titleMatch  = sc.match(/\{title:\s*([^}]+)\}/i);
+  const descMatch   = sc.match(/\{desc(?:ription)?:\s*([\s\S]+?)\}(?=\s*\{|$)/i);
+  const colorMatch  = sc.match(/\{color:\s*#?([0-9a-fA-F]{6})\}/i);
+  const footerMatch = sc.match(/\{footer:\s*([^}]+)\}/i);
+  const thumbMatch  = sc.match(/\{thumbnail:\s*([^}]+)\}/i);
+  const imageMatch  = sc.match(/\{image:\s*([^}]+)\}/i);
+  const authorMatch = sc.match(/\{author:\s*([^}]+)\}/i);
+
+  if (titleMatch || descMatch || colorMatch || footerMatch || thumbMatch || imageMatch || authorMatch) {
+    const emb = new EmbedBuilder().setColor(colorMatch ? parseInt(colorMatch[1], 16) : 0x5865F2);
+    if (titleMatch)  emb.setTitle(titleMatch[1].trim());
+    if (descMatch)   emb.setDescription(descMatch[1].trim());
+    if (footerMatch) emb.setFooter({ text: footerMatch[1].trim() });
+    if (thumbMatch)  emb.setThumbnail(thumbMatch[1].trim());
+    if (imageMatch)  emb.setImage(imageMatch[1].trim());
+    if (authorMatch) emb.setAuthor({ name: authorMatch[1].trim() });
+    if (!titleMatch && !descMatch) {
+      const leftover = sc.replace(/\{[^}]+\}/g, '').trim();
+      if (leftover) emb.setDescription(leftover.slice(0, 2000));
+    }
+    return channel.send({ embeds: [emb] }).catch(() => null);
+  }
+  return channel.send(sc).catch(() => null);
+}
+
 const SMALL_CAPS = { a:'ᴀ',b:'ʙ',c:'ᴄ',d:'ᴅ',e:'ᴇ',f:'ꜰ',g:'ɢ',h:'ʜ',i:'ɪ',j:'ᴊ',k:'ᴋ',l:'ʟ',m:'ᴍ',n:'ɴ',o:'ᴏ',p:'ᴘ',q:'ǫ',r:'ʀ',s:'ꜱ',t:'ᴛ',u:'ᴜ',v:'ᴠ',w:'ᴡ',x:'x',y:'ʏ',z:'ᴢ' };
 
 // ,mock
@@ -106,8 +133,8 @@ const sticky = {
       const text = message.content.slice(prefix.length).trim().replace(/^sticky\s+set\s*/i, '');
       if (!text) return message.reply('Usage: `,sticky set <message>`');
       db.setSticky?.(message.guild.id, message.channel.id, text);
-      // Post the sticky immediately
-      const sent = await message.channel.send(text).catch(() => null);
+      // Post the sticky immediately, with embed support
+      const sent = await sendStickyContent(message.channel, text);
       if (sent) db.updateStickyLastMessage(message.guild.id, message.channel.id, sent.id);
       return message.reply({ embeds: [new EmbedBuilder().setColor(GREEN).setDescription(`📌 Sticky message set in ${message.channel}.`)] });
     }
@@ -181,3 +208,4 @@ const hoist = {
 };
 
 module.exports = [mock, reverse, smallcaps, spoiler, encode, decode, sticky, embed, hoist];
+module.exports.sendStickyContent = sendStickyContent;
