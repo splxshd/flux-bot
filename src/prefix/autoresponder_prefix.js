@@ -17,11 +17,14 @@ const ar = {
     const sub = args[0]?.toLowerCase();
 
     if (sub === 'add') {
-      const rest = args.slice(1).join(' ');
-      const parts = rest.split('|');
-      if (parts.length < 2) return message.reply('Usage: `,ar add <trigger> | <response>` — separate trigger and response with `|`');
-      const trigger = parts[0].trim();
-      const response = parts.slice(1).join('|').trim();
+      // Use raw message content to preserve newlines — args.join(' ') kills them
+      const prefix   = db.getPrefix(message.guild.id);
+      const rawFull  = message.content.slice(prefix.length).trim(); // e.g. "ar add trigger | response"
+      const rawAfter = rawFull.replace(/^ar\s+add\s+/i, '');        // strip "ar add "
+      const pipeIdx  = rawAfter.indexOf('|');
+      if (pipeIdx === -1) return message.reply('Usage: `,ar add <trigger> | <response>` — separate trigger and response with `|`');
+      const trigger  = rawAfter.slice(0, pipeIdx).trim();
+      const response = rawAfter.slice(pipeIdx + 1).trim();
       db.addAutoresponder(message.guild.id, trigger, response);
       return message.reply({ embeds: [new EmbedBuilder().setColor(GREEN)
         .setTitle('✅ Auto Responder Added')
