@@ -98,7 +98,6 @@ const warn = {
     const embed = new EmbedBuilder()
       .setColor(C.yellow)
       .setAuthor({ name: `${member.user.username} warned`, iconURL: member.user.displayAvatarURL() })
-      .setThumbnail(member.user.displayAvatarURL())
       .addFields(
         { name: '👤 User',       value: `${member}`, inline: true },
         { name: '👮 Moderator',  value: `${message.author}`, inline: true },
@@ -238,7 +237,6 @@ const kick = {
     const embed = new EmbedBuilder()
       .setColor(C.orange)
       .setAuthor({ name: `${member.user.username} kicked`, iconURL: member.user.displayAvatarURL() })
-      .setThumbnail(member.user.displayAvatarURL())
       .addFields(
         { name: '👤 User',      value: `${member.user}`, inline: true },
         { name: '👮 Moderator', value: `${message.author}`, inline: true },
@@ -282,7 +280,6 @@ const ban = {
     const embed = new EmbedBuilder()
       .setColor(C.red)
       .setAuthor({ name: `${target.username} banned`, iconURL: target.displayAvatarURL() })
-      .setThumbnail(target.displayAvatarURL())
       .addFields(
         { name: '👤 User',      value: `${target}`, inline: true },
         { name: '👮 Moderator', value: `${message.author}`, inline: true },
@@ -317,7 +314,6 @@ const unban = {
     const embed = new EmbedBuilder()
       .setColor(C.green)
       .setAuthor({ name: `${ban_.user.username} unbanned`, iconURL: ban_.user.displayAvatarURL() })
-      .setThumbnail(ban_.user.displayAvatarURL())
       .addFields(
         { name: '👤 User',      value: `${ban_.user}`, inline: true },
         { name: '👮 Moderator', value: `${message.author}`, inline: true },
@@ -367,7 +363,6 @@ const mute = {
     const embed = new EmbedBuilder()
       .setColor(C.yellow)
       .setAuthor({ name: `${member.user.username} muted`, iconURL: member.user.displayAvatarURL() })
-      .setThumbnail(member.user.displayAvatarURL())
       .addFields(
         { name: '👤 User',       value: `${member}`, inline: true },
         { name: '👮 Moderator',  value: `${message.author}`, inline: true },
