@@ -210,7 +210,7 @@ const withdrawCmd = {
 // ── ,pay / ,give (to another user) ───────────────────────────────────────────
 const pay = {
   name: 'pay',
-  aliases: ['transfer', 'send', 'donate'],
+  aliases: ['transfer', 'send'],
   async execute(message, args) {
     const target = message.mentions.users.first();
     if (!target || target.bot || target.id === message.author.id)
@@ -229,6 +229,37 @@ const pay = {
     await message.reply({ embeds: [new EmbedBuilder().setColor(GREEN)
       .setTitle('💸 Payment Sent')
       .setDescription(`Sent **${fmt(amt)} ${s.currency_emoji}** to **${target.username}**.`)
+      .setTimestamp()] });
+  },
+};
+
+// ── ,donate ───────────────────────────────────────────────────────────────────
+const donate = {
+  name: 'donate',
+  aliases: ['gift'],
+  async execute(message, args) {
+    const target = message.mentions.users.first();
+    if (!target || target.bot || target.id === message.author.id)
+      return message.reply({ embeds: [new EmbedBuilder().setColor(RED).setDescription('❌ Usage: `,donate @user <amount>`')] });
+
+    const guildId = message.guild.id;
+    const eco     = db.getEco(guildId, message.author.id);
+    const s       = db.getEcoSettings(guildId);
+    const amt     = parseBet(args[1] ?? args[0], eco.wallet);
+
+    if (!amt || amt <= 0)
+      return message.reply({ embeds: [new EmbedBuilder().setColor(RED).setDescription('❌ Usage: `,donate @user <amount>`')] });
+    if (amt > eco.wallet)
+      return message.reply({ embeds: [new EmbedBuilder().setColor(RED).setDescription(`❌ You only have **${fmt(eco.wallet)} ${s.currency_emoji}** in your wallet.`)] });
+
+    db.transfer(guildId, message.author.id, target.id, amt);
+    const after = db.getEco(guildId, message.author.id);
+
+    await message.reply({ embeds: [new EmbedBuilder()
+      .setColor(GREEN)
+      .setTitle(`${s.currency_emoji} Donation`)
+      .setDescription(`**${message.author.username}** donated **${fmt(amt)} ${s.currency_emoji}** to **${target.username}**! 🎁`)
+      .addFields({ name: 'Your remaining balance', value: `${fmt(after.wallet)} ${s.currency_emoji}`, inline: true })
       .setTimestamp()] });
   },
 };
@@ -446,4 +477,4 @@ const ecoset = {
   },
 };
 
-module.exports = [balance, daily, work, depositCmd, withdrawCmd, pay, rob, richlist, give, take, setbal, reseteco, ecoset];
+module.exports = [balance, daily, work, depositCmd, withdrawCmd, pay, donate, rob, richlist, give, take, setbal, reseteco, ecoset];
