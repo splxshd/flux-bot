@@ -413,6 +413,33 @@ db.run(`CREATE TABLE IF NOT EXISTS welcome_settings (
   thumbnail INTEGER DEFAULT 1
 )`);
 
+db.run(`CREATE TABLE IF NOT EXISTS autorole (
+  guild_id TEXT NOT NULL,
+  role_id TEXT NOT NULL,
+  PRIMARY KEY (guild_id, role_id)
+)`);
+
+db.run(`CREATE TABLE IF NOT EXISTS economy (
+  guild_id TEXT NOT NULL,
+  user_id TEXT NOT NULL,
+  wallet INTEGER DEFAULT 0,
+  bank INTEGER DEFAULT 0,
+  total_earned INTEGER DEFAULT 0,
+  daily_at INTEGER DEFAULT 0,
+  work_at INTEGER DEFAULT 0,
+  rob_at INTEGER DEFAULT 0,
+  PRIMARY KEY (guild_id, user_id)
+)`);
+
+db.run(`CREATE TABLE IF NOT EXISTS economy_settings (
+  guild_id TEXT PRIMARY KEY,
+  currency_name TEXT DEFAULT 'coins',
+  currency_emoji TEXT DEFAULT '🪙',
+  daily_amount INTEGER DEFAULT 500,
+  work_min INTEGER DEFAULT 150,
+  work_max INTEGER DEFAULT 450
+)`);
+
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 function get(sql, params = []) {
@@ -1250,6 +1277,83 @@ function upsertLevelSettings(guildId, patch) {
        ON CONFLICT(guild_id) DO UPDATE SET ${cols}`, vals);
 }
 
+// ─── Economy ──────────────────────────────────────────────────────────────────
+function ensureEco(guildId, userId) {
+  const row = db.get('SELECT 1 FROM economy WHERE guild_id=? AND user_id=?', [guildId, userId]);
+  if (!row) db.run('INSERT INTO economy (guild_id, user_id) VALUES (?, ?)', [guildId, userId]);
+}
+function getEco(guildId, userId) {
+  ensureEco(guildId, userId);
+  return db.get('SELECT * FROM economy WHERE guild_id=? AND user_id=?', [guildId, userId]);
+}
+function addWallet(guildId, userId, amount) {
+  ensureEco(guildId, userId);
+  db.run('UPDATE economy SET wallet=MAX(0,wallet+?), total_earned=total_earned+MAX(0,?) WHERE guild_id=? AND user_id=?',
+    [amount, amount, guildId, userId]);
+}
+function setWallet(guildId, userId, amount) {
+  ensureEco(guildId, userId);
+  db.run('UPDATE economy SET wallet=MAX(0,?) WHERE guild_id=? AND user_id=?', [amount, guildId, userId]);
+}
+function deposit(guildId, userId, amount) {
+  const eco = getEco(guildId, userId);
+  const amt = Math.min(amount, eco.wallet);
+  db.run('UPDATE economy SET wallet=wallet-?, bank=bank+? WHERE guild_id=? AND user_id=?', [amt, amt, guildId, userId]);
+  return amt;
+}
+function withdraw(guildId, userId, amount) {
+  const eco = getEco(guildId, userId);
+  const amt = Math.min(amount, eco.bank);
+  db.run('UPDATE economy SET bank=bank-?, wallet=wallet+? WHERE guild_id=? AND user_id=?', [amt, amt, guildId, userId]);
+  return amt;
+}
+function transfer(guildId, fromId, toId, amount) {
+  const from = getEco(guildId, fromId);
+  if (from.wallet < amount) return false;
+  db.run('UPDATE economy SET wallet=wallet-? WHERE guild_id=? AND user_id=?', [amount, guildId, fromId]);
+  addWallet(guildId, toId, amount);
+  return true;
+}
+function getEcoLeaderboard(guildId, limit = 10) {
+  return db.all('SELECT user_id, wallet+bank AS total, wallet, bank FROM economy WHERE guild_id=? ORDER BY total DESC LIMIT ?', [guildId, limit]);
+}
+function setDailyAt(guildId, userId, ts) {
+  ensureEco(guildId, userId);
+  db.run('UPDATE economy SET daily_at=? WHERE guild_id=? AND user_id=?', [ts, guildId, userId]);
+}
+function setWorkAt(guildId, userId, ts) {
+  ensureEco(guildId, userId);
+  db.run('UPDATE economy SET work_at=? WHERE guild_id=? AND user_id=?', [ts, guildId, userId]);
+}
+function setRobAt(guildId, userId, ts) {
+  ensureEco(guildId, userId);
+  db.run('UPDATE economy SET rob_at=? WHERE guild_id=? AND user_id=?', [ts, guildId, userId]);
+}
+function getEcoSettings(guildId) {
+  return db.get('SELECT * FROM economy_settings WHERE guild_id=?', [guildId])
+    ?? { guild_id: guildId, currency_name: 'coins', currency_emoji: '🪙', daily_amount: 500, work_min: 150, work_max: 450 };
+}
+function upsertEcoSettings(guildId, fields) {
+  const ex = db.get('SELECT 1 FROM economy_settings WHERE guild_id=?', [guildId]);
+  if (!ex) db.run('INSERT INTO economy_settings (guild_id) VALUES (?)', [guildId]);
+  for (const [k, v] of Object.entries(fields))
+    db.run(`UPDATE economy_settings SET ${k}=? WHERE guild_id=?`, [v, guildId]);
+}
+
+// ─── Auto-role ────────────────────────────────────────────────────────────────
+function getAutoroles(guildId) {
+  return all('SELECT role_id FROM autorole WHERE guild_id=?', [guildId]);
+}
+function addAutorole(guildId, roleId) {
+  return run('INSERT OR IGNORE INTO autorole (guild_id, role_id) VALUES (?, ?)', [guildId, roleId]);
+}
+function removeAutorole(guildId, roleId) {
+  return run('DELETE FROM autorole WHERE guild_id=? AND role_id=?', [guildId, roleId]);
+}
+function clearAutoroles(guildId) {
+  return run('DELETE FROM autorole WHERE guild_id=?', [guildId]);
+}
+
 function getLevelRewards(guildId) {
   return all('SELECT * FROM level_rewards WHERE guild_id=? ORDER BY level ASC', [guildId]);
 }
@@ -1311,4 +1415,8 @@ module.exports = {
   createTag, getTag, deleteTag, listTags, incrementTagUses, editTag,
   xpForLevel, cumulativeXpForLevel, getUserLevel, getLevelRank, getLevelLeaderboard, addXp, setUserXp, resetUserLevel,
   getLevelSettings, upsertLevelSettings, getLevelRewards, setLevelReward, removeLevelReward,
+  getAutoroles, addAutorole, removeAutorole, clearAutoroles,
+  getEco, addWallet, setWallet, deposit, withdraw, transfer,
+  getEcoLeaderboard, setDailyAt, setWorkAt, setRobAt,
+  getEcoSettings, upsertEcoSettings,
 };

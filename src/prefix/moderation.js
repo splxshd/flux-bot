@@ -456,13 +456,51 @@ const bind = {
 // ── ,autorole ─────────────────────────────────────────────────────────────────
 const autorole = {
   name: 'autorole',
-  aliases: [],
+  aliases: ['joinrole'],
   async execute(message, args) {
     if (!message.member.permissions.has(PermissionFlagsBits.ManageRoles))
       return message.reply({ embeds: [new EmbedBuilder().setColor(RED).setDescription('❌ You need **Manage Roles** permission.')] });
-    const role = message.mentions.roles.first();
-    if (!role) return message.reply('Usage: `,autorole <@role>`');
-    return message.reply({ embeds: [new EmbedBuilder().setColor(GREEN).setDescription(`✅ New members will automatically receive **${role.name}**.`)] });
+
+    const sub = args[0]?.toLowerCase();
+    const guildId = message.guild.id;
+
+    if (sub === 'add') {
+      const role = message.mentions.roles.first();
+      if (!role) return message.reply('Usage: `,autorole add <@role>`');
+      db.addAutorole(guildId, role.id);
+      return message.reply({ embeds: [new EmbedBuilder().setColor(GREEN).setDescription(`✅ **${role.name}** will now be given to new members.`)] });
+    }
+
+    if (sub === 'remove') {
+      const role = message.mentions.roles.first();
+      if (!role) return message.reply('Usage: `,autorole remove <@role>`');
+      db.removeAutorole(guildId, role.id);
+      return message.reply({ embeds: [new EmbedBuilder().setColor(GREEN).setDescription(`✅ **${role.name}** removed from auto-roles.`)] });
+    }
+
+    if (sub === 'clear') {
+      db.clearAutoroles(guildId);
+      return message.reply({ embeds: [new EmbedBuilder().setColor(GREEN).setDescription('✅ All auto-roles cleared.')] });
+    }
+
+    if (sub === 'list') {
+      const roles = db.getAutoroles(guildId);
+      if (!roles.length) return message.reply({ embeds: [new EmbedBuilder().setColor(RED).setDescription('No auto-roles set.')] });
+      const lines = roles.map(r => {
+        const role = message.guild.roles.cache.get(r.role_id);
+        return role ? `• ${role.toString()} — ${role.name}` : `• <@&${r.role_id}>`;
+      });
+      return message.reply({ embeds: [new EmbedBuilder().setColor(GREEN).setTitle('Auto-Roles').setDescription(lines.join('\n'))] });
+    }
+
+    // Help
+    return message.reply({ embeds: [new EmbedBuilder().setColor(GREEN).setTitle('Auto-Role')
+      .setDescription([
+        '**`,autorole add <@role>`** — add a role given to new members',
+        '**`,autorole remove <@role>`** — remove a role',
+        '**`,autorole list`** — show all auto-roles',
+        '**`,autorole clear`** — remove all auto-roles',
+      ].join('\n'))] });
   }
 };
 

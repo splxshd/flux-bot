@@ -1,7 +1,8 @@
 'use strict';
 
-const { EmbedBuilder } = require('discord.js');
+const { EmbedBuilder, AttachmentBuilder } = require('discord.js');
 const db = require('../database');
+const { generateWelcomeCard } = require('../utils/welcomeCard');
 
 // In-memory join tracker for anti-raid
 const joinTracker = new Map(); // guildId -> [timestamps]
@@ -22,7 +23,7 @@ module.exports = (client) => {
       }).catch(() => {});
     }
 
-    // 2. Welcome message
+    // 2. Welcome message (canvas card + optional text)
     const welcome = db.getWelcomeSettings(guild.id);
     if (welcome && welcome.enabled && welcome.channel_id) {
       const wCh = guild.channels.cache.get(welcome.channel_id);
@@ -35,15 +36,40 @@ module.exports = (client) => {
             .replace(/{server}/g, guild.name)
             .replace(/{count}/g, guild.memberCount.toString());
         };
-        const embed = new EmbedBuilder()
-          .setTitle(replace(welcome.title) || 'Welcome!')
-          .setDescription(replace(welcome.description) || `Welcome <@${member.id}>!`)
-          .setColor(welcome.color || '#5865F2');
-        if (welcome.footer) embed.setFooter({ text: replace(welcome.footer) });
-        if (welcome.image_url) embed.setImage(welcome.image_url);
-        if (welcome.thumbnail) embed.setThumbnail(member.user.displayAvatarURL());
-        wCh.send({ embeds: [embed] }).catch(() => {});
+
+        // Try canvas welcome card first
+        try {
+          const buffer = await generateWelcomeCard({
+            username:    member.user.username,
+            avatarUrl:   member.user.displayAvatarURL({ extension: 'png', size: 256 }),
+            bannerUrl:   guild.bannerURL({ extension: 'png', size: 1024 }) ?? null,
+            memberCount: guild.memberCount,
+            guildName:   guild.name,
+            accent:      welcome.color || '#5865F2',
+          });
+          const attachment = new AttachmentBuilder(buffer, { name: 'welcome.png' });
+          // Optional text above the card (description field used as welcome text)
+          const text = welcome.description ? replace(welcome.description) : `Welcome <@${member.id}>! 🎉`;
+          wCh.send({ content: text, files: [attachment] }).catch(() => {});
+        } catch (e) {
+          console.error('[welcomeCard]', e);
+          // Fallback embed
+          const embed = new EmbedBuilder()
+            .setTitle(replace(welcome.title) || 'Welcome!')
+            .setDescription(replace(welcome.description) || `Welcome <@${member.id}>!`)
+            .setColor(welcome.color || '#5865F2');
+          if (welcome.footer) embed.setFooter({ text: replace(welcome.footer) });
+          if (welcome.image_url) embed.setImage(welcome.image_url);
+          if (welcome.thumbnail) embed.setThumbnail(member.user.displayAvatarURL());
+          wCh.send({ embeds: [embed] }).catch(() => {});
+        }
       }
+    }
+
+    // 2b. Auto-role — give configured roles to every new member
+    const autoroles = db.getAutoroles(guild.id);
+    for (const { role_id } of autoroles) {
+      await member.roles.add(role_id).catch(() => {});
     }
 
     // 3. Role persist restore

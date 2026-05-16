@@ -338,35 +338,6 @@ const blacktea = {
   }
 };
 
-// ,poker (high card)
-const RANKS = ['2','3','4','5','6','7','8','9','10','J','Q','K','A'];
-const SUITS = ['♠️','♥️','♦️','♣️'];
-function drawCard() { return `${RANKS[Math.floor(Math.random()*RANKS.length)]}${SUITS[Math.floor(Math.random()*SUITS.length)]}`; }
+// poker moved to gambling.js (interactive with real hand evaluation)
 
-const poker = {
-  name: 'poker',
-  aliases: [],
-  async execute(message, args) {
-    const opponent = message.mentions.users.first();
-    if (!opponent) return message.reply('Usage: `,poker <@user>`');
-
-    const myHand  = [drawCard(), drawCard(), drawCard()];
-    const oppHand = [drawCard(), drawCard(), drawCard()];
-    const val = hand => hand.reduce((a, c) => a + RANKS.indexOf(c.slice(0, -2)), 0);
-    const myVal  = val(myHand);
-    const oppVal = val(oppHand);
-    const winner = myVal > oppVal ? message.author : oppVal > myVal ? opponent : null;
-
-    return message.reply({ embeds: [new EmbedBuilder()
-      .setColor(PINK)
-      .setTitle('High Card Poker')
-      .addFields(
-        { name: message.author.username, value: myHand.join(' '),  inline: true },
-        { name: opponent.username,        value: oppHand.join(' '), inline: true },
-      )
-      .setDescription(winner ? `**${winner.username}** wins!` : "It's a tie!")
-      .setTimestamp()] });
-  }
-};
-
-module.exports = [lvl, botinfo, whois, nick, timeout_cmd, channelinfo, roleinfo, emoteinfo, permissions_cmd, stats, support, ttt, blacktea, poker];
+module.exports = [lvl, botinfo, whois, nick, timeout_cmd, channelinfo, roleinfo, emoteinfo, permissions_cmd, stats, support, ttt, blacktea];

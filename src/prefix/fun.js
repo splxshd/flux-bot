@@ -506,27 +506,7 @@ module.exports = [
       await message.reply({ embeds: [embed] });
     }
   },
-  { name: 'coinflip', aliases: ['cf','flip'], description: 'Flip a coin',
-    async execute(message) {
-      const result = Math.random() < 0.5 ? 'Heads' : 'Tails';
-      const embed = new EmbedBuilder().setColor(YELLOW).setTitle('🪙 Coin Flip').setDescription(`**${result}!**`).setTimestamp();
-      await message.reply({ embeds: [embed] });
-    }
-  },
-  { name: 'roll', aliases: ['dice'], description: 'Roll dice',
-    async execute(message, args) {
-      let count = 1, sides = 6;
-      if (args[0]) {
-        const match = args[0].match(/^(\d+)d(\d+)$/i);
-        if (match) { count = Math.min(parseInt(match[1]), 10); sides = Math.min(parseInt(match[2]), 1000); }
-        else if (/^\d+$/.test(args[0])) sides = Math.min(parseInt(args[0]), 1000);
-      }
-      const rolls = Array.from({ length: count }, () => Math.floor(Math.random() * sides) + 1);
-      const total = rolls.reduce((a, b) => a + b, 0);
-      const embed = new EmbedBuilder().setColor(BLUE).setTitle(`🎲 Roll ${count}d${sides}`).setDescription(count > 1 ? `Rolls: ${rolls.join(', ')}\nTotal: **${total}**` : `**${total}**`).setTimestamp();
-      await message.reply({ embeds: [embed] });
-    }
-  },
+  // coinflip, roll/dice moved to gambling.js (interactive)
   { name: 'trivia', aliases: [], description: 'Random trivia',
     async execute(message) {
       const questions = [
@@ -705,117 +685,7 @@ module.exports = [
     }
   },
 
-  // ── Blackjack ────────────────────────────────────────────────────────────────
-  { name: 'blackjack', aliases: ['bj'], description: 'Play Blackjack',
-    async execute(message) {
-      const deck = () => pick([2,3,4,5,6,7,8,9,10,'J','Q','K','A']);
-      const val  = c => c === 'A' ? 11 : typeof c === 'number' ? c : 10;
-      const sum  = hand => {
-        let total = hand.reduce((a,c) => a + val(c), 0);
-        let aces = hand.filter(c => c === 'A').length;
-        while (total > 21 && aces--) total -= 10;
-        return total;
-      };
-      const fmt = hand => hand.map(c => `\`${c}\``).join(' ');
-
-      let player = [deck(), deck()];
-      let dealer = [deck(), deck()];
-
-      const playerTotal = sum(player);
-      const dealerTotal = sum(dealer);
-
-      let result, color;
-      if (playerTotal === 21) { result = '🎉 Blackjack! You win!'; color = GREEN; }
-      else if (dealerTotal === 21) { result = '💀 Dealer blackjack. You lose.'; color = '#ED4245'; }
-      else {
-        // Simple auto-play dealer
-        while (sum(dealer) < 17) dealer.push(deck());
-        const pt = sum(player), dt = sum(dealer);
-        if (pt > 21) { result = '💀 Bust! You lose.'; color = '#ED4245'; }
-        else if (dt > 21 || pt > dt) { result = '🎉 You win!'; color = GREEN; }
-        else if (pt === dt) { result = '🤝 Push! It\'s a tie.'; color = YELLOW; }
-        else { result = '💀 Dealer wins.'; color = '#ED4245'; }
-      }
-
-      const embed = new EmbedBuilder()
-        .setColor(color)
-        .setTitle('🃏 Blackjack')
-        .addFields(
-          { name: `Your Hand (${sum(player)})`,   value: fmt(player) },
-          { name: `Dealer Hand (${sum(dealer)})`, value: fmt(dealer) },
-          { name: 'Result', value: result },
-        )
-        .setFooter({ text: 'flux bot' })
-        .setTimestamp();
-      await message.reply({ embeds: [embed] });
-    }
-  },
-
-  // ── Slots ────────────────────────────────────────────────────────────────────
-  { name: 'slots', aliases: [], description: 'Spin the slot machine',
-    async execute(message) {
-      const REELS = ['🍒','🍋','🍊','🍇','⭐','🔔','7️⃣'];
-      const spin = () => [pick(REELS), pick(REELS), pick(REELS)];
-      const result = spin();
-      const allSame = result[0] === result[1] && result[1] === result[2];
-      const twoSame = result[0] === result[1] || result[1] === result[2] || result[0] === result[2];
-      const embed = new EmbedBuilder()
-        .setColor(allSame ? GREEN : twoSame ? YELLOW : '#ED4245')
-        .setTitle('🎰 Slot Machine')
-        .setDescription(`[ ${result.join('  ')} ]\n\n${allSame ? '🎉 **JACKPOT! All three match!**' : twoSame ? '✨ Two match — small win!' : '💀 No match. Try again!'}`)
-        .setFooter({ text: 'flux bot' })
-        .setTimestamp();
-      await message.reply({ embeds: [embed] });
-    }
-  },
-
-  // ── Hi-Lo ────────────────────────────────────────────────────────────────────
-  { name: 'hilo', aliases: [], description: 'Higher or lower card game',
-    async execute(message, args) {
-      const guess = (args[0] || '').toLowerCase();
-      if (!['higher','lower','h','l'].includes(guess)) {
-        return message.reply('❌ Usage: `,hilo higher` or `,hilo lower`');
-      }
-      const current = Math.floor(Math.random() * 13) + 1;
-      const next    = Math.floor(Math.random() * 13) + 1;
-      const correct = guess.startsWith('h') ? next >= current : next <= current;
-      const embed = new EmbedBuilder()
-        .setColor(correct ? GREEN : '#ED4245')
-        .setTitle('🎴 Hi-Lo')
-        .addFields(
-          { name: 'Current Card', value: `**${current}**`, inline: true },
-          { name: 'Your Guess',   value: guess.startsWith('h') ? 'Higher ⬆️' : 'Lower ⬇️', inline: true },
-          { name: 'Next Card',    value: `**${next}**`, inline: true },
-        )
-        .setDescription(correct ? '🎉 Correct!' : '💀 Wrong!')
-        .setFooter({ text: 'flux bot' })
-        .setTimestamp();
-      await message.reply({ embeds: [embed] });
-    }
-  },
-
-  // ── Guess the number ─────────────────────────────────────────────────────────
-  { name: 'guess', aliases: ['guessthenumber'], description: 'Guess the number (1-10)',
-    async execute(message, args) {
-      const answer = Math.floor(Math.random() * 10) + 1;
-      const userGuess = parseInt(args[0]);
-      if (!args[0] || isNaN(userGuess) || userGuess < 1 || userGuess > 10) {
-        return message.reply('❌ Usage: `,guess <1-10>`');
-      }
-      const correct = userGuess === answer;
-      const embed = new EmbedBuilder()
-        .setColor(correct ? GREEN : '#ED4245')
-        .setTitle('🔢 Guess the Number')
-        .addFields(
-          { name: 'Your Guess', value: `**${userGuess}**`, inline: true },
-          { name: 'Answer',     value: `**${answer}**`,    inline: true },
-        )
-        .setDescription(correct ? '🎉 You guessed it!' : `💀 Wrong! The number was **${answer}**.`)
-        .setFooter({ text: 'flux bot' })
-        .setTimestamp();
-      await message.reply({ embeds: [embed] });
-    }
-  },
+  // blackjack, slots, hilo, guess moved to gambling.js (interactive)
 
   // ── Scramble ─────────────────────────────────────────────────────────────────
   { name: 'scramble', aliases: [], description: 'Unscramble the word',
