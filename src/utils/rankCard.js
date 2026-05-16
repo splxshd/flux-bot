@@ -4,33 +4,28 @@ const { createCanvas, loadImage, GlobalFonts } = require('@napi-rs/canvas');
 const path = require('path');
 const fs   = require('fs');
 
-// Register fonts — try @fontsource/open-sans woff2 files bundled in node_modules
+// Register fonts
 const FONT_CANDIDATES = [
-  // @fontsource/open-sans v5
-  ['open-sans-latin-700-normal.woff2', 'OpenSans'],
-  ['open-sans-latin-400-normal.woff2', 'OpenSans'],
-  // fallback: common Linux system fonts on Railway
-  ['/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf', 'OpenSans'],
-  ['/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf', 'OpenSans'],
-  ['/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf', 'OpenSans'],
+  path.join(__dirname, '../../node_modules/@fontsource/open-sans/files/open-sans-latin-700-normal.woff2'),
+  path.join(__dirname, '../../node_modules/@fontsource/open-sans/files/open-sans-latin-400-normal.woff2'),
+  '/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf',
+  '/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf',
+  '/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf',
 ];
 
 let FONT = 'sans-serif';
-
-for (const [file, family] of FONT_CANDIDATES) {
-  const full = file.startsWith('/') ? file
-    : path.join(__dirname, '../../node_modules/@fontsource/open-sans/files', file);
-  if (fs.existsSync(full)) {
-    try {
-      GlobalFonts.registerFromPath(full, family);
-      FONT = family;
-      break;
-    } catch {}
+for (const fp of FONT_CANDIDATES) {
+  if (fs.existsSync(fp)) {
+    try { GlobalFonts.registerFromPath(fp, 'Card'); FONT = 'Card'; break; } catch {}
   }
 }
 
-const W = 934;
-const H = 280;
+const W = 800;
+const H = 200;
+const PAD = 20;
+const AVR = (H - PAD * 2) / 2; // avatar radius fills card height
+const AVX = PAD + AVR;
+const AVY = H / 2;
 
 function levelColor(level) {
   if (level >= 50) return '#FF6B6B';
@@ -41,81 +36,50 @@ function levelColor(level) {
   return '#5865F2';
 }
 
-function fmt(n) {
-  return n >= 1000 ? `${(n / 1000).toFixed(1)}k` : String(n);
-}
-
-/**
- * Generate a rank card image buffer.
- * @param {object} opts
- * @param {string} opts.username
- * @param {string} opts.avatarUrl
- * @param {number} opts.level
- * @param {number} opts.xp          — total XP
- * @param {number} opts.xpIntoLevel — XP earned within current level
- * @param {number} opts.xpNeeded    — XP needed for next level
- * @param {number|null} opts.rank
- * @param {number} opts.totalUsers
- */
-async function generateRankCard(opts) {
-  const { username, avatarUrl, level, xp, xpIntoLevel, xpNeeded, rank, totalUsers } = opts;
+async function generateRankCard({ username, avatarUrl, level, xp, xpIntoLevel, xpNeeded, rank }) {
   const accent = levelColor(level);
-
   const canvas = createCanvas(W, H);
   const ctx    = canvas.getContext('2d');
 
   // ── Background ──────────────────────────────────────────────────────────────
-  ctx.fillStyle = '#0f1015';
+  ctx.fillStyle = '#0d0f17';
   ctx.fillRect(0, 0, W, H);
 
-  // Subtle card surface
-  roundRect(ctx, 10, 10, W - 20, H - 20, 18);
-  ctx.fillStyle = '#16181d';
-  ctx.fill();
-
-  // Right accent diagonal
+  // Right diagonal teal accent
   ctx.save();
+  const accentGrad = ctx.createLinearGradient(W - 220, 0, W, 0);
+  accentGrad.addColorStop(0, 'rgba(0,0,0,0)');
+  accentGrad.addColorStop(1, hexAlpha(accent, 0.25));
+  ctx.fillStyle = accentGrad;
   ctx.beginPath();
-  ctx.moveTo(W - 230, 10);
-  ctx.lineTo(W - 10, 10);
-  ctx.lineTo(W - 10, H - 10);
-  ctx.lineTo(W - 280, H - 10);
+  ctx.moveTo(W - 220, 0);
+  ctx.lineTo(W, 0);
+  ctx.lineTo(W, H);
+  ctx.lineTo(W - 280, H);
   ctx.closePath();
-  const grad = ctx.createLinearGradient(W - 280, 0, W, 0);
-  grad.addColorStop(0, 'rgba(0,0,0,0)');
-  grad.addColorStop(1, hexAlpha(accent, 0.18));
-  ctx.fillStyle = grad;
   ctx.fill();
   ctx.restore();
 
-  // Left accent bar
-  roundRect(ctx, 10, 10, 6, H - 20, 3);
-  ctx.fillStyle = accent;
-  ctx.fill();
-
   // ── Avatar ──────────────────────────────────────────────────────────────────
-  const AVX = 70;
-  const AVY = H / 2;
-  const AVR = 80;
-
-  // Glow ring
+  // Colored ring
   ctx.save();
-  ctx.shadowColor = accent;
-  ctx.shadowBlur  = 24;
   ctx.beginPath();
-  ctx.arc(AVX, AVY, AVR + 5, 0, Math.PI * 2);
+  ctx.arc(AVX, AVY, AVR + 3, 0, Math.PI * 2);
   ctx.strokeStyle = accent;
-  ctx.lineWidth   = 4;
+  ctx.lineWidth = 4;
+  ctx.shadowColor = accent;
+  ctx.shadowBlur = 16;
   ctx.stroke();
   ctx.restore();
 
-  // Avatar circle clip
+  // Clip & draw avatar
   ctx.save();
   ctx.beginPath();
   ctx.arc(AVX, AVY, AVR, 0, Math.PI * 2);
   ctx.clip();
   try {
     const img = await loadImage(avatarUrl);
+    // Draw centered square within circle
     ctx.drawImage(img, AVX - AVR, AVY - AVR, AVR * 2, AVR * 2);
   } catch {
     ctx.fillStyle = '#2b2d31';
@@ -123,93 +87,82 @@ async function generateRankCard(opts) {
   }
   ctx.restore();
 
-  // ── Text area ───────────────────────────────────────────────────────────────
-  const TX = AVX + AVR + 32;
+  // ── Text ────────────────────────────────────────────────────────────────────
+  const TX = AVX + AVR + 28;
+  const barW = W - TX - PAD;
+  const barH = 18;
+  const barY = H - PAD - barH;
 
   // Username
-  ctx.font        = `bold 38px ${FONT}`;
-  ctx.fillStyle   = '#ffffff';
-  ctx.textBaseline = 'top';
-  const nameText  = username.length > 18 ? username.slice(0, 16) + '…' : username;
-  ctx.fillText(nameText, TX, 52);
-
-  // Level badge pill
-  const lvlLabel = `LEVEL ${level}`;
-  ctx.font = `bold 16px ${FONT}`;
-  const pillW = ctx.measureText(lvlLabel).width + 24;
-  const pillX = TX;
-  const pillY = 100;
-  roundRect(ctx, pillX, pillY, pillW, 28, 14);
-  ctx.fillStyle = accent;
-  ctx.fill();
-  ctx.fillStyle = '#fff';
-  ctx.font = `bold 14px ${FONT}`;
-  ctx.textBaseline = 'middle';
-  ctx.fillText(lvlLabel, pillX + 12, pillY + 14);
-
-  // XP text
-  ctx.font      = `22px ${FONT}`;
-  ctx.fillStyle = '#b5bac1';
-  ctx.textBaseline = 'middle';
-  ctx.fillText(`${fmt(xpIntoLevel)} / ${fmt(xpNeeded)} XP`, TX + pillW + 16, pillY + 14);
-
-  // Rank
-  const rankText = rank ? `#${rank}` : '—';
-  ctx.font      = `bold 28px ${FONT}`;
+  ctx.font      = `bold 40px ${FONT}`;
   ctx.fillStyle = '#ffffff';
-  ctx.textBaseline = 'middle';
-  const rankLabel = 'RANK ';
-  ctx.font = `16px ${FONT}`;
-  ctx.fillStyle = '#80848e';
-  const rlW = ctx.measureText(rankLabel).width;
-  ctx.fillText(rankLabel, TX, 152);
-  ctx.font = `bold 28px ${FONT}`;
-  ctx.fillStyle = accent;
-  ctx.fillText(rankText, TX + rlW, 148);
+  ctx.textBaseline = 'top';
+  const name = username.length > 20 ? username.slice(0, 18) + '…' : username;
+  ctx.fillText(`@${name}`, TX, 38);
 
-  // Total XP
-  ctx.font = `15px ${FONT}`;
-  ctx.fillStyle = '#4e5058';
-  ctx.fillText(`Total XP: ${fmt(xp)}`, TX + rlW + ctx.measureText(rankText).width + 24, 152);
+  // Stats line: Level · XP · Rank
+  ctx.font      = `22px ${FONT}`;
+  ctx.fillStyle = '#8b8fa8';
+  ctx.textBaseline = 'top';
+  const statsY = 92;
+
+  // "Level: " label
+  ctx.fillStyle = '#8b8fa8';
+  ctx.fillText('Level: ', TX, statsY);
+  let cx = TX + ctx.measureText('Level: ').width;
+
+  ctx.font      = `bold 22px ${FONT}`;
+  ctx.fillStyle = '#ffffff';
+  ctx.fillText(`${level}`, cx, statsY);
+  cx += ctx.measureText(`${level}`).width + 28;
+
+  ctx.font      = `22px ${FONT}`;
+  ctx.fillStyle = '#8b8fa8';
+  ctx.fillText('XP: ', cx, statsY);
+  cx += ctx.measureText('XP: ').width;
+
+  ctx.font      = `bold 22px ${FONT}`;
+  ctx.fillStyle = '#ffffff';
+  const xpStr = `${fmt(xpIntoLevel)} / ${fmt(xpNeeded)}`;
+  ctx.fillText(xpStr, cx, statsY);
+  cx += ctx.measureText(xpStr).width + 28;
+
+  ctx.font      = `22px ${FONT}`;
+  ctx.fillStyle = '#8b8fa8';
+  ctx.fillText('Rank: ', cx, statsY);
+  cx += ctx.measureText('Rank: ').width;
+
+  ctx.font      = `bold 22px ${FONT}`;
+  ctx.fillStyle = accent;
+  ctx.fillText(rank ? `#${rank}` : '—', cx, statsY);
 
   // ── Progress bar ─────────────────────────────────────────────────────────────
-  const BAR_X = TX;
-  const BAR_Y = 188;
-  const BAR_W = W - TX - 50;
-  const BAR_H = 18;
-  const pct   = xpNeeded > 0 ? Math.min(xpIntoLevel / xpNeeded, 1) : 0;
+  const pct = xpNeeded > 0 ? Math.min(xpIntoLevel / xpNeeded, 1) : 0;
 
   // Track
-  roundRect(ctx, BAR_X, BAR_Y, BAR_W, BAR_H, BAR_H / 2);
-  ctx.fillStyle = '#2b2d31';
+  ctx.beginPath();
+  roundRect(ctx, TX, barY, barW, barH, barH / 2);
+  ctx.fillStyle = '#1e2030';
   ctx.fill();
 
-  // Fill with glow
+  // Fill
   if (pct > 0) {
+    const fillW = Math.max(barH, barW * pct);
     ctx.save();
     ctx.shadowColor = accent;
-    ctx.shadowBlur  = 10;
-    roundRect(ctx, BAR_X, BAR_Y, Math.max(BAR_H, BAR_W * pct), BAR_H, BAR_H / 2);
-    const barGrad = ctx.createLinearGradient(BAR_X, 0, BAR_X + BAR_W, 0);
-    barGrad.addColorStop(0, hexAlpha(accent, 0.7));
+    ctx.shadowBlur = 12;
+    const barGrad = ctx.createLinearGradient(TX, 0, TX + barW, 0);
+    barGrad.addColorStop(0, hexAlpha(accent, 0.6));
     barGrad.addColorStop(1, accent);
     ctx.fillStyle = barGrad;
+    roundRect(ctx, TX, barY, fillW, barH, barH / 2);
     ctx.fill();
     ctx.restore();
   }
 
-  // Percentage label
-  ctx.font      = `bold 13px ${FONT}`;
-  ctx.fillStyle = '#80848e';
-  ctx.textBaseline = 'top';
-  ctx.textAlign = 'right';
-  ctx.fillText(`${Math.round(pct * 100)}%`, BAR_X + BAR_W, BAR_Y + BAR_H + 6);
-  ctx.textAlign = 'left';
-
   return canvas.toBuffer('image/png');
 }
 
-// ── Helpers ───────────────────────────────────────────────────────────────────
 function roundRect(ctx, x, y, w, h, r) {
   ctx.beginPath();
   ctx.moveTo(x + r, y);
@@ -229,6 +182,10 @@ function hexAlpha(hex, alpha) {
   const g = parseInt(hex.slice(3, 5), 16);
   const b = parseInt(hex.slice(5, 7), 16);
   return `rgba(${r},${g},${b},${alpha})`;
+}
+
+function fmt(n) {
+  return n >= 1000 ? `${(n / 1000).toFixed(1)}k` : String(n);
 }
 
 module.exports = { generateRankCard };
