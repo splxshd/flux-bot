@@ -88,57 +88,6 @@ const purge = {
   },
 };
 
-// ─── /purgefilter ────────────────────────────────────────────────────────────
-const purgefilter = {
-  data: new SlashCommandBuilder()
-    .setName('purgefilter')
-    .setDescription('Delete messages matching a filter')
-    .addStringOption(o => o.setName('filter').setDescription('Filter type').setRequired(true)
-      .addChoices(
-        { name: 'links', value: 'links' },
-        { name: 'images', value: 'images' },
-        { name: 'embeds', value: 'embeds' },
-        { name: 'bots', value: 'bots' },
-        { name: 'webhooks', value: 'webhooks' },
-        { name: 'mentions', value: 'mentions' },
-        { name: 'reactions', value: 'reactions' },
-      ))
-    .addIntegerOption(o => o.setName('amount').setDescription('Messages to scan (1-100)').setMinValue(1).setMaxValue(100))
-    .setDefaultMemberPermissions(PermissionFlagsBits.ManageMessages),
-  async execute(interaction) {
-    const filter = interaction.options.getString('filter');
-    const amount = interaction.options.getInteger('amount') || 50;
-
-    let messages = await interaction.channel.messages.fetch({ limit: amount });
-    let filtered;
-
-    switch (filter) {
-      case 'links':     filtered = messages.filter(m => /https?:\/\//i.test(m.content)); break;
-      case 'images':    filtered = messages.filter(m => m.attachments.some(a => a.contentType?.startsWith('image'))); break;
-      case 'embeds':    filtered = messages.filter(m => m.embeds.length > 0); break;
-      case 'bots':      filtered = messages.filter(m => m.author.bot); break;
-      case 'webhooks':  filtered = messages.filter(m => m.webhookId); break;
-      case 'mentions':  filtered = messages.filter(m => m.mentions.users.size > 0 || m.mentions.roles.size > 0); break;
-      case 'reactions': filtered = messages.filter(m => m.reactions.cache.size > 0); break;
-      default:          filtered = messages;
-    }
-
-    const toDelete = [...filtered.values()].slice(0, 100);
-    const deleted = await interaction.channel.bulkDelete(toDelete, true).catch(() => ({ size: 0 }));
-
-    const embed = new EmbedBuilder()
-      .setColor(GREEN)
-      .setAuthor({ name: `🗑️ Purge Filter — ${deleted.size ?? toDelete.length} deleted`, iconURL: interaction.user.displayAvatarURL() })
-      .addFields(
-        { name: '🔍 Filter', value: `\`${filter}\``, inline: true },
-        { name: '📍 Channel', value: `${interaction.channel}`, inline: true },
-      )
-      .setFooter({ text: 'flux bot' })
-      .setTimestamp();
-
-    await interaction.reply({ embeds: [embed], ephemeral: true });
-  },
-};
 
 // ─── /snipe ──────────────────────────────────────────────────────────────────
 const snipe = {
@@ -663,22 +612,6 @@ const uptime = {
 
 // botuptime → moved to prefix commands
 
-// ─── /invite ─────────────────────────────────────────────────────────────────
-const invite = {
-  data: new SlashCommandBuilder()
-    .setName('invite')
-    .setDescription('Generate a bot invite link'),
-  async execute(interaction, client) {
-    const link = `https://discord.com/api/oauth2/authorize?client_id=${client.user.id}&permissions=8&scope=bot%20applications.commands`;
-    const embed = new EmbedBuilder()
-      .setColor(BLUE)
-      .setAuthor({ name: 'Invite flux', iconURL: client.user.displayAvatarURL() })
-      .setDescription(`[Click here to invite flux to your server](${link})`)
-      .setFooter({ text: 'flux bot' })
-      .setTimestamp();
-    await interaction.reply({ embeds: [embed] });
-  },
-};
 
 // pins, firstmsg, google, image, prefix → moved to prefix commands
 
@@ -1090,10 +1023,10 @@ const poll = {
 };
 
 module.exports = [
-  ping, say, purge, purgefilter, snipe, editsnipe, clearsnipe,
+  ping, say, purge, snipe, editsnipe, clearsnipe,
   lock, unlock, hide, unhide, slowmode, channel, thread, webhook,
   stickymessage, alias, calc, afk, remind, uptime,
-  invite, translate,
+  translate,
   log, autoresponder, reaction,
   serverinfo, userinfo, avatar, banner, embed, poll,
 ];

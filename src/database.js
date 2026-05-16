@@ -367,6 +367,17 @@ db.run(`CREATE TABLE IF NOT EXISTS voice_stats (
   left_at INTEGER
 )`);
 
+db.run(`CREATE TABLE IF NOT EXISTS tags (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  guild_id TEXT NOT NULL,
+  name TEXT NOT NULL,
+  content TEXT NOT NULL,
+  created_by TEXT NOT NULL,
+  created_at INTEGER DEFAULT (strftime('%s','now')),
+  uses INTEGER DEFAULT 0,
+  UNIQUE(guild_id, name)
+)`);
+
 db.run(`CREATE TABLE IF NOT EXISTS user_levels (
   guild_id TEXT NOT NULL,
   user_id TEXT NOT NULL,
@@ -1140,6 +1151,26 @@ function pruneOldData() {
 setInterval(pruneOldData, 86400 * 1000);
 pruneOldData(); // run once on startup
 
+// ─── Tags ─────────────────────────────────────────────────────────────────────
+function createTag(guildId, name, content, createdBy) {
+  return run('INSERT INTO tags (guild_id, name, content, created_by) VALUES (?, ?, ?, ?)', [guildId, name.toLowerCase(), content, createdBy]);
+}
+function getTag(guildId, name) {
+  return get('SELECT * FROM tags WHERE guild_id=? AND name=?', [guildId, name.toLowerCase()]);
+}
+function deleteTag(guildId, name) {
+  return run('DELETE FROM tags WHERE guild_id=? AND name=?', [guildId, name.toLowerCase()]);
+}
+function listTags(guildId) {
+  return all('SELECT * FROM tags WHERE guild_id=? ORDER BY uses DESC', [guildId]);
+}
+function incrementTagUses(guildId, name) {
+  return run('UPDATE tags SET uses=uses+1 WHERE guild_id=? AND name=?', [guildId, name.toLowerCase()]);
+}
+function editTag(guildId, name, content) {
+  return run('UPDATE tags SET content=? WHERE guild_id=? AND name=?', [content, guildId, name.toLowerCase()]);
+}
+
 // ─── Levels / XP ─────────────────────────────────────────────────────────────
 // XP needed to go from level n → level n+1
 function xpForLevel(level) {
@@ -1277,6 +1308,7 @@ module.exports = {
   addDepositMonitor, getActiveDepositMonitors, updateDepositMonitor, markDepositNotified,
   getWelcomeSettings, upsertWelcomeSettings,
   setPanel, getPanel, deletePanel,
+  createTag, getTag, deleteTag, listTags, incrementTagUses, editTag,
   xpForLevel, cumulativeXpForLevel, getUserLevel, getLevelRank, getLevelLeaderboard, addXp, setUserXp, resetUserLevel,
   getLevelSettings, upsertLevelSettings, getLevelRewards, setLevelReward, removeLevelReward,
 };

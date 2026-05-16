@@ -6,6 +6,13 @@ const db = require('../database');
 module.exports = (client) => {
   client.on('interactionCreate', async (interaction) => {
     try {
+      // ── Autocomplete ────────────────────────────────────────────────────────
+      if (interaction.isAutocomplete()) {
+        const cmd = client.commands.get(interaction.commandName);
+        if (cmd?.autocomplete) await cmd.autocomplete(interaction);
+        return;
+      }
+
       // ── Slash commands ──────────────────────────────────────────────────────
       if (interaction.isChatInputCommand()) {
         const cmd = client.commands.get(interaction.commandName);
@@ -53,6 +60,17 @@ module.exports = (client) => {
           // Text response (ephemeral)
           const text = opt.response || '✅ Done.';
           return interaction.reply({ content: text, ephemeral: true });
+        }
+
+        // Tag menu
+        if (interaction.customId === 'tag:menu') {
+          const name = interaction.values[0];
+          const row  = db.getTag(interaction.guild.id, name);
+          if (!row) return interaction.update({ content: '❌ Tag not found.', components: [] });
+          db.incrementTagUses(interaction.guild.id, name);
+          await interaction.update({ content: '✅ Sent!', components: [] });
+          await interaction.channel.send({ content: row.content });
+          return;
         }
 
         if (interaction.customId === 'prefix_help_cat') {
