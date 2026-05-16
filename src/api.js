@@ -65,10 +65,19 @@ app.get('/api/guild/:guildId/stats', auth, async (req, res) => {
 app.get('/api/guild/:guildId/settings', auth, (req, res) => {
   const { guildId } = req.params;
   try {
-    const settings = db.getGuildSettings(guildId);
-    const welcome = db.all('SELECT * FROM welcome_settings WHERE guild_id=?', [guildId])[0] ?? {};
-    const antiraid = db.getAntiraid(guildId) ?? {};
-    res.json({ ...settings, ...welcome, ...antiraid });
+    const settings  = db.getGuildSettings(guildId) ?? {};
+    const welcome   = db.all('SELECT * FROM welcome_settings WHERE guild_id=?', [guildId])[0] ?? {};
+    const antiraid  = db.getAntiraid(guildId) ?? {};
+    const lvl       = db.getLevelSettings(guildId) ?? {};
+
+    // Map level_settings column names → dashboard field names
+    const levelMapped = {
+      levels_enabled: lvl.enabled === undefined ? true : Boolean(lvl.enabled),
+      levels_channel: lvl.levelup_channel ?? '',
+      levels_message: lvl.levelup_message ?? 'GG {user}, you just reached level {level}!',
+    };
+
+    res.json({ ...settings, ...welcome, ...antiraid, ...levelMapped });
   } catch (e) {
     res.status(500).json({ error: e.message });
   }
@@ -77,7 +86,22 @@ app.get('/api/guild/:guildId/settings', auth, (req, res) => {
 app.patch('/api/guild/:guildId/settings', auth, (req, res) => {
   const { guildId } = req.params;
   try {
-    db.upsertGuildSettings(guildId, req.body);
+    const { levels_enabled, levels_channel, levels_message, xp_rate, xp_cooldown, language, ...guildFields } = req.body;
+
+    // Save core guild settings (only known columns)
+    const knownGuildCols = ['prefix', 'log_channel', 'log_events', 'log_color', 'log_ignored'];
+    const guildPatch = Object.fromEntries(
+      Object.entries(guildFields).filter(([k]) => knownGuildCols.includes(k))
+    );
+    if (Object.keys(guildPatch).length) db.upsertGuildSettings(guildId, guildPatch);
+
+    // Save level settings (map dashboard names → DB column names)
+    const levelPatch = {};
+    if (levels_enabled !== undefined) levelPatch.enabled = levels_enabled ? 1 : 0;
+    if (levels_channel !== undefined) levelPatch.levelup_channel = levels_channel;
+    if (levels_message !== undefined) levelPatch.levelup_message = levels_message;
+    if (Object.keys(levelPatch).length) db.upsertLevelSettings(guildId, levelPatch);
+
     res.json({ ok: true });
   } catch (e) {
     res.status(500).json({ error: e.message });
