@@ -210,7 +210,7 @@ const withdrawCmd = {
 // ── ,pay / ,give (to another user) ───────────────────────────────────────────
 const pay = {
   name: 'pay',
-  aliases: ['transfer', 'send'],
+  aliases: ['transfer', 'send', 'donate'],
   async execute(message, args) {
     const target = message.mentions.users.first();
     if (!target || target.bot || target.id === message.author.id)
