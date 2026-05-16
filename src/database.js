@@ -367,6 +367,29 @@ db.run(`CREATE TABLE IF NOT EXISTS voice_stats (
   left_at INTEGER
 )`);
 
+db.run(`CREATE TABLE IF NOT EXISTS user_levels (
+  guild_id TEXT NOT NULL,
+  user_id TEXT NOT NULL,
+  xp INTEGER DEFAULT 0,
+  level INTEGER DEFAULT 0,
+  last_xp_at INTEGER DEFAULT 0,
+  PRIMARY KEY (guild_id, user_id)
+)`);
+
+db.run(`CREATE TABLE IF NOT EXISTS level_settings (
+  guild_id TEXT PRIMARY KEY,
+  enabled INTEGER DEFAULT 1,
+  levelup_channel TEXT,
+  levelup_message TEXT
+)`);
+
+db.run(`CREATE TABLE IF NOT EXISTS level_rewards (
+  guild_id TEXT NOT NULL,
+  level INTEGER NOT NULL,
+  role_id TEXT NOT NULL,
+  PRIMARY KEY (guild_id, level)
+)`);
+
 db.run(`CREATE TABLE IF NOT EXISTS welcome_settings (
   guild_id TEXT PRIMARY KEY,
   channel_id TEXT,
@@ -1117,6 +1140,97 @@ function pruneOldData() {
 setInterval(pruneOldData, 86400 * 1000);
 pruneOldData(); // run once on startup
 
+// ─── Levels / XP ─────────────────────────────────────────────────────────────
+// XP needed to go from level n → level n+1
+function xpForLevel(level) {
+  return 5 * level * level + 50 * level + 100;
+}
+
+// Total cumulative XP required to reach `level` from 0
+function cumulativeXpForLevel(level) {
+  let total = 0;
+  for (let i = 0; i < level; i++) total += xpForLevel(i);
+  return total;
+}
+
+// Derive level from total cumulative XP
+function levelFromXp(totalXp) {
+  let level = 0;
+  while (totalXp >= cumulativeXpForLevel(level + 1)) level++;
+  return level;
+}
+
+function getUserLevel(guildId, userId) {
+  return get('SELECT * FROM user_levels WHERE guild_id=? AND user_id=?', [guildId, userId]);
+}
+
+function getLevelRank(guildId, userId) {
+  const rows = all('SELECT user_id FROM user_levels WHERE guild_id=? ORDER BY xp DESC', [guildId]);
+  const idx = rows.findIndex(r => r.user_id === userId);
+  return { rank: idx === -1 ? null : idx + 1, total: rows.length };
+}
+
+function getLevelLeaderboard(guildId, limit = 10) {
+  return all('SELECT * FROM user_levels WHERE guild_id=? ORDER BY xp DESC LIMIT ?', [guildId, limit]);
+}
+
+// Returns { leveled: bool, newLevel: number } — handles XP gain + level-up check
+function addXp(guildId, userId, amount) {
+  const XP_COOLDOWN = 60; // seconds
+  const now = Math.floor(Date.now() / 1000);
+  let row = get('SELECT * FROM user_levels WHERE guild_id=? AND user_id=?', [guildId, userId]);
+  if (!row) {
+    run('INSERT INTO user_levels (guild_id, user_id, xp, level, last_xp_at) VALUES (?, ?, 0, 0, 0)', [guildId, userId]);
+    row = { guild_id: guildId, user_id: userId, xp: 0, level: 0, last_xp_at: 0 };
+  }
+  // Cooldown check
+  if (now - row.last_xp_at < XP_COOLDOWN) return { leveled: false, newLevel: row.level };
+
+  const newXp = row.xp + amount;
+  const oldLevel = row.level;
+  const newLevel = levelFromXp(newXp);
+  const leveled = newLevel > oldLevel;
+
+  run('UPDATE user_levels SET xp=?, level=?, last_xp_at=? WHERE guild_id=? AND user_id=?',
+    [newXp, newLevel, now, guildId, userId]);
+
+  return { leveled, newLevel, newXp };
+}
+
+function setUserXp(guildId, userId, xp) {
+  const level = levelFromXp(xp);
+  run('INSERT OR REPLACE INTO user_levels (guild_id, user_id, xp, level, last_xp_at) VALUES (?, ?, ?, ?, ?)',
+    [guildId, userId, xp, level, 0]);
+}
+
+function resetUserLevel(guildId, userId) {
+  run('DELETE FROM user_levels WHERE guild_id=? AND user_id=?', [guildId, userId]);
+}
+
+function getLevelSettings(guildId) {
+  return get('SELECT * FROM level_settings WHERE guild_id=?', [guildId]);
+}
+
+function upsertLevelSettings(guildId, patch) {
+  const cols = Object.keys(patch).map(k => `${k}=excluded.${k}`).join(', ');
+  const keys = ['guild_id', ...Object.keys(patch)];
+  const vals = [guildId, ...Object.values(patch)];
+  run(`INSERT INTO level_settings (${keys.join(',')}) VALUES (${keys.map(() => '?').join(',')})
+       ON CONFLICT(guild_id) DO UPDATE SET ${cols}`, vals);
+}
+
+function getLevelRewards(guildId) {
+  return all('SELECT * FROM level_rewards WHERE guild_id=? ORDER BY level ASC', [guildId]);
+}
+
+function setLevelReward(guildId, level, roleId) {
+  run('INSERT OR REPLACE INTO level_rewards (guild_id, level, role_id) VALUES (?, ?, ?)', [guildId, level, roleId]);
+}
+
+function removeLevelReward(guildId, level) {
+  run('DELETE FROM level_rewards WHERE guild_id=? AND level=?', [guildId, level]);
+}
+
 module.exports = {
   db,
   get, all, run,
@@ -1163,4 +1277,6 @@ module.exports = {
   addDepositMonitor, getActiveDepositMonitors, updateDepositMonitor, markDepositNotified,
   getWelcomeSettings, upsertWelcomeSettings,
   setPanel, getPanel, deletePanel,
+  xpForLevel, cumulativeXpForLevel, getUserLevel, getLevelRank, getLevelLeaderboard, addXp, setUserXp, resetUserLevel,
+  getLevelSettings, upsertLevelSettings, getLevelRewards, setLevelReward, removeLevelReward,
 };

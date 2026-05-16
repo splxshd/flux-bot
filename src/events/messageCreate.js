@@ -49,6 +49,32 @@ async function handleMessage(client, message) {
 
     db.trackMessage(message.guild.id, message.author.id, message.channel.id, message.channel.name);
 
+    // ── XP / Leveling ────────────────────────────────────────────────────────
+    const lvlSettings = db.getLevelSettings(message.guild.id);
+    if (!lvlSettings || lvlSettings.enabled !== 0) {
+      const xpGain = Math.floor(Math.random() * 11) + 15; // 15–25 XP per message
+      const { leveled, newLevel } = db.addXp(message.guild.id, message.author.id, xpGain);
+      if (leveled) {
+        // Give level reward role if configured
+        const rewards = db.getLevelRewards(message.guild.id);
+        const reward = rewards.find(r => r.level === newLevel);
+        if (reward) {
+          const member = message.member || await message.guild.members.fetch(message.author.id).catch(() => null);
+          if (member) await member.roles.add(reward.role_id).catch(() => {});
+        }
+        // Send level-up message
+        const levelupChannelId = lvlSettings?.levelup_channel;
+        const levelupMsg = (lvlSettings?.levelup_message || '🎉 {user} just reached **Level {level}**!')
+          .replace('{user}', `<@${message.author.id}>`)
+          .replace('{level}', newLevel)
+          .replace('{username}', message.author.username);
+        const destChannel = levelupChannelId
+          ? (message.guild.channels.cache.get(levelupChannelId) || message.channel)
+          : message.channel;
+        await destChannel.send({ content: levelupMsg }).catch(() => {});
+      }
+    }
+
     const guild = message.guild;
 
     // 1. Anti-raid mention spam
