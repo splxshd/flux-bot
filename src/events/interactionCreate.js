@@ -23,6 +23,38 @@ module.exports = (client) => {
           return;
         }
 
+        // Panel dropdowns
+        if (interaction.customId.startsWith('panel:')) {
+          const panelId = interaction.customId.slice(6);
+          const panelRow = db.getPanel(panelId);
+          if (!panelRow) {
+            return interaction.reply({ content: '❌ This panel is no longer active.', ephemeral: true });
+          }
+          const options = JSON.parse(panelRow.options_json);
+          const chosen  = interaction.values[0];
+          const opt     = options.find((o, i) => (o.value || `opt_${i}`) === chosen);
+          if (!opt) return interaction.reply({ content: '❌ Unknown option.', ephemeral: true });
+
+          // Give/remove role if configured
+          if (opt.role_id && interaction.guild) {
+            const member = interaction.member;
+            if (member) {
+              const hasRole = member.roles.cache.has(opt.role_id);
+              if (hasRole) {
+                await member.roles.remove(opt.role_id).catch(() => {});
+                return interaction.reply({ content: opt.remove_response || `✅ Role removed.`, ephemeral: true });
+              } else {
+                await member.roles.add(opt.role_id).catch(() => {});
+                return interaction.reply({ content: opt.response || `✅ Role given.`, ephemeral: true });
+              }
+            }
+          }
+
+          // Text response (ephemeral)
+          const text = opt.response || '✅ Done.';
+          return interaction.reply({ content: text, ephemeral: true });
+        }
+
         if (interaction.customId === 'prefix_help_cat') {
           const general = require('../prefix/general');
           const key = interaction.values[0];

@@ -1078,6 +1078,27 @@ function upsertWelcomeSettings(guildId, fields) {
   }
 }
 
+// ── panels ────────────────────────────────────────────────────────────────────
+db.run(`CREATE TABLE IF NOT EXISTS panels (
+  id TEXT PRIMARY KEY,
+  guild_id TEXT NOT NULL,
+  message_id TEXT,
+  options_json TEXT NOT NULL
+)`);
+
+function setPanel(id, guildId, messageId, optionsJson) {
+  run('INSERT OR REPLACE INTO panels (id, guild_id, message_id, options_json) VALUES (?, ?, ?, ?)',
+    [id, guildId, messageId, optionsJson]);
+}
+
+function getPanel(id) {
+  return get('SELECT * FROM panels WHERE id = ?', [id]);
+}
+
+function deletePanel(id) {
+  run('DELETE FROM panels WHERE id = ?', [id]);
+}
+
 // Auto-cleanup old stats to prevent disk bloat (runs every 24h)
 function pruneOldData() {
   const cutoff30 = Math.floor(Date.now() / 1000) - 86400 * 30;
@@ -1141,4 +1162,5 @@ module.exports = {
   addAutoping, removeAutoping, getAutopings, toggleAutoping, clearAutopings,
   addDepositMonitor, getActiveDepositMonitors, updateDepositMonitor, markDepositNotified,
   getWelcomeSettings, upsertWelcomeSettings,
+  setPanel, getPanel, deletePanel,
 };
