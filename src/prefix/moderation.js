@@ -77,12 +77,12 @@ const warn = {
       || (args[0] && await message.guild.members.fetch(args[0]).catch(() => null));
     if (!member) return message.reply({
       embeds: [new EmbedBuilder().setColor(C.yellow)
-        .setDescription('> ⚠️  **Usage**\n> `,warn <@user | id> <reason>`')],
+        .setDescription('⚠️ **Usage**\n`,warn <@user | id> <reason>`')],
     });
 
-    const reason = args.slice(message.mentions.members.size ? 1 : 1).join(' ') || 'No reason provided';
-    const result  = db.addWarning(message.guild.id, member.id, message.author.id, reason);
-    const caseId  = lastId(result);
+    const reason   = args.slice(message.mentions.members.size ? 1 : 1).join(' ') || 'No reason provided';
+    const result   = db.addWarning(message.guild.id, member.id, message.author.id, reason);
+    const caseId   = lastId(result);
     const allWarns = db.getWarnings(message.guild.id, member.id) ?? [];
     logCase(message.guild.id, member.id, message.author.id, 'warn', reason);
 
@@ -90,7 +90,7 @@ const warn = {
     member.user.send({ embeds: [
       new EmbedBuilder()
         .setColor(C.yellow)
-        .setAuthor({ name: `⚠️  Warning from ${message.guild.name}`, iconURL: message.guild.iconURL() ?? undefined })
+        .setAuthor({ name: `⚠️ Warning from ${message.guild.name}`, iconURL: message.guild.iconURL() ?? undefined })
         .setDescription(`You received a warning.\n\n**Reason:** ${reason}`)
         .setTimestamp(),
     ] }).catch(() => {});
@@ -99,9 +99,9 @@ const warn = {
       .setColor(C.yellow)
       .setAuthor({ name: `${member.user.username} warned`, iconURL: member.user.displayAvatarURL() })
       .addFields(
-        { name: '👤 User',       value: `${member}`, inline: true },
-        { name: '👮 Moderator',  value: `${message.author}`, inline: true },
-        { name: '📋 Reason',     value: reason },
+        { name: '👤 User',    value: `${member}`, inline: true },
+        { name: '🛡️ Mod',    value: `${message.author}`, inline: true },
+        { name: '📋 Reason', value: reason },
       )
       .setFooter({ text: `Case #${caseId}  •  Warn #${allWarns.length} for this user` })
       .setTimestamp();
@@ -121,21 +121,21 @@ const warnings = {
     const target = message.mentions.users.first()
       || (args[0] && await message.client.users.fetch(args[0]).catch(() => null));
     if (!target) return message.reply({
-      embeds: [new EmbedBuilder().setColor(C.yellow).setDescription('> ⚠️  **Usage**\n> `,warns <@user | id>`')],
+      embeds: [new EmbedBuilder().setColor(C.yellow).setDescription('⚠️ **Usage**\n`,warns <@user | id>`')],
     });
 
-    const list = db.getWarnings(message.guild.id, target.id) ?? [];
+    const list  = db.getWarnings(message.guild.id, target.id) ?? [];
     const total = list.length;
 
     let description;
     if (!total) {
-      description = '*No warnings on record.*';
+      description = 'No warnings.';
     } else {
       description = list.slice(0, 10).map(w => {
         const modName = resolveTag(message.client, w.mod_id);
-        return `⚠️  \`#${w.id}\`  \`${fmtDate(w.created_at)}\` — ${w.reason}\n> Mod: **${modName}**`;
-      }).join('\n');
-      if (total > 10) description += `\n*…and ${total - 10} more*`;
+        return `⚠️ #${w.id}  ${fmtDate(w.created_at)} — ${w.reason}\nMod: ${modName}`;
+      }).join('\n\n');
+      if (total > 10) description += `\n\n*…and ${total - 10} more*`;
     }
 
     const color = total === 0 ? C.green : total < 3 ? C.yellow : C.red;
@@ -143,6 +143,7 @@ const warnings = {
     const embed = new EmbedBuilder()
       .setColor(color)
       .setAuthor({ name: `Warnings — ${target.username}`, iconURL: target.displayAvatarURL() })
+      .setThumbnail(target.displayAvatarURL())
       .setDescription(description)
       .setFooter({ text: `${total} warning${total !== 1 ? 's' : ''} total  •  ID: ${target.id}` })
       .setTimestamp();
@@ -161,7 +162,7 @@ const delwarn = {
 
     const id = parseInt(args[0]);
     if (!id) return message.reply({
-      embeds: [new EmbedBuilder().setColor(C.yellow).setDescription('> ⚠️  **Usage**\n> `,delwarn <case_id>`')],
+      embeds: [new EmbedBuilder().setColor(C.yellow).setDescription('⚠️ **Usage**\n`,delwarn <case_id>`')],
     });
 
     const row = db.get?.('SELECT * FROM warnings WHERE id=? AND guild_id=?', [id, message.guild.id])
@@ -191,7 +192,7 @@ const clearwarns = {
     const target = message.mentions.users.first()
       || (args[0] && await message.client.users.fetch(args[0]).catch(() => null));
     if (!target) return message.reply({
-      embeds: [new EmbedBuilder().setColor(C.yellow).setDescription('> ⚠️  **Usage**\n> `,clearwarns <@user | id>`')],
+      embeds: [new EmbedBuilder().setColor(C.yellow).setDescription('⚠️ **Usage**\n`,clearwarns <@user | id>`')],
     });
 
     const count = (db.getWarnings(message.guild.id, target.id) ?? []).length;
@@ -218,7 +219,7 @@ const kick = {
     const member = message.mentions.members.first()
       || (args[0] && await message.guild.members.fetch(args[0]).catch(() => null));
     if (!member) return message.reply({
-      embeds: [new EmbedBuilder().setColor(C.yellow).setDescription('> ⚠️  **Usage**\n> `,kick <@user | id> [reason]`')],
+      embeds: [new EmbedBuilder().setColor(C.yellow).setDescription('⚠️ **Usage**\n`,kick <@user | id> [reason]`')],
     });
 
     if (!member.kickable) return message.reply({ embeds: [err('I cannot kick that member (they may be above me in the role hierarchy).')] });
@@ -259,7 +260,7 @@ const ban = {
     const target = message.mentions.users.first()
       || (args[0] && await message.client.users.fetch(args[0]).catch(() => null));
     if (!target) return message.reply({
-      embeds: [new EmbedBuilder().setColor(C.yellow).setDescription('> ⚠️  **Usage**\n> `,ban <@user | id> [reason]`')],
+      embeds: [new EmbedBuilder().setColor(C.yellow).setDescription('⚠️ **Usage**\n`,ban <@user | id> [reason]`')],
     });
 
     const member = await message.guild.members.fetch(target.id).catch(() => null);
@@ -301,7 +302,7 @@ const unban = {
 
     const userId = args[0]?.replace(/\D/g, '');
     if (!userId) return message.reply({
-      embeds: [new EmbedBuilder().setColor(C.yellow).setDescription('> ⚠️  **Usage**\n> `,unban <user_id> [reason]`')],
+      embeds: [new EmbedBuilder().setColor(C.yellow).setDescription('⚠️ **Usage**\n`,unban <user_id> [reason]`')],
     });
 
     const reason = args.slice(1).join(' ') || 'No reason provided';
@@ -336,7 +337,7 @@ const mute = {
     const member = message.mentions.members.first()
       || (args[0] && await message.guild.members.fetch(args[0]).catch(() => null));
     if (!member) return message.reply({
-      embeds: [new EmbedBuilder().setColor(C.yellow).setDescription('> ⚠️  **Usage**\n> `,mute <@user | id> [10m|2h|7d] [reason]`')],
+      embeds: [new EmbedBuilder().setColor(C.yellow).setDescription('⚠️ **Usage**\n`,mute <@user | id> [10m|2h|7d] [reason]`')],
     });
 
     const argStart  = message.mentions.members.size ? 1 : 1;
@@ -387,7 +388,7 @@ const unmute = {
     const member = message.mentions.members.first()
       || (args[0] && await message.guild.members.fetch(args[0]).catch(() => null));
     if (!member) return message.reply({
-      embeds: [new EmbedBuilder().setColor(C.yellow).setDescription('> ⚠️  **Usage**\n> `,unmute <@user | id>`')],
+      embeds: [new EmbedBuilder().setColor(C.yellow).setDescription('⚠️ **Usage**\n`,unmute <@user | id>`')],
     });
 
     await member.timeout(null).catch(() => {});
@@ -414,7 +415,7 @@ const history = {
     const target = message.mentions.users.first()
       || (args[0] && await message.client.users.fetch(args[0]).catch(() => null));
     if (!target) return message.reply({
-      embeds: [new EmbedBuilder().setColor(C.yellow).setDescription('> ⚠️  **Usage**\n> `,history <@user | id>`')],
+      embeds: [new EmbedBuilder().setColor(C.yellow).setDescription('⚠️ **Usage**\n`,history <@user | id>`')],
     });
 
     const cases = db.all(
@@ -517,7 +518,7 @@ const massban = {
 
     const members = message.mentions.members;
     if (!members.size) return message.reply({
-      embeds: [new EmbedBuilder().setColor(C.yellow).setDescription('> ⚠️  **Usage**\n> `,massban @user1 @user2 ...`')],
+      embeds: [new EmbedBuilder().setColor(C.yellow).setDescription('⚠️ **Usage**\n`,massban @user1 @user2 ...`')],
     });
 
     let count = 0;
@@ -547,7 +548,7 @@ const masskick = {
 
     const members = message.mentions.members;
     if (!members.size) return message.reply({
-      embeds: [new EmbedBuilder().setColor(C.yellow).setDescription('> ⚠️  **Usage**\n> `,masskick @user1 @user2 ...`')],
+      embeds: [new EmbedBuilder().setColor(C.yellow).setDescription('⚠️ **Usage**\n`,masskick @user1 @user2 ...`')],
     });
 
     let count = 0;
@@ -590,7 +591,7 @@ const stripstaff = {
 
     const member = message.mentions.members.first();
     if (!member) return message.reply({
-      embeds: [new EmbedBuilder().setColor(C.yellow).setDescription('> ⚠️  **Usage**\n> `,stripstaff <@user>`')],
+      embeds: [new EmbedBuilder().setColor(C.yellow).setDescription('⚠️ **Usage**\n`,stripstaff <@user>`')],
     });
 
     const dangerous = [
@@ -630,7 +631,7 @@ const jail = {
 
     const member = message.mentions.members.first();
     if (!member) return message.reply({
-      embeds: [new EmbedBuilder().setColor(C.yellow).setDescription('> ⚠️  **Usage**\n> `,jail <@user> [reason]`')],
+      embeds: [new EmbedBuilder().setColor(C.yellow).setDescription('⚠️ **Usage**\n`,jail <@user> [reason]`')],
     });
 
     const reason = args.slice(1).join(' ') || 'No reason provided';
@@ -658,7 +659,7 @@ const unjail = {
 
     const member = message.mentions.members.first();
     if (!member) return message.reply({
-      embeds: [new EmbedBuilder().setColor(C.yellow).setDescription('> ⚠️  **Usage**\n> `,unjail <@user>`')],
+      embeds: [new EmbedBuilder().setColor(C.yellow).setDescription('⚠️ **Usage**\n`,unjail <@user>`')],
     });
 
     await message.reply({ embeds: [
@@ -680,7 +681,7 @@ const reason = {
     const caseId    = parseInt(args[0]);
     const newReason = args.slice(1).join(' ');
     if (!caseId || !newReason) return message.reply({
-      embeds: [new EmbedBuilder().setColor(C.yellow).setDescription('> ⚠️  **Usage**\n> `,reason <case_id> <reason>`')],
+      embeds: [new EmbedBuilder().setColor(C.yellow).setDescription('⚠️ **Usage**\n`,reason <case_id> <reason>`')],
     });
 
     const row = db.all('SELECT * FROM mod_history WHERE id=? AND guild_id=?', [caseId, message.guild.id])[0];
@@ -735,7 +736,7 @@ const permit = {
       return message.reply({ embeds: [err('You need **Manage Server** permission.')] });
     const target = message.mentions.users.first();
     if (!target) return message.reply({
-      embeds: [new EmbedBuilder().setColor(C.yellow).setDescription('> ⚠️  **Usage**\n> `,permit <@user>`')],
+      embeds: [new EmbedBuilder().setColor(C.yellow).setDescription('⚠️ **Usage**\n`,permit <@user>`')],
     });
     await message.reply({ embeds: [
       new EmbedBuilder().setColor(C.green)
@@ -757,7 +758,7 @@ const sudo = {
       const target = message.mentions.users.first();
       const text   = args.slice(2).join(' ');
       if (!target || !text) return message.reply({
-        embeds: [new EmbedBuilder().setColor(C.yellow).setDescription('> ⚠️  **Usage**\n> `,sudo dm <@user> <message>`')],
+        embeds: [new EmbedBuilder().setColor(C.yellow).setDescription('⚠️ **Usage**\n`,sudo dm <@user> <message>`')],
       });
       await target.send(text).catch(() => {});
       return message.reply({ embeds: [new EmbedBuilder().setColor(C.green).setDescription(`> ✅  DM sent to **${target.username}**.`)] });
@@ -778,7 +779,7 @@ const talk = {
     const channel = message.mentions.channels.first();
     const text    = args.slice(message.mentions.channels.size ? 1 : 0).join(' ');
     if (!channel || !text) return message.reply({
-      embeds: [new EmbedBuilder().setColor(C.yellow).setDescription('> ⚠️  **Usage**\n> `,talk <#channel> <message>`')],
+      embeds: [new EmbedBuilder().setColor(C.yellow).setDescription('⚠️ **Usage**\n`,talk <#channel> <message>`')],
     });
 
     await channel.send(text).catch(() => {});
@@ -799,13 +800,13 @@ const autorole = {
 
     if (sub === 'add') {
       const role = message.mentions.roles.first();
-      if (!role) return message.reply({ embeds: [new EmbedBuilder().setColor(C.yellow).setDescription('> ⚠️  **Usage**\n> `,autorole add <@role>`')] });
+      if (!role) return message.reply({ embeds: [new EmbedBuilder().setColor(C.yellow).setDescription('⚠️ **Usage**\n`,autorole add <@role>`')] });
       db.addAutorole(guildId, role.id);
       return message.reply({ embeds: [new EmbedBuilder().setColor(C.green).setDescription(`> ✅  **${role.name}** will now be given to new members.`)] });
     }
     if (sub === 'remove') {
       const role = message.mentions.roles.first();
-      if (!role) return message.reply({ embeds: [new EmbedBuilder().setColor(C.yellow).setDescription('> ⚠️  **Usage**\n> `,autorole remove <@role>`')] });
+      if (!role) return message.reply({ embeds: [new EmbedBuilder().setColor(C.yellow).setDescription('⚠️ **Usage**\n`,autorole remove <@role>`')] });
       db.removeAutorole(guildId, role.id);
       return message.reply({ embeds: [new EmbedBuilder().setColor(C.green).setDescription(`> ✅  **${role.name}** removed from auto-roles.`)] });
     }
