@@ -227,6 +227,76 @@ app.post('/api/status', auth, (req, res) => {
   res.json({ ok: true, botStatus });
 });
 
+// ─── Channels list ────────────────────────────────────────────────────────────
+app.get('/api/guild/:guildId/channels', auth, async (req, res) => {
+  try {
+    const client = req.app.locals.client;
+    const guild  = await client.guilds.fetch(req.params.guildId);
+    await guild.channels.fetch();
+    const channels = guild.channels.cache
+      .filter(c => c.type === 0) // text channels only
+      .map(c => ({ id: c.id, name: c.name, parent: c.parent?.name || null }))
+      .sort((a, b) => a.name.localeCompare(b.name));
+    res.json(channels);
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// ─── Panel send ───────────────────────────────────────────────────────────────
+app.post('/api/guild/:guildId/panel/send', auth, async (req, res) => {
+  const { guildId } = req.params;
+  const { channelId, embedData, dropdown } = req.body;
+  if (!channelId || !embedData) return res.status(400).json({ error: 'Missing channelId or embedData' });
+
+  try {
+    const client  = req.app.locals.client;
+    const guild   = await client.guilds.fetch(guildId);
+    const channel = guild.channels.cache.get(channelId) || await guild.channels.fetch(channelId);
+    if (!channel) return res.status(404).json({ error: 'Channel not found' });
+
+    const { EmbedBuilder, ActionRowBuilder, StringSelectMenuBuilder } = require('discord.js');
+
+    const emb = new EmbedBuilder();
+    if (embedData.title)       emb.setTitle(embedData.title);
+    if (embedData.description) emb.setDescription(embedData.description);
+    if (embedData.color)       emb.setColor(embedData.color);
+    if (embedData.footer)      emb.setFooter({ text: embedData.footer, iconURL: embedData.footerIcon || undefined });
+    if (embedData.thumbnail)   emb.setThumbnail(embedData.thumbnail);
+    if (embedData.image)       emb.setImage(embedData.image);
+    if (embedData.author)      emb.setAuthor({ name: embedData.author, iconURL: embedData.authorIcon || undefined });
+    if (Array.isArray(embedData.fields)) {
+      for (const f of embedData.fields) {
+        if (f.name && f.value) emb.addFields({ name: f.name, value: f.value, inline: !!f.inline });
+      }
+    }
+
+    const components = [];
+    const panelId = `${guildId}_${Date.now()}`;
+    if (dropdown && Array.isArray(dropdown.options) && dropdown.options.length > 0) {
+      const menu = new StringSelectMenuBuilder()
+        .setCustomId(`panel:${panelId}`)
+        .setPlaceholder(dropdown.placeholder || 'Choose an option.')
+        .addOptions(dropdown.options.slice(0, 25).map((o, i) => ({
+          label: o.label.slice(0, 100),
+          value: o.value || `opt_${i}`,
+          ...(o.description ? { description: o.description.slice(0, 100) } : {}),
+        })));
+      components.push(new ActionRowBuilder().addComponents(menu));
+    }
+
+    const sent = await channel.send({ embeds: [emb], components });
+
+    if (dropdown && sent) {
+      db.setPanel(panelId, guildId, sent.id, JSON.stringify(dropdown.options));
+    }
+
+    res.json({ ok: true, messageId: sent.id });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
 // ─── Health check ─────────────────────────────────────────────────────────────
 app.get('/health', (_, res) => res.json({ status: 'ok', uptime: process.uptime() }));
 
