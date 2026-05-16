@@ -230,4 +230,108 @@ const levels = {
   },
 };
 
-module.exports = [rank, leaderboard, xplb, levels];
+// ── ,messages / ,msgrank ─────────────────────────────────────────────────────
+const msgrank = {
+  name: 'messages',
+  aliases: ['msgrank', 'mrank', 'messagerank', 'usermessages', 'umsg'],
+  async execute(message, args) {
+    const target  = message.mentions.users.first() || message.author;
+    const guildId = message.guild.id;
+    const stats   = db.getMessageStats(guildId, target.id);
+    const rank    = db.getMessageRank(guildId, target.id);
+
+    const topChanLines = await Promise.all(
+      (stats.topChannels || []).slice(0, 3).map(async r => {
+        const ch = message.guild.channels.cache.get(r.channel_id);
+        return `**${ch ? `#${ch.name}` : r.channel_id}** — ${r.cnt} msgs`;
+      })
+    );
+
+    const embed = new EmbedBuilder()
+      .setColor('#5865F2')
+      .setAuthor({ name: `${target.username} — Message Stats`, iconURL: target.displayAvatarURL({ size: 128 }) })
+      .addFields(
+        { name: '📅 Today',    value: `**${stats.d1}**`,  inline: true },
+        { name: '📆 7 days',   value: `**${stats.d7}**`,  inline: true },
+        { name: '🗓️ 30 days',  value: `**${stats.d30}**`, inline: true },
+        { name: '🏆 Rank (30d)', value: rank ? `**#${rank}**` : '**Unranked**', inline: true },
+        ...(topChanLines.length ? [{ name: '🔥 Top Channels', value: topChanLines.join('\n'), inline: false }] : []),
+      )
+      .setFooter({ text: 'Stats based on last 30 days • flux bot' })
+      .setTimestamp();
+    await message.reply({ embeds: [embed] });
+  },
+};
+
+// ── ,topmessages / ,msglb ─────────────────────────────────────────────────────
+const topmessages = {
+  name: 'topmessages',
+  aliases: ['msglb', 'topmsg', 'msgtop', 'messageleaderboard'],
+  async execute(message, args) {
+    const guildId = message.guild.id;
+    const period  = ['1d', '7d', '30d'].includes(args[0]) ? args[0] : '30d';
+    const rows    = db.getMessageLeaderboard(guildId, 10, period);
+
+    if (!rows.length) {
+      return message.reply({ embeds: [new EmbedBuilder().setColor('#5865F2').setDescription('No message data yet.')] });
+    }
+
+    const medals = ['🥇', '🥈', '🥉'];
+    const lines  = await Promise.all(rows.map(async (r, i) => {
+      let username;
+      try { username = (await message.client.users.fetch(r.user_id)).username; }
+      catch { username = r.user_id; }
+      return `${medals[i] ?? `**${i + 1}.**`} **${username}** — ${r.cnt} messages`;
+    }));
+
+    const periodLabel = { '1d': 'Today', '7d': 'Last 7 Days', '30d': 'Last 30 Days' }[period];
+    const embed = new EmbedBuilder()
+      .setColor('#F1C40F')
+      .setAuthor({ name: `${message.guild.name} — Message Leaderboard (${periodLabel})`, iconURL: message.guild.iconURL({ dynamic: true }) || undefined })
+      .setDescription(lines.join('\n'))
+      .setFooter({ text: 'Tip: use ,topmessages 1d / 7d / 30d' })
+      .setTimestamp();
+    await message.reply({ embeds: [embed] });
+  },
+};
+
+// ── ,servermessages ───────────────────────────────────────────────────────────
+const servermessages = {
+  name: 'servermessages',
+  aliases: ['msgstats', 'serverstats'],
+  async execute(message) {
+    const guildId = message.guild.id;
+    const d1  = db.getMessageLeaderboard(guildId, 1, '1d').reduce((s, r) => s + r.cnt, 0);
+    const d7  = db.getMessageLeaderboard(guildId, 999, '7d').reduce((s, r) => s + r.cnt, 0);
+    const d30 = db.getMessageLeaderboard(guildId, 999, '30d').reduce((s, r) => s + r.cnt, 0);
+    const uniqueUsers = db.getMessageLeaderboard(guildId, 999, '30d').length;
+
+    const embed = new EmbedBuilder()
+      .setColor('#5865F2')
+      .setAuthor({ name: `${message.guild.name} — Server Message Stats`, iconURL: message.guild.iconURL({ dynamic: true }) || undefined })
+      .addFields(
+        { name: '📅 Today',     value: `**${d1}**`,          inline: true },
+        { name: '📆 7 days',    value: `**${d7}**`,          inline: true },
+        { name: '🗓️ 30 days',   value: `**${d30}**`,         inline: true },
+        { name: '👥 Active (30d)', value: `**${uniqueUsers}** users`, inline: true },
+      )
+      .setTimestamp();
+    await message.reply({ embeds: [embed] });
+  },
+};
+
+// ── ,msgreset ────────────────────────────────────────────────────────────────
+const msgreset = {
+  name: 'msgreset',
+  aliases: ['resetmsg'],
+  async execute(message, args) {
+    if (!message.member.permissions.has(PermissionFlagsBits.ManageGuild))
+      return message.reply({ embeds: [new EmbedBuilder().setColor('#ED4245').setDescription('❌ You need **Manage Server** permission.')] });
+    const target = message.mentions.users.first();
+    if (!target) return message.reply('Usage: `,msgreset <@user>`');
+    db.run('DELETE FROM message_stats WHERE guild_id=? AND user_id=?', [message.guild.id, target.id]);
+    await message.reply({ embeds: [new EmbedBuilder().setColor('#57F287').setDescription(`✅ Reset message stats for **${target.username}**.`)] });
+  },
+};
+
+module.exports = [rank, leaderboard, xplb, levels, msgrank, topmessages, servermessages, msgreset];
