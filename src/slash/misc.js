@@ -91,30 +91,6 @@ const RATE_COMMENTS = [
   'Legendary status unlocked.',
 ];
 
-const SCORE_COLORS = ['#ED4245', '#ED4245', '#ED4245', '#E67E22', '#E67E22', '#FEE75C', '#FEE75C', '#57F287', '#57F287', '#57F287', '#FFD700'];
-
-const rate = {
-  data: new SlashCommandBuilder()
-    .setName('rate')
-    .setDescription('Rate anything out of 10')
-    .addStringOption(o => o.setName('thing').setDescription('What to rate').setRequired(true)),
-
-  async execute(interaction) {
-    const thing   = interaction.options.getString('thing');
-    const score   = Math.floor(Math.random() * 11);
-    const comment = RATE_COMMENTS[Math.floor(Math.random() * RATE_COMMENTS.length)];
-    const bar     = '█'.repeat(score) + '░'.repeat(10 - score);
-
-    const embed = new EmbedBuilder()
-      .setColor(SCORE_COLORS[score])
-      .setAuthor({ name: `📊 Rating: ${thing}`, iconURL: interaction.user.displayAvatarURL() })
-      .setDescription(`\`${bar}\`\n\n**${score}/10** — *${comment}*`)
-      .setFooter({ text: `Rated by ${interaction.user.tag} • flux bot` })
-      .setTimestamp();
-
-    await interaction.reply({ embeds: [embed] });
-  },
-};
 
 // ─── /setprefix ──────────────────────────────────────────────────────────────
 const setprefix = {
@@ -147,4 +123,4 @@ const setprefix = {
   },
 };
 
-module.exports = [setstatus, restart, rate, setprefix];
+module.exports = [setstatus, restart, setprefix];
