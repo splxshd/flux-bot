@@ -34,7 +34,7 @@ const mentionTracker = new Map(); // userId -> count (reset per guild, simple pe
 
 // Sticky message counter — tracks messages since last sticky post per channel
 const stickyCounter = new Map(); // channelId -> count
-const STICKY_INTERVAL = 10;
+const STICKY_INTERVAL = 25;
 
 module.exports = (client) => {
   console.log('[messageCreate] handler registered');
