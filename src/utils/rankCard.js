@@ -1,6 +1,33 @@
 'use strict';
 
-const { createCanvas, loadImage } = require('@napi-rs/canvas');
+const { createCanvas, loadImage, GlobalFonts } = require('@napi-rs/canvas');
+const path = require('path');
+const fs   = require('fs');
+
+// Register fonts — try @fontsource/open-sans woff2 files bundled in node_modules
+const FONT_CANDIDATES = [
+  // @fontsource/open-sans v5
+  ['open-sans-latin-700-normal.woff2', 'OpenSans'],
+  ['open-sans-latin-400-normal.woff2', 'OpenSans'],
+  // fallback: common Linux system fonts on Railway
+  ['/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf', 'OpenSans'],
+  ['/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf', 'OpenSans'],
+  ['/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf', 'OpenSans'],
+];
+
+let FONT = 'sans-serif';
+
+for (const [file, family] of FONT_CANDIDATES) {
+  const full = file.startsWith('/') ? file
+    : path.join(__dirname, '../../node_modules/@fontsource/open-sans/files', file);
+  if (fs.existsSync(full)) {
+    try {
+      GlobalFonts.registerFromPath(full, family);
+      FONT = family;
+      break;
+    } catch {}
+  }
+}
 
 const W = 934;
 const H = 280;
@@ -100,7 +127,7 @@ async function generateRankCard(opts) {
   const TX = AVX + AVR + 32;
 
   // Username
-  ctx.font        = 'bold 38px sans-serif';
+  ctx.font        = `bold 38px ${FONT}`;
   ctx.fillStyle   = '#ffffff';
   ctx.textBaseline = 'top';
   const nameText  = username.length > 18 ? username.slice(0, 16) + '…' : username;
@@ -108,7 +135,7 @@ async function generateRankCard(opts) {
 
   // Level badge pill
   const lvlLabel = `LEVEL ${level}`;
-  ctx.font = 'bold 16px sans-serif';
+  ctx.font = `bold 16px ${FONT}`;
   const pillW = ctx.measureText(lvlLabel).width + 24;
   const pillX = TX;
   const pillY = 100;
@@ -116,32 +143,32 @@ async function generateRankCard(opts) {
   ctx.fillStyle = accent;
   ctx.fill();
   ctx.fillStyle = '#fff';
-  ctx.font = 'bold 14px sans-serif';
+  ctx.font = `bold 14px ${FONT}`;
   ctx.textBaseline = 'middle';
   ctx.fillText(lvlLabel, pillX + 12, pillY + 14);
 
   // XP text
-  ctx.font      = '22px sans-serif';
+  ctx.font      = `22px ${FONT}`;
   ctx.fillStyle = '#b5bac1';
   ctx.textBaseline = 'middle';
   ctx.fillText(`${fmt(xpIntoLevel)} / ${fmt(xpNeeded)} XP`, TX + pillW + 16, pillY + 14);
 
   // Rank
   const rankText = rank ? `#${rank}` : '—';
-  ctx.font      = 'bold 28px sans-serif';
+  ctx.font      = `bold 28px ${FONT}`;
   ctx.fillStyle = '#ffffff';
   ctx.textBaseline = 'middle';
   const rankLabel = 'RANK ';
-  ctx.font = '16px sans-serif';
+  ctx.font = `16px ${FONT}`;
   ctx.fillStyle = '#80848e';
   const rlW = ctx.measureText(rankLabel).width;
   ctx.fillText(rankLabel, TX, 152);
-  ctx.font = 'bold 28px sans-serif';
+  ctx.font = `bold 28px ${FONT}`;
   ctx.fillStyle = accent;
   ctx.fillText(rankText, TX + rlW, 148);
 
   // Total XP
-  ctx.font = '15px sans-serif';
+  ctx.font = `15px ${FONT}`;
   ctx.fillStyle = '#4e5058';
   ctx.fillText(`Total XP: ${fmt(xp)}`, TX + rlW + ctx.measureText(rankText).width + 24, 152);
 
@@ -172,7 +199,7 @@ async function generateRankCard(opts) {
   }
 
   // Percentage label
-  ctx.font      = 'bold 13px sans-serif';
+  ctx.font      = `bold 13px ${FONT}`;
   ctx.fillStyle = '#80848e';
   ctx.textBaseline = 'top';
   ctx.textAlign = 'right';

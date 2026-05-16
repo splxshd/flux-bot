@@ -37,7 +37,7 @@ function formatXp(n) {
 // ── ,rank / ,level / ,xp ─────────────────────────────────────────────────────
 const rank = {
   name: 'rank',
-  aliases: ['level', 'xp'],
+  aliases: ['level', 'lvl', 'xp'],
   async execute(message, args) {
     let target = message.mentions.users.first();
     if (!target && args[0]) {

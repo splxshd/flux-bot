@@ -9,23 +9,13 @@ const RED    = '#ED4245';
 const YELLOW = '#FEE75C';
 const PINK   = '#EB459E';
 
-// ,lvl
+// ,lvl — redirect to the proper rank command in levels.js
 const lvl = {
   name: 'lvl',
-  aliases: ['level'],
-  async execute(message, args) {
-    const target = message.mentions.members.first() || message.member;
-    const data = db.getUserXP?.(message.guild.id, target.id) || { xp: 0, level: 0 };
-    const xpNeeded = (data.level + 1) * 100;
-    return message.reply({ embeds: [new EmbedBuilder()
-      .setColor(BLUE)
-      .setAuthor({ name: `${target.user.username} — Level`, iconURL: target.user.displayAvatarURL() })
-      .setThumbnail(target.user.displayAvatarURL())
-      .addFields(
-        { name: 'Level', value: `${data.level}`, inline: true },
-        { name: 'XP',    value: `${data.xp} / ${xpNeeded}`, inline: true },
-      )
-      .setTimestamp()] });
+  aliases: [],
+  async execute(message, args, client) {
+    const rankCmd = client.prefixCommands?.get('rank');
+    if (rankCmd) return rankCmd.execute(message, args, client);
   }
 };
 
