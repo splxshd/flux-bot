@@ -60,11 +60,20 @@ const panel = {
         .setCustomId(`panel:${panelId}`)
         .setPlaceholder(data.dropdown.placeholder || 'Choose an option.')
         .addOptions(
-          data.dropdown.options.slice(0, 25).map((o, i) => ({
-            label: (o.label || `Option ${i + 1}`).slice(0, 100),
-            value: (o.value || `opt_${i}`).slice(0, 100),
-            ...(o.description ? { description: o.description.slice(0, 100) } : {}),
-          }))
+          data.dropdown.options.slice(0, 25).map((o, i) => {
+            const opt = {
+              label: (o.label || `Option ${i + 1}`).slice(0, 100),
+              value: (o.value || `opt_${i}`).slice(0, 100),
+            };
+            if (o.description) opt.description = o.description.slice(0, 100);
+            if (o.emoji) {
+              // Numeric ID = custom emoji, otherwise treat as unicode
+              opt.emoji = /^\d+$/.test(o.emoji.trim())
+                ? { id: o.emoji.trim() }
+                : { name: o.emoji.trim() };
+            }
+            return opt;
+          })
         );
       components.push(new ActionRowBuilder().addComponents(menu));
     }

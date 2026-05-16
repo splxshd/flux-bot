@@ -277,11 +277,19 @@ app.post('/api/guild/:guildId/panel/send', auth, async (req, res) => {
       const menu = new StringSelectMenuBuilder()
         .setCustomId(`panel:${panelId}`)
         .setPlaceholder(dropdown.placeholder || 'Choose an option.')
-        .addOptions(dropdown.options.slice(0, 25).map((o, i) => ({
-          label: o.label.slice(0, 100),
-          value: o.value || `opt_${i}`,
-          ...(o.description ? { description: o.description.slice(0, 100) } : {}),
-        })));
+        .addOptions(dropdown.options.slice(0, 25).map((o, i) => {
+          const opt = {
+            label: (o.label || `Option ${i + 1}`).slice(0, 100),
+            value: (o.value || `opt_${i}`).slice(0, 100),
+          };
+          if (o.description) opt.description = o.description.slice(0, 100);
+          if (o.emoji) {
+            opt.emoji = /^\d+$/.test(o.emoji.trim())
+              ? { id: o.emoji.trim() }
+              : { name: o.emoji.trim() };
+          }
+          return opt;
+        }));
       components.push(new ActionRowBuilder().addComponents(menu));
     }
 
