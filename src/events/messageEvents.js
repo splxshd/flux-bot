@@ -21,17 +21,37 @@ module.exports = (client) => {
     const logCh = message.guild.channels.cache.get(settings.log_channel);
     if (!logCh) return;
 
+    // Collect attachments
+    const attachments = message.attachments ? [...message.attachments.values()] : [];
+    const imageExts   = /\.(png|jpg|jpeg|webp|gif|bmp|svg)(\?|$)/i;
+    const images      = attachments.filter(a => imageExts.test(a.url));
+    const otherFiles  = attachments.filter(a => !imageExts.test(a.url));
+
     const embed = new EmbedBuilder()
       .setColor('#ED4245')
       .setAuthor({ name: `${message.author?.tag || 'Unknown'} — message deleted`, iconURL: message.author?.displayAvatarURL() })
       .addFields(
         { name: '📍 Channel', value: `<#${message.channel.id}>`, inline: true },
         { name: '🆔 Message ID', value: message.id, inline: true },
-        { name: '📝 Content', value: content.slice(0, 1024) || '*empty*' },
+        { name: '📝 Content', value: (message.content || '*[no text]*').slice(0, 1024) },
       )
       .setThumbnail(message.author?.displayAvatarURL())
       .setFooter({ text: `User ID: ${message.author?.id}` })
       .setTimestamp();
+
+    // Show first image inside the embed
+    if (images.length > 0) {
+      embed.setImage(images[0].url);
+    }
+
+    // List extra images / files as links
+    const extraImages = images.slice(1);
+    if (extraImages.length > 0) {
+      embed.addFields({ name: `🖼️ More images (${extraImages.length})`, value: extraImages.map(a => a.url).join('\n').slice(0, 1024) });
+    }
+    if (otherFiles.length > 0) {
+      embed.addFields({ name: `📎 Attachments (${otherFiles.length})`, value: otherFiles.map(a => `[${a.name}](${a.url})`).join('\n').slice(0, 1024) });
+    }
 
     logCh.send({ embeds: [embed] }).catch(() => {});
   });
