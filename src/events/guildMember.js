@@ -42,10 +42,8 @@ module.exports = (client) => {
           const buffer = await generateWelcomeCard({
             username:    member.user.username,
             avatarUrl:   member.user.displayAvatarURL({ extension: 'png', size: 256 }),
-            bannerUrl:   guild.bannerURL({ extension: 'png', size: 1024 }) ?? null,
             memberCount: guild.memberCount,
             guildName:   guild.name,
-            accent:      welcome.color || '#5865F2',
           });
           const attachment = new AttachmentBuilder(buffer, { name: 'welcome.png' });
           // Optional text above the card (description field used as welcome text)

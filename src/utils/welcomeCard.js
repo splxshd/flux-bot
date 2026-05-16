@@ -20,73 +20,96 @@ for (const fp of FONT_CANDIDATES) {
   }
 }
 
-const W = 800;
+// Local background image (save your banner as welcome_bg.png in src/assets/)
+const LOCAL_BG = path.join(__dirname, '../assets/welcome_bg.png');
+
+const W = 1000;
 const H = 300;
 
 /**
  * @param {object} opts
  * @param {string}      opts.username
  * @param {string}      opts.avatarUrl
- * @param {string|null} opts.bannerUrl    — guild.bannerURL(...)
  * @param {number}      opts.memberCount
  * @param {string}      opts.guildName
- * @param {string}      [opts.accent]     — hex accent color
  */
-async function generateWelcomeCard({ username, avatarUrl, bannerUrl, memberCount, guildName, accent = '#5865F2' }) {
+async function generateWelcomeCard({ username, avatarUrl, memberCount, guildName }) {
   const canvas = createCanvas(W, H);
   const ctx    = canvas.getContext('2d');
 
-  // ── 1. Background — server banner or dark fallback ────────────────────────
-  if (bannerUrl) {
+  // ── 1. Background ─────────────────────────────────────────────────────────
+  let bgLoaded = false;
+
+  // Try local file first
+  if (fs.existsSync(LOCAL_BG)) {
     try {
-      const banner = await loadImage(bannerUrl);
-      // Cover-fit: scale to fill W×H, crop center
-      const scale  = Math.max(W / banner.width, H / banner.height);
-      const bw     = banner.width  * scale;
-      const bh     = banner.height * scale;
-      const bx     = (W - bw) / 2;
-      const by     = (H - bh) / 2;
-      ctx.drawImage(banner, bx, by, bw, bh);
-    } catch {
-      // fallback to dark
-      ctx.fillStyle = '#111216';
-      ctx.fillRect(0, 0, W, H);
-    }
-  } else {
-    ctx.fillStyle = '#111216';
+      const bg    = await loadImage(LOCAL_BG);
+      const scale = Math.max(W / bg.width, H / bg.height);
+      const bw    = bg.width  * scale;
+      const bh    = bg.height * scale;
+      ctx.drawImage(bg, (W - bw) / 2, (H - bh) / 2, bw, bh);
+      bgLoaded = true;
+    } catch {}
+  }
+
+  if (!bgLoaded) {
+    // Fallback: dark background with red side accents
+    ctx.fillStyle = '#0a0a0a';
+    ctx.fillRect(0, 0, W, H);
+    const lg = ctx.createLinearGradient(0, 0, W * 0.35, H);
+    lg.addColorStop(0, 'rgba(180,0,0,0.5)');
+    lg.addColorStop(1, 'rgba(0,0,0,0)');
+    ctx.fillStyle = lg;
+    ctx.fillRect(0, 0, W, H);
+    const rg = ctx.createLinearGradient(W, 0, W * 0.65, H);
+    rg.addColorStop(0, 'rgba(180,0,0,0.5)');
+    rg.addColorStop(1, 'rgba(0,0,0,0)');
+    ctx.fillStyle = rg;
     ctx.fillRect(0, 0, W, H);
   }
 
-  // ── 2. Dark gradient overlay so text is readable ──────────────────────────
-  const overlay = ctx.createLinearGradient(0, 0, 0, H);
-  overlay.addColorStop(0,   'rgba(0,0,0,0.25)');
-  overlay.addColorStop(0.4, 'rgba(0,0,0,0.45)');
-  overlay.addColorStop(1,   'rgba(0,0,0,0.72)');
-  ctx.fillStyle = overlay;
+  // Subtle dark centre vignette so text pops
+  const vignette = ctx.createRadialGradient(W/2, H/2, H * 0.15, W/2, H/2, W * 0.7);
+  vignette.addColorStop(0, 'rgba(0,0,0,0.15)');
+  vignette.addColorStop(1, 'rgba(0,0,0,0.55)');
+  ctx.fillStyle = vignette;
   ctx.fillRect(0, 0, W, H);
 
-  // ── 3. Avatar — circular, centered, upper-center area ────────────────────
-  const AVR = 64;          // avatar radius
-  const AVX = W / 2;
-  const AVY = H / 2 - 14; // slightly above center
+  // ── 2. Avatar — perfectly centred ─────────────────────────────────────────
+  const AVR = 72;        // radius
+  const AVX = W / 2;    // horizontal center
+  const AVY = H / 2 - 10; // slightly above mid so text fits below
 
-  // Accent glow ring
+  const RED = '#FF0000';
+
+  // Outer glow
   ctx.save();
   ctx.beginPath();
-  ctx.arc(AVX, AVY, AVR + 5, 0, Math.PI * 2);
-  ctx.strokeStyle = accent;
-  ctx.lineWidth   = 4;
-  ctx.shadowColor = accent;
-  ctx.shadowBlur  = 22;
+  ctx.arc(AVX, AVY, AVR + 8, 0, Math.PI * 2);
+  ctx.strokeStyle = 'rgba(255,0,0,0.35)';
+  ctx.lineWidth   = 8;
+  ctx.shadowColor = RED;
+  ctx.shadowBlur  = 30;
   ctx.stroke();
   ctx.restore();
 
-  // White border ring
+  // Red ring
   ctx.save();
   ctx.beginPath();
-  ctx.arc(AVX, AVY, AVR + 3, 0, Math.PI * 2);
-  ctx.strokeStyle = 'rgba(255,255,255,0.9)';
-  ctx.lineWidth   = 3;
+  ctx.arc(AVX, AVY, AVR + 4, 0, Math.PI * 2);
+  ctx.strokeStyle = RED;
+  ctx.lineWidth   = 4;
+  ctx.shadowColor = RED;
+  ctx.shadowBlur  = 18;
+  ctx.stroke();
+  ctx.restore();
+
+  // White inner ring
+  ctx.save();
+  ctx.beginPath();
+  ctx.arc(AVX, AVY, AVR + 1, 0, Math.PI * 2);
+  ctx.strokeStyle = 'rgba(255,255,255,0.6)';
+  ctx.lineWidth   = 1.5;
   ctx.stroke();
   ctx.restore();
 
@@ -99,41 +122,40 @@ async function generateWelcomeCard({ username, avatarUrl, bannerUrl, memberCount
     const img = await loadImage(avatarUrl);
     ctx.drawImage(img, AVX - AVR, AVY - AVR, AVR * 2, AVR * 2);
   } catch {
-    ctx.fillStyle = '#2b2d31';
+    ctx.fillStyle = '#1a1a1a';
     ctx.fill();
   }
   ctx.restore();
 
-  // ── 4. "WELCOME" text ─────────────────────────────────────────────────────
-  const textY = AVY + AVR + 28;
+  // ── 3. Text — centred below avatar ────────────────────────────────────────
+  const textY = AVY + AVR + 16;
 
   ctx.textAlign    = 'center';
   ctx.textBaseline = 'top';
 
-  // Shadow pass for WELCOME
+  // "WELCOME" drop shadow
   ctx.save();
-  ctx.font        = `bold 44px ${FONT}`;
-  ctx.fillStyle   = 'rgba(0,0,0,0.55)';
+  ctx.font      = `bold 38px ${FONT}`;
+  ctx.fillStyle = 'rgba(0,0,0,0.7)';
   ctx.fillText('WELCOME', AVX + 2, textY + 2);
   ctx.restore();
 
-  // Main WELCOME text
-  ctx.font      = `bold 44px ${FONT}`;
-  ctx.fillStyle = '#ffffff';
-  ctx.shadowColor  = 'rgba(0,0,0,0.8)';
-  ctx.shadowBlur   = 10;
+  // "WELCOME" main
+  ctx.font         = `bold 38px ${FONT}`;
+  ctx.fillStyle    = '#ffffff';
+  ctx.shadowColor  = 'rgba(0,0,0,0.9)';
+  ctx.shadowBlur   = 12;
   ctx.fillText('WELCOME', AVX, textY);
-  ctx.shadowBlur = 0;
+  ctx.shadowBlur   = 0;
 
-  // ── 5. Username ───────────────────────────────────────────────────────────
-  const rawName = username.length > 24 ? username.slice(0, 22) + '…' : username;
-
-  ctx.font      = `bold 22px ${FONT}`;
-  ctx.fillStyle = accent;
-  ctx.shadowColor = 'rgba(0,0,0,0.9)';
-  ctx.shadowBlur  = 8;
-  ctx.fillText(rawName.toUpperCase(), AVX, textY + 52);
-  ctx.shadowBlur = 0;
+  // Username in red
+  const rawName = username.length > 26 ? username.slice(0, 24) + '…' : username;
+  ctx.font      = `bold 20px ${FONT}`;
+  ctx.fillStyle = RED;
+  ctx.shadowColor = 'rgba(0,0,0,1)';
+  ctx.shadowBlur  = 10;
+  ctx.fillText(rawName.toUpperCase(), AVX, textY + 46);
+  ctx.shadowBlur  = 0;
 
   return canvas.toBuffer('image/png');
 }
