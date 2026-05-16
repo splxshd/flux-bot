@@ -48,8 +48,8 @@ function fmtTime(ms) {
 
 // ── ,balance / ,bal ───────────────────────────────────────────────────────────
 const balance = {
-  name: 'balance',
-  aliases: ['bal', 'wallet', 'eco', 'money'],
+  name: 'bal',
+  aliases: ['balance', 'eco', 'money'],
   async execute(message, args) {
     const target  = message.mentions.users.first() || message.author;
     const guildId = message.guild.id;

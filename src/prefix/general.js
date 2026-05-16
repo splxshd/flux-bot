@@ -533,9 +533,9 @@ const COMMANDS = [
 
   // ── ,bal ───────────────────────────────────────────────────────────────────
   {
-    name: 'bal',
-    aliases: ['balance'],
-    description: 'Show your LTC wallet address — `,bal`',
+    name: 'ltcbal',
+    aliases: ['ltcwallet', 'myltc'],
+    description: 'Show your LTC wallet address — `,ltcbal`',
     async execute(message, args, client) {
       const w = db.getWallet(message.author.id);
       if (!w) return message.reply('❌ No wallet found. Use `/wallet setup`.');

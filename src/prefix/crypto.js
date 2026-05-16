@@ -26,8 +26,8 @@ async function getBalance(coin, address) {
 
 // ── ,bal ─────────────────────────────────────────────────────────────────────
 const bal = {
-  name: 'bal',
-  aliases: ['cryptobal', 'cbal'],
+  name: 'cryptobal',
+  aliases: ['cbal'],
   async execute(message, args) {
     const coin = args[0]?.toUpperCase();
     const address = args[1];
