@@ -43,11 +43,9 @@ async function generateWelcomeCard({ username, avatarUrl, memberCount, guildName
   // Try local file first
   if (fs.existsSync(LOCAL_BG)) {
     try {
-      const bg    = await loadImage(LOCAL_BG);
-      const scale = Math.max(W / bg.width, H / bg.height);
-      const bw    = bg.width  * scale;
-      const bh    = bg.height * scale;
-      ctx.drawImage(bg, (W - bw) / 2, (H - bh) / 2, bw, bh);
+      const bg = await loadImage(LOCAL_BG);
+      // Draw at exactly canvas size — no upscaling, no interpolation blur
+      ctx.drawImage(bg, 0, 0, W, H);
       bgLoaded = true;
     } catch {}
   }
@@ -68,12 +66,6 @@ async function generateWelcomeCard({ username, avatarUrl, memberCount, guildName
     ctx.fillRect(0, 0, W, H);
   }
 
-  // Subtle dark centre vignette so text pops
-  const vignette = ctx.createRadialGradient(W/2, H/2, H * 0.15, W/2, H/2, W * 0.7);
-  vignette.addColorStop(0, 'rgba(0,0,0,0.15)');
-  vignette.addColorStop(1, 'rgba(0,0,0,0.55)');
-  ctx.fillStyle = vignette;
-  ctx.fillRect(0, 0, W, H);
 
   // ── 2. Avatar — perfectly centred ─────────────────────────────────────────
   const AVR = 72;        // radius
@@ -82,34 +74,12 @@ async function generateWelcomeCard({ username, avatarUrl, memberCount, guildName
 
   const RED = '#FF0000';
 
-  // Outer glow
+  // Thin black outline ring
   ctx.save();
   ctx.beginPath();
-  ctx.arc(AVX, AVY, AVR + 8, 0, Math.PI * 2);
-  ctx.strokeStyle = 'rgba(255,0,0,0.35)';
-  ctx.lineWidth   = 8;
-  ctx.shadowColor = RED;
-  ctx.shadowBlur  = 30;
-  ctx.stroke();
-  ctx.restore();
-
-  // Red ring
-  ctx.save();
-  ctx.beginPath();
-  ctx.arc(AVX, AVY, AVR + 4, 0, Math.PI * 2);
-  ctx.strokeStyle = RED;
-  ctx.lineWidth   = 4;
-  ctx.shadowColor = RED;
-  ctx.shadowBlur  = 18;
-  ctx.stroke();
-  ctx.restore();
-
-  // White inner ring
-  ctx.save();
-  ctx.beginPath();
-  ctx.arc(AVX, AVY, AVR + 1, 0, Math.PI * 2);
-  ctx.strokeStyle = 'rgba(255,255,255,0.6)';
-  ctx.lineWidth   = 1.5;
+  ctx.arc(AVX, AVY, AVR + 2, 0, Math.PI * 2);
+  ctx.strokeStyle = '#000000';
+  ctx.lineWidth   = 3;
   ctx.stroke();
   ctx.restore();
 
