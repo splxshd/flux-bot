@@ -249,7 +249,154 @@ app.get('/api/guild/:guildId/channels', auth, async (req, res) => {
   }
 });
 
-// ─── Panel send ───────────────────────────────────────────────────────────────
+// ─── Welcome settings ──────────────────────────────────────────────────────
+app.get('/api/guild/:guildId/welcome', auth, (req, res) => {
+  try { res.json(db.getWelcomeSettings(req.params.guildId) || {}); }
+  catch (e) { res.status(500).json({ error: e.message }); }
+});
+app.patch('/api/guild/:guildId/welcome', auth, (req, res) => {
+  try { db.upsertWelcomeSettings(req.params.guildId, req.body); res.json({ ok: true }); }
+  catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// ─── Autoroles ─────────────────────────────────────────────────────────────
+app.get('/api/guild/:guildId/autoroles', auth, (req, res) => {
+  try { res.json(db.getAutoroles(req.params.guildId)); }
+  catch (e) { res.status(500).json({ error: e.message }); }
+});
+app.post('/api/guild/:guildId/autoroles', auth, (req, res) => {
+  const { role_id } = req.body;
+  if (!role_id) return res.status(400).json({ error: 'role_id required' });
+  try { db.addAutorole(req.params.guildId, role_id); res.json({ ok: true }); }
+  catch (e) { res.status(500).json({ error: e.message }); }
+});
+app.delete('/api/guild/:guildId/autoroles/:roleId', auth, (req, res) => {
+  try { db.removeAutorole(req.params.guildId, req.params.roleId); res.json({ ok: true }); }
+  catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// ─── Autoresponders ────────────────────────────────────────────────────────
+app.get('/api/guild/:guildId/autoresponders', auth, (req, res) => {
+  try { res.json(db.getAutoresponders(req.params.guildId)); }
+  catch (e) { res.status(500).json({ error: e.message }); }
+});
+app.post('/api/guild/:guildId/autoresponders', auth, (req, res) => {
+  const { trigger, response } = req.body;
+  if (!trigger || !response) return res.status(400).json({ error: 'trigger and response required' });
+  try { db.addAutoresponder(req.params.guildId, trigger, response); res.json({ ok: true }); }
+  catch (e) { res.status(500).json({ error: e.message }); }
+});
+app.delete('/api/guild/:guildId/autoresponders/:trigger', auth, (req, res) => {
+  try { db.removeAutoresponder(req.params.guildId, decodeURIComponent(req.params.trigger)); res.json({ ok: true }); }
+  catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// ─── Reaction roles ────────────────────────────────────────────────────────
+app.get('/api/guild/:guildId/reaction-roles', auth, (req, res) => {
+  try { res.json(db.getReactionMessages(req.params.guildId)); }
+  catch (e) { res.status(500).json({ error: e.message }); }
+});
+app.post('/api/guild/:guildId/reaction-roles', auth, (req, res) => {
+  const { message_id, emoji, role_id } = req.body;
+  if (!message_id || !emoji || !role_id) return res.status(400).json({ error: 'message_id, emoji, role_id required' });
+  try { db.addReactionMessage(req.params.guildId, message_id, emoji, role_id); res.json({ ok: true }); }
+  catch (e) { res.status(500).json({ error: e.message }); }
+});
+app.delete('/api/guild/:guildId/reaction-roles/:messageId/:emoji', auth, (req, res) => {
+  try {
+    db.removeReactionMessage(req.params.guildId, req.params.messageId, decodeURIComponent(req.params.emoji));
+    res.json({ ok: true });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// ─── Fake permissions ──────────────────────────────────────────────────────
+app.get('/api/guild/:guildId/permissions', auth, (req, res) => {
+  try { res.json(db.all('SELECT * FROM fake_permissions WHERE guild_id=?', [req.params.guildId])); }
+  catch (e) { res.status(500).json({ error: e.message }); }
+});
+app.post('/api/guild/:guildId/permissions', auth, (req, res) => {
+  const { role_id, permission } = req.body;
+  if (!role_id || !permission) return res.status(400).json({ error: 'role_id and permission required' });
+  try { db.grantFakePerm(req.params.guildId, role_id, permission); res.json({ ok: true }); }
+  catch (e) { res.status(500).json({ error: e.message }); }
+});
+app.delete('/api/guild/:guildId/permissions/:roleId/:permission', auth, (req, res) => {
+  try { db.removeFakePerm(req.params.guildId, req.params.roleId, req.params.permission); res.json({ ok: true }); }
+  catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// ─── Keyword pings (auto-ping by keyword) ─────────────────────────────────
+app.get('/api/guild/:guildId/keyword-pings', auth, (req, res) => {
+  try { res.json(db.all('SELECT * FROM keyword_pings WHERE guild_id=?', [req.params.guildId])); }
+  catch (e) { res.json([]); }
+});
+app.post('/api/guild/:guildId/keyword-pings', auth, (req, res) => {
+  const { channel_id, role_id, keyword } = req.body;
+  if (!channel_id || !role_id || !keyword) return res.status(400).json({ error: 'channel_id, role_id, keyword required' });
+  try {
+    db.run('INSERT INTO keyword_pings (guild_id, channel_id, role_id, keyword) VALUES (?,?,?,?)',
+      [req.params.guildId, channel_id, role_id, keyword]);
+    res.json({ ok: true });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+app.delete('/api/guild/:guildId/keyword-pings/:id', auth, (req, res) => {
+  try {
+    db.run('DELETE FROM keyword_pings WHERE id=? AND guild_id=?', [req.params.id, req.params.guildId]);
+    res.json({ ok: true });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// ─── Roles list ────────────────────────────────────────────────────────────
+app.get('/api/guild/:guildId/roles', auth, async (req, res) => {
+  try {
+    const client = req.app.locals.client;
+    const guild = client?.guilds?.cache?.get(req.params.guildId)
+      || await client?.guilds?.fetch(req.params.guildId).catch(() => null);
+    if (!guild) return res.status(404).json({ error: 'Guild not found' });
+    await guild.roles.fetch().catch(() => {});
+    const roles = guild.roles.cache
+      .filter(r => r.id !== guild.id && !r.managed)
+      .map(r => ({ id: r.id, name: r.name, color: r.hexColor, position: r.position }))
+      .sort((a, b) => b.position - a.position);
+    res.json(roles);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// ─── Analytics ─────────────────────────────────────────────────────────────
+app.get('/api/guild/:guildId/analytics', auth, (req, res) => {
+  const { guildId } = req.params;
+  try {
+    const now = Math.floor(Date.now() / 1000);
+    const since = now - 7 * 86400;
+    const msgRows = db.all(
+      `SELECT strftime('%Y-%m-%d', sent_at, 'unixepoch') as day, COUNT(*) as messages
+       FROM message_stats WHERE guild_id=? AND sent_at>=? GROUP BY day ORDER BY day`,
+      [guildId, since]
+    );
+    const modRows = db.all(
+      `SELECT strftime('%Y-%m-%d', created_at, 'unixepoch') as day, COUNT(*) as actions
+       FROM mod_history WHERE guild_id=? AND created_at>=? GROUP BY day ORDER BY day`,
+      [guildId, since]
+    );
+    const days = Array.from({ length: 7 }, (_, i) => {
+      const d = new Date((now - (6 - i) * 86400) * 1000);
+      const key = d.toISOString().slice(0, 10);
+      const label = d.toLocaleDateString('en', { weekday: 'short' });
+      return {
+        day: label,
+        messages: msgRows.find(r => r.day === key)?.messages || 0,
+        modActions: modRows.find(r => r.day === key)?.actions || 0,
+      };
+    });
+    res.json({
+      days,
+      totalMessages: days.reduce((s, d) => s + d.messages, 0),
+      totalMod: days.reduce((s, d) => s + d.modActions, 0),
+    });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// ─── Panel send ───────────────────────────────────────────────────────────────────
 app.post('/api/guild/:guildId/panel/send', auth, async (req, res) => {
   const { guildId } = req.params;
   const { channelId, embedData, dropdown } = req.body;
@@ -318,6 +465,15 @@ app.get('/health', (_, res) => res.json({ status: 'ok', uptime: process.uptime()
 function startApi(client) {
   const port = process.env.API_PORT || 4000;
   app.locals.client = client;
+
+  // Ensure keyword_pings table exists
+  db.run(`CREATE TABLE IF NOT EXISTS keyword_pings (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    guild_id TEXT NOT NULL,
+    channel_id TEXT NOT NULL,
+    role_id TEXT NOT NULL,
+    keyword TEXT NOT NULL
+  )`);
 
   // Patch stats endpoint to use real member count from Discord client
   app.get('/api/guild/:guildId/member-count', auth, async (req, res) => {
