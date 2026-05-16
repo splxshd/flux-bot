@@ -1,7 +1,8 @@
 'use strict';
 
-const { EmbedBuilder, PermissionFlagsBits } = require('discord.js');
+const { EmbedBuilder, AttachmentBuilder, PermissionFlagsBits } = require('discord.js');
 const db = require('../database');
+const { generateRankCard } = require('../utils/rankCard');
 
 const COLORS = {
   default: '#5865F2',
@@ -51,32 +52,37 @@ const rank = {
     const level = row?.level ?? 0;
 
     const { rank: userRank, total } = db.getLevelRank(guildId, target.id);
-    const color = levelColor(level);
-
-    // XP progress into current level (total XP - XP required to reach current level)
     const xpIntoLevel = xp - db.cumulativeXpForLevel(level);
     const xpNeeded    = db.xpForLevel(level);
 
-    const bar = progressBar(xpIntoLevel, xpNeeded);
+    const typing = message.channel.sendTyping().catch(() => {});
 
-    const embed = new EmbedBuilder()
-      .setColor(color)
-      .setAuthor({
-        name: `${target.username}`,
-        iconURL: target.displayAvatarURL({ size: 128 }),
-      })
-      .setThumbnail(target.displayAvatarURL({ size: 256 }))
-      .setDescription(
-        `${bar}  **${formatXp(xpIntoLevel)} / ${formatXp(xpNeeded)} XP**`
-      )
-      .addFields(
-        { name: '🏆 Server Rank', value: userRank ? `**#${userRank}**\nof ${total}` : '**Unranked**', inline: true },
-        { name: '⭐ Level',       value: `**${level}**`,                                               inline: true },
-        { name: '✨ Total XP',    value: `**${formatXp(xp)}**`,                                       inline: true },
-      )
-      .setFooter({ text: `${xpNeeded - xpIntoLevel} XP until level ${level + 1}` });
-
-    await message.reply({ embeds: [embed] });
+    try {
+      const buffer = await generateRankCard({
+        username:    target.username,
+        avatarUrl:   target.displayAvatarURL({ extension: 'png', size: 256 }),
+        level,
+        xp,
+        xpIntoLevel,
+        xpNeeded,
+        rank:        userRank,
+        totalUsers:  total,
+      });
+      const attachment = new AttachmentBuilder(buffer, { name: 'rank.png' });
+      await message.reply({ files: [attachment] });
+    } catch (e) {
+      console.error('[rankCard]', e);
+      // Fallback embed if canvas fails
+      const embed = new EmbedBuilder()
+        .setColor(levelColor(level))
+        .setAuthor({ name: target.username, iconURL: target.displayAvatarURL({ size: 128 }) })
+        .setDescription(`**Level ${level}** — ${formatXp(xpIntoLevel)} / ${formatXp(xpNeeded)} XP\n${progressBar(xpIntoLevel, xpNeeded)}`)
+        .addFields(
+          { name: '🏆 Rank', value: userRank ? `#${userRank}` : 'Unranked', inline: true },
+          { name: '✨ Total XP', value: formatXp(xp), inline: true },
+        );
+      await message.reply({ embeds: [embed] });
+    }
   },
 };
 
