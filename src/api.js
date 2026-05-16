@@ -21,10 +21,16 @@ function auth(req, res, next) {
 }
 
 // ─── Guild Stats ──────────────────────────────────────────────────────────────
-app.get('/api/guild/:guildId/stats', auth, (req, res) => {
+app.get('/api/guild/:guildId/stats', auth, async (req, res) => {
   const { guildId } = req.params;
   try {
-    const memberCount = 0; // fetched from Discord client — see startApi()
+    const client = req.app.locals.client;
+    let memberCount = 0;
+    try {
+      const guild = client?.guilds?.cache?.get(guildId) || await client?.guilds?.fetch(guildId).catch(() => null);
+      if (guild) memberCount = guild.memberCount;
+    } catch {}
+
     const casesToday = db.all(
       'SELECT COUNT(*) as c FROM mod_history WHERE guild_id=? AND created_at >= ?',
       [guildId, Math.floor(Date.now() / 1000) - 86400]
