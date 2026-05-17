@@ -429,10 +429,14 @@ db.run(`CREATE TABLE IF NOT EXISTS economy (
   work_at INTEGER DEFAULT 0,
   rob_at INTEGER DEFAULT 0,
   crime_at INTEGER DEFAULT 0,
+  beg_at INTEGER DEFAULT 0,
+  invest_at INTEGER DEFAULT 0,
   PRIMARY KEY (guild_id, user_id)
 )`);
-// Migration: add crime_at to existing economy tables
-try { db.run('ALTER TABLE economy ADD COLUMN crime_at INTEGER DEFAULT 0'); } catch { /* already exists */ }
+// Migrations: add columns to existing rows
+try { db.run('ALTER TABLE economy ADD COLUMN crime_at INTEGER DEFAULT 0');  } catch { /* exists */ }
+try { db.run('ALTER TABLE economy ADD COLUMN beg_at INTEGER DEFAULT 0');    } catch { /* exists */ }
+try { db.run('ALTER TABLE economy ADD COLUMN invest_at INTEGER DEFAULT 0'); } catch { /* exists */ }
 
 db.run(`CREATE TABLE IF NOT EXISTS economy_settings (
   guild_id TEXT PRIMARY KEY,
@@ -1336,6 +1340,14 @@ function setCrimeAt(guildId, userId, ts) {
   ensureEco(guildId, userId);
   db.run('UPDATE economy SET crime_at=? WHERE guild_id=? AND user_id=?', [ts, guildId, userId]);
 }
+function setBegAt(guildId, userId, ts) {
+  ensureEco(guildId, userId);
+  db.run('UPDATE economy SET beg_at=? WHERE guild_id=? AND user_id=?', [ts, guildId, userId]);
+}
+function setInvestAt(guildId, userId, ts) {
+  ensureEco(guildId, userId);
+  db.run('UPDATE economy SET invest_at=? WHERE guild_id=? AND user_id=?', [ts, guildId, userId]);
+}
 function getEcoSettings(guildId) {
   return db.get('SELECT * FROM economy_settings WHERE guild_id=?', [guildId])
     ?? { guild_id: guildId, currency_name: 'coins', currency_emoji: '🪙', daily_amount: 500, work_min: 150, work_max: 450 };
@@ -1424,6 +1436,6 @@ module.exports = {
   getLevelSettings, upsertLevelSettings, getLevelRewards, setLevelReward, removeLevelReward,
   getAutoroles, addAutorole, removeAutorole, clearAutoroles,
   getEco, addWallet, setWallet, deposit, withdraw, transfer,
-  getEcoLeaderboard, setDailyAt, setWorkAt, setRobAt, setCrimeAt,
+  getEcoLeaderboard, setDailyAt, setWorkAt, setRobAt, setCrimeAt, setBegAt, setInvestAt,
   getEcoSettings, upsertEcoSettings,
 };

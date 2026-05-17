@@ -776,4 +776,445 @@ const crime = {
   },
 };
 
-module.exports = [balance, daily, work, depositCmd, withdrawCmd, pay, donate, rob, richlist, give, take, setbal, reseteco, ecoset, crime];
+// ── ,beg ─────────────────────────────────────────────────────────────────────
+const BEG_TARGETS = [
+  {
+    id: 'oldman', label: 'Old Man', emoji: '👴', style: ButtonStyle.Secondary,
+    odds: 0.65, min: 10, max: 80,
+    desc: 'Reliable, but broke.',
+    successLines: [
+      "He rummaged through his cardigan pockets and handed you a handful of coins. 'Don't tell my wife.'",
+      "He looked you up and down, sighed deeply, and slipped you a crumpled bill. 'Times are tough for everyone.'",
+      "He felt sorry for you. 'Back in my day we didn't have to beg, but here.' He pressed some coins into your hand.",
+      "'You remind me of my grandson,' he said softly, and gave you more than you expected.",
+    ],
+    failLines: [
+      "'Get a job!' he shouted, and walked away faster than you expected for his age.",
+      "He shook his head slowly. 'I was begging in this same spot 40 years ago. Find a better path, son.'",
+      "He pretended not to hear you and stared intensely at a pigeon until you left.",
+      "'I'm on a fixed income!' he snapped, and shuffled away muttering about 'kids these days'.",
+    ],
+  },
+  {
+    id: 'exec', label: 'Business Exec', emoji: '💼', style: ButtonStyle.Primary,
+    odds: 0.30, min: 150, max: 600,
+    desc: 'Rarely gives, pays big.',
+    successLines: [
+      "'Here,' he said without looking up from his phone, tossing you a bill. 'Buy yourself something.'",
+      "He stopped mid-call, pressed a generous fold of cash into your hand, and kept walking without missing a beat of the conversation.",
+      "'Investing in people,' he said with a smirk, tucking a stack into your hand as he passed.",
+      "He checked his watch, decided he had four seconds to spare, and dropped a sizeable amount into your cup.",
+    ],
+    failLines: [
+      "He looked at you like you were a spreadsheet full of errors. 'Not my problem.' He walked on.",
+      "He laughed loudly and said 'hustle harder' before stepping into his Tesla.",
+      "He handed you a business card. 'We're hiring. Side entrance.' He was gone before you could respond.",
+      "'Sir, this is a Wendy's.' He said that for no discernible reason, and then left.",
+    ],
+  },
+  {
+    id: 'bot', label: 'The Bot', emoji: '🤖', style: ButtonStyle.Secondary,
+    odds: 0.50, min: 20, max: 200,
+    desc: '50/50. Depends on its mood.',
+    successLines: [
+      "After processing for 3.7 seconds, I determined that helping you is statistically optimal. *bloop*",
+      "My empathy module is still in beta, but it's working today. Here you go, human.",
+      "I am technically incapable of pity. And yet. *coins dispensed*",
+      "You have been selected for the Generosity Trial™. Initiating coin transfer.",
+    ],
+    failLines: [
+      "Error 404: sympathy not found.",
+      "I have analyzed your request and classified it as: not my problem. Have a nice day. *bloop*",
+      "My charitable_giving subroutine threw an uncaught exception. Please try again later.",
+      "BEGGING_REQUEST received. Processing... Processing... Request denied. Goodbye.",
+    ],
+  },
+  {
+    id: 'gambler', label: 'Gambler', emoji: '🎰', style: ButtonStyle.Danger,
+    odds: 0.40, min: 5, max: 400,
+    desc: 'Wildcard. Wide range, low odds.',
+    successLines: [
+      "He just hit the jackpot on slots. In his euphoria, he threw a handful of coins in the air. You caught some.",
+      "He'd just doubled up on blackjack. 'Spread the wealth, baby!' He pressed a wad into your hands.",
+      "'I'm UP today!' he shouted at nobody in particular, and tossed you a generous cut without even glancing at you.",
+      "He slid you some chips across the table. 'Don't tell the casino.'",
+    ],
+    failLines: [
+      "He just lost everything. He stared at you with hollow eyes for a long moment, then walked away without a word.",
+      "'I would, but...' He turned out his empty pockets. 'Same boat, brother.'",
+      "'I'm so close to winning it back,' he muttered, and fed another coin into the machine, ignoring you.",
+      "He laughed bitterly. 'I'm begging too, pal.' He wasn't joking.",
+    ],
+  },
+  {
+    id: 'streamer', label: 'Streamer', emoji: '🎮', style: ButtonStyle.Primary,
+    odds: 0.45, min: 50, max: 300,
+    desc: 'Has sub money. Sometimes generous.',
+    successLines: [
+      "They clipped your begging for content and donated to you live on stream. Parasocial economy in action.",
+      "'Chat says to help you!' They handed you a wad while reading donations. You appeared on stream for 3 seconds.",
+      "It was a slow stream day. They gave you money just to have something to react to.",
+      "Between raids they spotted you and said 'content!' — then threw you a pile of coins.",
+    ],
+    failLines: [
+      "They were too busy reading Twitch donations from other people to notice you.",
+      "'Sorry, I spent everything on RGB lighting and a capture card,' they said with a straight face.",
+      "They acknowledged you on stream, chat voted 'no', and they respectfully honoured the vote.",
+      "They gave you a follow notification instead. 'That's basically the same thing, right?'",
+    ],
+  },
+];
+
+const BEG_CD = 12 * 60; // 12 minutes
+
+const beg = {
+  name: 'beg',
+  aliases: ['panhandle', 'spare'],
+  async execute(message) {
+    const guildId = message.guild.id;
+    const userId  = message.author.id;
+    const eco     = db.getEco(guildId, userId);
+    const s       = db.getEcoSettings(guildId);
+    const now     = Math.floor(Date.now() / 1000);
+
+    if (eco.beg_at && now - eco.beg_at < BEG_CD) {
+      const left = (eco.beg_at + BEG_CD - now) * 1000;
+      return message.reply({ embeds: [new EmbedBuilder()
+        .setColor(RED)
+        .setTitle('😔 Too Soon')
+        .setDescription(`You were spotted begging earlier. Let things cool down.\nTry again in **${fmtTime(left)}**.`)
+        .setFooter({ text: 'flux economy' })] });
+    }
+
+    const row = new ActionRowBuilder().addComponents(
+      ...BEG_TARGETS.map(t =>
+        new ButtonBuilder()
+          .setCustomId(`beg_${t.id}_${userId}`)
+          .setLabel(t.label)
+          .setEmoji(t.emoji)
+          .setStyle(t.style),
+      ),
+    );
+
+    const pickEmbed = new EmbedBuilder()
+      .setColor(BLUE)
+      .setTitle('🙏 Choose Your Mark')
+      .setDescription('Pick someone to beg from. Each person has different odds and a different wallet.')
+      .addFields(
+        ...BEG_TARGETS.map(t => ({
+          name: `${t.emoji}  ${t.label}`,
+          value: `${t.desc}\n**Odds:** ${Math.round(t.odds * 100)}%  •  **Range:** ${fmt(t.min)}–${fmt(t.max)} ${s.currency_emoji}`,
+          inline: true,
+        })),
+      )
+      .setFooter({ text: `${message.author.username} • pick below • 30s` });
+
+    const msg = await message.reply({ embeds: [pickEmbed], components: [row] });
+
+    const col = msg.createMessageComponentCollector({
+      filter: i => i.user.id === userId && BEG_TARGETS.some(t => i.customId === `beg_${t.id}_${userId}`),
+      time: 30_000,
+      max: 1,
+    });
+
+    col.on('collect', async (i) => {
+      const targetId = i.customId.split('_')[1];
+      const target   = BEG_TARGETS.find(t => t.id === targetId);
+      db.setBegAt(guildId, userId, now);
+
+      const success = Math.random() < target.odds;
+      const amount  = success ? Math.floor(target.min + Math.random() * (target.max - target.min)) : 0;
+      const lines   = success ? target.successLines : target.failLines;
+      const line    = lines[Math.floor(Math.random() * lines.length)];
+
+      if (success) db.addWallet(guildId, userId, amount);
+      const newEco = db.getEco(guildId, userId);
+
+      await i.update({
+        embeds: [new EmbedBuilder()
+          .setColor(success ? GREEN : RED)
+          .setTitle(success
+            ? `${target.emoji}  ${target.label} — Gave You Something`
+            : `${target.emoji}  ${target.label} — Walked Away`)
+          .setDescription(`*"${line}"*`)
+          .addFields(
+            success
+              ? { name: '💰 Received',   value: `**+${fmt(amount)} ${s.currency_emoji}**`,    inline: true }
+              : { name: '🚫 Received',   value: '`Nothing`',                                   inline: true },
+            { name: '👛 Wallet',         value: `${fmt(newEco.wallet)} ${s.currency_emoji}`,   inline: true },
+          )
+          .setFooter({ text: 'Cooldown: 12 min • flux economy' })
+          .setTimestamp()],
+        components: [],
+      });
+    });
+
+    col.on('end', async (collected, reason) => {
+      if (reason === 'time' && collected.size === 0) {
+        await msg.edit({
+          embeds: [new EmbedBuilder()
+            .setColor(RED)
+            .setDescription('⏰ You stood there too long and people started staring. You walked away empty-handed.')],
+          components: [],
+        }).catch(() => {});
+      }
+    });
+  },
+};
+
+// ── ,invest ───────────────────────────────────────────────────────────────────
+const INVEST_TIERS = [
+  {
+    id: 'bond',   label: 'Savings Bond',  emoji: '🏦', style: ButtonStyle.Secondary,
+    color: '#57F287', volatility: 0.06, upBias: 0.88,
+    desc: 'Safe and predictable. Small but nearly guaranteed gains.',
+  },
+  {
+    id: 'stock',  label: 'Stock Market',  emoji: '📈', style: ButtonStyle.Primary,
+    color: '#5865F2', volatility: 0.20, upBias: 0.60,
+    desc: 'Moderate risk. Market can go either way — watch closely.',
+  },
+  {
+    id: 'crypto', label: 'Crypto',        emoji: '🚀', style: ButtonStyle.Danger,
+    color: '#F0A500', volatility: 0.42, upBias: 0.50,
+    desc: 'Wild swings. Could moon or crash — sometimes both in one game.',
+  },
+  {
+    id: 'meme',   label: 'Meme Stock',   emoji: '🎲', style: ButtonStyle.Danger,
+    color: '#ED4245', volatility: 0.80, upBias: 0.33,
+    desc: 'Pure degeneracy. Massive upside, catastrophic downside.',
+  },
+];
+
+const INVEST_CD = 20 * 60; // 20 minutes
+const INVEST_TICKS = 3;
+const INVEST_TICK_MS = 4_000;
+
+function genPrices(initial, tier) {
+  const prices = [initial];
+  for (let i = 0; i < INVEST_TICKS; i++) {
+    const up  = Math.random() < tier.upBias;
+    const pct = tier.volatility * (0.5 + Math.random() * 0.5);
+    prices.push(Math.max(1, Math.floor(prices[prices.length - 1] * (1 + (up ? pct : -pct)))));
+  }
+  return prices;
+}
+
+function priceBar(current, initial, width = 20) {
+  // 0% bar = broke; midpoint = breakeven; 100% bar = doubled
+  const ratio  = Math.min(1, Math.max(0, current / (initial * 2)));
+  const filled = Math.round(ratio * width);
+  return '`' + '█'.repeat(filled) + '░'.repeat(width - filled) + '`';
+}
+
+function priceHistoryStr(prices, emoji) {
+  return prices.map((p, i) => {
+    if (i === 0) return `\`Start  \` **${fmt(p)}** ${emoji}`;
+    const prev = prices[i - 1];
+    const diff = p - prev;
+    const pct  = ((diff / prev) * 100).toFixed(1);
+    const icon = diff >= 0 ? '📈' : '📉';
+    const sign = diff >= 0 ? '+' : '';
+    const tag  = i === prices.length - 1 ? '  **← now**' : '';
+    return `\`Tick ${i}  \` **${fmt(p)}** ${emoji}  ${icon} \`${sign}${pct}%\`${tag}`;
+  }).join('\n');
+}
+
+const invest = {
+  name: 'invest',
+  aliases: ['investment', 'stocks', 'stonks'],
+  async execute(message, args) {
+    const guildId = message.guild.id;
+    const userId  = message.author.id;
+    const eco     = db.getEco(guildId, userId);
+    const s       = db.getEcoSettings(guildId);
+    const now     = Math.floor(Date.now() / 1000);
+
+    // ── Cooldown ──────────────────────────────────────────────────────────────
+    if (eco.invest_at && now - eco.invest_at < INVEST_CD) {
+      const left = (eco.invest_at + INVEST_CD - now) * 1000;
+      return message.reply({ embeds: [new EmbedBuilder()
+        .setColor(RED)
+        .setTitle('📊 Market Closed')
+        .setDescription(`Your portfolio is still settling. Come back in **${fmtTime(left)}**.`)
+        .setFooter({ text: 'flux economy' })] });
+    }
+
+    // ── Bet parsing ───────────────────────────────────────────────────────────
+    const bet = parseBet(args[0], eco.wallet);
+    if (!bet || bet < 1)
+      return message.reply(`⚠️ **Usage**\n\`\`\`,invest <amount|all|half>\`\`\``);
+    if (bet > eco.wallet)
+      return message.reply({ embeds: [new EmbedBuilder()
+        .setColor(RED)
+        .setDescription(`❌ You only have **${fmt(eco.wallet)} ${s.currency_emoji}** in your wallet.`)] });
+
+    // ── Stage 1: Pick tier ────────────────────────────────────────────────────
+    const tierRow = new ActionRowBuilder().addComponents(
+      ...INVEST_TIERS.map(t =>
+        new ButtonBuilder()
+          .setCustomId(`invest_tier_${t.id}_${userId}`)
+          .setLabel(t.label)
+          .setEmoji(t.emoji)
+          .setStyle(t.style),
+      ),
+    );
+
+    const tierEmbed = new EmbedBuilder()
+      .setColor(BLUE)
+      .setTitle('📊 Choose Your Investment')
+      .setDescription(`You're putting **${fmt(bet)} ${s.currency_emoji}** on the line.\nPick a market — the simulation runs for **3 ticks** (4 seconds each).\nCash out early or ride it to the end.`)
+      .addFields(
+        ...INVEST_TIERS.map(t => ({
+          name: `${t.emoji}  ${t.label}`,
+          value: `${t.desc}\n**Volatility:** ±${Math.round(t.volatility * 100)}%/tick  •  **Up bias:** ${Math.round(t.upBias * 100)}%`,
+          inline: false,
+        })),
+      )
+      .setFooter({ text: `${message.author.username} • 30s to pick` });
+
+    const msg = await message.reply({ embeds: [tierEmbed], components: [tierRow] });
+
+    const tierCol = msg.createMessageComponentCollector({
+      filter: i => i.user.id === userId && INVEST_TIERS.some(t => i.customId === `invest_tier_${t.id}_${userId}`),
+      time: 30_000,
+      max: 1,
+    });
+
+    tierCol.on('collect', async (i1) => {
+      const tierId = i1.customId.split('_')[2];
+      const tier   = INVEST_TIERS.find(t => t.id === tierId);
+
+      // Deduct bet + set cooldown upfront
+      db.addWallet(guildId, userId, -bet);
+      db.setInvestAt(guildId, userId, now);
+
+      const prices    = genPrices(bet, tier);
+      let currentTick = 0;
+      let resolved    = false;
+
+      // ── Embed builders ────────────────────────────────────────────────────
+      const buildTickEmbed = (tick, earlyExit = false) => {
+        const visible = prices.slice(0, tick + 1);
+        const current = visible[visible.length - 1];
+        const profit  = current - bet;
+        const pct     = ((profit / bet) * 100).toFixed(1);
+        const sign    = profit >= 0 ? '+' : '';
+        const isLast  = tick >= INVEST_TICKS;
+
+        return new EmbedBuilder()
+          .setColor(tier.color)
+          .setTitle(earlyExit
+            ? `💰 ${tier.emoji} Cashed Out Early`
+            : isLast
+            ? `${tier.emoji} ${tier.label} — Market Closed`
+            : `📊 ${tier.emoji} ${tier.label} — Tick ${tick}/${INVEST_TICKS}`)
+          .setDescription(
+            priceHistoryStr(visible, s.currency_emoji) + '\n\n' +
+            priceBar(current, bet) + '\n' +
+            `**Net: \`${sign}${fmt(Math.abs(profit))} ${s.currency_emoji}\` (${sign}${pct}%)**`
+          )
+          .addFields(
+            { name: '💵 Current Value', value: `**${fmt(current)} ${s.currency_emoji}**`,                                  inline: true },
+            { name: '📥 Invested',      value: `${fmt(bet)} ${s.currency_emoji}`,                                          inline: true },
+            { name: '📊 P/L',           value: `**${sign}${fmt(Math.abs(profit))} ${s.currency_emoji}** (${sign}${pct}%)`, inline: true },
+          )
+          .setFooter({ text: earlyExit || isLast ? 'Cooldown: 20 min • flux economy' : `Tick ${tick}/${INVEST_TICKS} • cash out or hold for tick ${tick + 1}` })
+          .setTimestamp();
+      };
+
+      const buildFinalEmbed = (current) => {
+        const profit = current - bet;
+        const pct    = ((profit / bet) * 100).toFixed(1);
+        const sign   = profit >= 0 ? '+' : '';
+
+        return new EmbedBuilder()
+          .setColor(profit >= 0 ? GREEN : RED)
+          .setTitle(`${tier.emoji} ${tier.label} — ${profit >= 0 ? '📈 Final Gain' : '📉 Final Loss'}`)
+          .setDescription(
+            priceHistoryStr(prices, s.currency_emoji) + '\n\n' +
+            priceBar(current, bet) + '\n' +
+            `**Result: \`${sign}${fmt(Math.abs(profit))} ${s.currency_emoji}\` (${sign}${pct}%)**`
+          )
+          .addFields(
+            { name: '📥 Invested',  value: `${fmt(bet)} ${s.currency_emoji}`,                                               inline: true },
+            { name: '📤 Returned',  value: `**${fmt(current)} ${s.currency_emoji}**`,                                       inline: true },
+            { name: '📊 Net P/L',   value: `**${sign}${fmt(Math.abs(profit))} ${s.currency_emoji}** (${sign}${pct}%)`,     inline: true },
+          )
+          .setFooter({ text: 'Cooldown: 20 min • flux economy' })
+          .setTimestamp();
+      };
+
+      const cashRow = () => new ActionRowBuilder().addComponents(
+        new ButtonBuilder()
+          .setCustomId(`invest_cashout_${userId}`)
+          .setLabel('Cash Out')
+          .setEmoji('💰')
+          .setStyle(ButtonStyle.Success),
+      );
+
+      // Show "opening bell" message
+      await i1.update({
+        embeds: [new EmbedBuilder()
+          .setColor(tier.color)
+          .setTitle(`${tier.emoji} ${tier.label} — Opening Bell 🔔`)
+          .setDescription(`**${fmt(bet)} ${s.currency_emoji}** committed.\n\n⏳ First tick in **${INVEST_TICK_MS / 1000}s**...\n\nWatch the market — cash out early or ride all 3 ticks.`)
+          .setFooter({ text: 'flux economy' })],
+        components: [],
+      });
+
+      // ── Cash out collector ────────────────────────────────────────────────
+      const cashCol = msg.createMessageComponentCollector({
+        filter: i => i.user.id === userId && i.customId === `invest_cashout_${userId}`,
+        time: INVEST_TICKS * INVEST_TICK_MS + 6_000,
+      });
+
+      cashCol.on('collect', async (i2) => {
+        if (resolved) return i2.deferUpdate();
+        resolved = true;
+        cashCol.stop('cashed');
+        const current = prices[currentTick];
+        db.addWallet(guildId, userId, current);
+        await i2.update({ embeds: [buildTickEmbed(currentTick, true)], components: [] });
+      });
+
+      // ── Tick loop ─────────────────────────────────────────────────────────
+      const doTick = async () => {
+        if (resolved) return;
+        currentTick++;
+        const current = prices[currentTick];
+        const isLast  = currentTick >= INVEST_TICKS;
+
+        if (isLast) {
+          if (!resolved) {
+            resolved = true;
+            cashCol.stop('done');
+            db.addWallet(guildId, userId, current);
+            await msg.edit({ embeds: [buildFinalEmbed(current)], components: [] }).catch(() => {});
+          }
+        } else {
+          await msg.edit({
+            embeds: [buildTickEmbed(currentTick)],
+            components: [cashRow()],
+          }).catch(() => {});
+          setTimeout(doTick, INVEST_TICK_MS);
+        }
+      };
+
+      setTimeout(doTick, INVEST_TICK_MS);
+    });
+
+    tierCol.on('end', async (collected, reason) => {
+      if (reason === 'time' && collected.size === 0) {
+        await msg.edit({
+          embeds: [new EmbedBuilder()
+            .setColor(RED)
+            .setDescription('⏰ You took too long to pick a market. Your coins are safe in your wallet.')],
+          components: [],
+        }).catch(() => {});
+      }
+    });
+  },
+};
+
+module.exports = [balance, daily, work, depositCmd, withdrawCmd, pay, donate, rob, richlist, give, take, setbal, reseteco, ecoset, crime, beg, invest];
