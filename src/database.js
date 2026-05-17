@@ -428,8 +428,11 @@ db.run(`CREATE TABLE IF NOT EXISTS economy (
   daily_at INTEGER DEFAULT 0,
   work_at INTEGER DEFAULT 0,
   rob_at INTEGER DEFAULT 0,
+  crime_at INTEGER DEFAULT 0,
   PRIMARY KEY (guild_id, user_id)
 )`);
+// Migration: add crime_at to existing economy tables
+try { db.run('ALTER TABLE economy ADD COLUMN crime_at INTEGER DEFAULT 0'); } catch { /* already exists */ }
 
 db.run(`CREATE TABLE IF NOT EXISTS economy_settings (
   guild_id TEXT PRIMARY KEY,
@@ -1329,6 +1332,10 @@ function setRobAt(guildId, userId, ts) {
   ensureEco(guildId, userId);
   db.run('UPDATE economy SET rob_at=? WHERE guild_id=? AND user_id=?', [ts, guildId, userId]);
 }
+function setCrimeAt(guildId, userId, ts) {
+  ensureEco(guildId, userId);
+  db.run('UPDATE economy SET crime_at=? WHERE guild_id=? AND user_id=?', [ts, guildId, userId]);
+}
 function getEcoSettings(guildId) {
   return db.get('SELECT * FROM economy_settings WHERE guild_id=?', [guildId])
     ?? { guild_id: guildId, currency_name: 'coins', currency_emoji: '🪙', daily_amount: 500, work_min: 150, work_max: 450 };
@@ -1417,6 +1424,6 @@ module.exports = {
   getLevelSettings, upsertLevelSettings, getLevelRewards, setLevelReward, removeLevelReward,
   getAutoroles, addAutorole, removeAutorole, clearAutoroles,
   getEco, addWallet, setWallet, deposit, withdraw, transfer,
-  getEcoLeaderboard, setDailyAt, setWorkAt, setRobAt,
+  getEcoLeaderboard, setDailyAt, setWorkAt, setRobAt, setCrimeAt,
   getEcoSettings, upsertEcoSettings,
 };

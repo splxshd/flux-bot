@@ -1,6 +1,6 @@
 'use strict';
 
-const { EmbedBuilder, PermissionFlagsBits } = require('discord.js');
+const { EmbedBuilder, PermissionFlagsBits, ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
 const db = require('../database');
 
 const GREEN  = '#57F287';
@@ -477,4 +477,303 @@ const ecoset = {
   },
 };
 
-module.exports = [balance, daily, work, depositCmd, withdrawCmd, pay, donate, rob, richlist, give, take, setbal, reseteco, ecoset];
+// ── ,crime ────────────────────────────────────────────────────────────────────
+const CRIMES = {
+  pickpocket: {
+    label: 'Pickpocket',  emoji: '🕵️',
+    style: ButtonStyle.Secondary,
+    baseOdds: 0.70, minReward: 80,  maxReward: 300,  finePct: 0.10,
+    desc: 'Sneak up on someone and lift their wallet.\n`Low risk` • `Low reward`',
+    strategies: [
+      { id: 'quick',   label: 'Quick Snatch',  emoji: '⚡', desc: 'Fast and sloppy',             oddsMod: -0.10, rewardMod: 0.80 },
+      { id: 'patient', label: 'Be Patient',    emoji: '🎯', desc: 'Wait for the perfect moment', oddsMod: +0.10, rewardMod: 1.25 },
+    ],
+    successLines: [
+      'You bumped into someone outside a coffee shop and slipped their wallet right out.',
+      'The old "dropped papers" trick worked like a charm. Wallet secured.',
+      'You tailed your mark for ten minutes and swiped clean — not a soul noticed.',
+    ],
+    caughtLines: [
+      'You grabbed the wallet but the mark spun around. You froze. Cops were called.',
+      'Turned out your "mark" was an off-duty cop. Ouch.',
+      'A security camera caught every second of it. You\'re on the news now.',
+    ],
+  },
+  carjack: {
+    label: 'Carjack',  emoji: '🚗',
+    style: ButtonStyle.Primary,
+    baseOdds: 0.52, minReward: 400,  maxReward: 1000, finePct: 0.22,
+    desc: 'Steal a car off the street and sell it for parts.\n`Medium risk` • `Medium reward`',
+    strategies: [
+      { id: 'hotwire', label: 'Hotwire It',     emoji: '🔧', desc: 'Classic hotwire job',                    oddsMod:  0,     rewardMod: 1.00 },
+      { id: 'lookout', label: 'Hire a Lookout', emoji: '👀', desc: 'Pay 200 for a lookout — +15% success',   oddsMod: +0.15,  rewardMod: 1.00, cost: 200 },
+    ],
+    successLines: [
+      'You spotted a running car, slid in, and were three blocks away before anyone blinked.',
+      'Hotwired it in under 60 seconds. Chop shop paid top dollar.',
+      'Your lookout gave the signal. In and out, smooth as butter.',
+    ],
+    caughtLines: [
+      'The car had a GPS tracker. You didn\'t even make it to the highway.',
+      'Someone saw you and called it in. Police spike strip — you\'re done.',
+      'The owner came back early. You sprinted. They had a faster car.',
+    ],
+  },
+  smuggle: {
+    label: 'Smuggling', emoji: '📦',
+    style: ButtonStyle.Danger,
+    baseOdds: 0.42, minReward: 800,  maxReward: 2500, finePct: 0.32,
+    desc: 'Move contraband through a checkpoint.\n`High risk` • `High reward`',
+    strategies: [
+      { id: 'small', label: 'Small Package', emoji: '🎒', desc: 'Easier to hide — less profit', oddsMod: +0.13, rewardMod: 0.60 },
+      { id: 'full',  label: 'Full Load',     emoji: '🚚', desc: 'Max loot — max exposure',       oddsMod: -0.10, rewardMod: 1.55 },
+    ],
+    successLines: [
+      'The border agent waved you through without a second glance. The goods are delivered.',
+      'Hidden in a false floor — inspectors found nothing. Clean pass.',
+      'Bribed the right person at the right time. Package delivered, payment received.',
+    ],
+    caughtLines: [
+      'The agent\'s dog went straight for your bag. Nothing gets past that nose.',
+      'A tip-off. They had dogs, scanners, and three agents waiting.',
+      'X-ray at the checkpoint caught everything. Contraband seized, wallet too.',
+    ],
+  },
+  heist: {
+    label: 'Bank Heist', emoji: '🏦',
+    style: ButtonStyle.Danger,
+    baseOdds: 0.28, minReward: 2000, maxReward: 7000, finePct: 0.45,
+    desc: 'Rob the bank. Legendary reward if you pull it off.\n`Extreme risk` • `Massive reward`',
+    strategies: [
+      { id: 'rush',   label: 'Rush the Vault',  emoji: '💨', desc: 'Loud and fast — pray it works',        oddsMod: -0.05, rewardMod: 0.85 },
+      { id: 'inside', label: 'Inside Man',      emoji: '🤝', desc: 'Pay 500 for an inside job — +18% odds', oddsMod: +0.18, rewardMod: 1.35, cost: 500 },
+    ],
+    successLines: [
+      'Vault cracked in 4 minutes. You walked out with bags and nobody fired a shot.',
+      'Your inside man disabled the alarms. By the time police arrived, you were long gone.',
+      'Perfect timing on the shift change. The crew filled the bags and vanished.',
+    ],
+    caughtLines: [
+      'Silent alarm. SWAT was stacked outside before you even reached the vault.',
+      'The inside man flipped. You walked right into a trap.',
+      'Dye pack exploded in the bag. Covered in red, surrounded by cops. GG.',
+    ],
+  },
+};
+
+const CRIME_CD = 45 * 60; // 45 minutes
+
+const crime = {
+  name: 'crime',
+  aliases: ['criminal', 'heist'],
+  async execute(message) {
+    const guildId = message.guild.id;
+    const userId  = message.author.id;
+    const eco     = db.getEco(guildId, userId);
+    const s       = db.getEcoSettings(guildId);
+    const now     = Math.floor(Date.now() / 1000);
+
+    // ── Cooldown check ─────────────────────────────────────────────────────────
+    if (eco.crime_at && now - eco.crime_at < CRIME_CD) {
+      const left = (eco.crime_at + CRIME_CD - now) * 1000;
+      return message.reply({ embeds: [
+        new EmbedBuilder()
+          .setColor(RED)
+          .setTitle('🚨 Lay Low')
+          .setDescription(`You're too hot right now. The cops are watching.\nTry again in **${fmtTime(left)}**.`)
+          .setFooter({ text: 'flux economy' }),
+      ]});
+    }
+
+    // ── Stage 1: Pick your crime ───────────────────────────────────────────────
+    const crimeKeys = Object.keys(CRIMES);
+    const crimeRow  = new ActionRowBuilder().addComponents(
+      ...crimeKeys.map(key => {
+        const c = CRIMES[key];
+        return new ButtonBuilder()
+          .setCustomId(`crime_pick_${key}_${userId}`)
+          .setLabel(c.label)
+          .setEmoji(c.emoji)
+          .setStyle(c.style);
+      }),
+    );
+
+    const stage1Embed = new EmbedBuilder()
+      .setColor(BLUE)
+      .setTitle('🦹 Choose Your Crime')
+      .setDescription('Pick a job. Each one has different risk and reward. Choose wisely.')
+      .addFields(
+        ...crimeKeys.map(key => {
+          const c = CRIMES[key];
+          const lo = fmt(c.minReward), hi = fmt(c.maxReward);
+          return {
+            name: `${c.emoji}  ${c.label}`,
+            value: `${c.desc}\n**Payout:** ${lo}–${hi} ${s.currency_emoji}  •  **Success:** ${Math.round(c.baseOdds * 100)}%`,
+            inline: false,
+          };
+        }),
+      )
+      .setFooter({ text: `${message.author.username} • pick a crime below • expires in 30s` });
+
+    const msg = await message.reply({ embeds: [stage1Embed], components: [crimeRow] });
+
+    // ── Stage 1 collector ─────────────────────────────────────────────────────
+    const s1Collector = msg.createMessageComponentCollector({
+      filter: i => i.user.id === userId && i.customId.startsWith(`crime_pick_`) && i.customId.endsWith(`_${userId}`),
+      time: 30_000,
+      max: 1,
+    });
+
+    s1Collector.on('collect', async (i1) => {
+      const crimeKey = i1.customId.split('_')[2];
+      const crime    = CRIMES[crimeKey];
+
+      // ── Stage 2: Pick your strategy ─────────────────────────────────────────
+      const stratRow = new ActionRowBuilder().addComponents(
+        ...crime.strategies.map(st =>
+          new ButtonBuilder()
+            .setCustomId(`crime_strat_${crimeKey}_${st.id}_${userId}`)
+            .setLabel(st.cost ? `${st.label} (−${fmt(st.cost)} ${s.currency_emoji})` : st.label)
+            .setEmoji(st.emoji)
+            .setStyle(ButtonStyle.Primary),
+        ),
+        new ButtonBuilder()
+          .setCustomId(`crime_cancel_${userId}`)
+          .setLabel('Back Out')
+          .setEmoji('🏃')
+          .setStyle(ButtonStyle.Secondary),
+      );
+
+      const successOdds = Math.round(crime.baseOdds * 100);
+      const stage2Embed = new EmbedBuilder()
+        .setColor(YELLOW)
+        .setTitle(`${crime.emoji}  ${crime.label} — Choose Your Approach`)
+        .setDescription(`Base success rate: **${successOdds}%**\nPick how you want to do this job.`)
+        .addFields(
+          ...crime.strategies.map(st => ({
+            name: `${st.emoji}  ${st.label}${st.cost ? ` *(costs ${fmt(st.cost)} ${s.currency_emoji})*` : ''}`,
+            value: `${st.desc}\n**Odds:** ${successOdds + Math.round(st.oddsMod * 100) > 0 ? '+' : ''}${Math.round(st.oddsMod * 100)}%  •  **Reward multiplier:** ×${st.rewardMod.toFixed(2)}`,
+            inline: false,
+          })),
+        )
+        .setFooter({ text: 'Pick your strategy • expires in 30s' });
+
+      await i1.update({ embeds: [stage2Embed], components: [stratRow] });
+
+      // ── Stage 2 collector ──────────────────────────────────────────────────
+      const s2Collector = msg.createMessageComponentCollector({
+        filter: i => i.user.id === userId && (
+          (i.customId.startsWith(`crime_strat_${crimeKey}_`) && i.customId.endsWith(`_${userId}`)) ||
+          i.customId === `crime_cancel_${userId}`
+        ),
+        time: 30_000,
+        max: 1,
+      });
+
+      s2Collector.on('collect', async (i2) => {
+        // ── Cancelled ────────────────────────────────────────────────────────
+        if (i2.customId === `crime_cancel_${userId}`) {
+          return i2.update({
+            embeds: [new EmbedBuilder().setColor(RED).setDescription('🏃 You backed out. Smart.')],
+            components: [],
+          });
+        }
+
+        const stratId = i2.customId.split('_')[3];
+        const strat   = crime.strategies.find(st => st.id === stratId);
+
+        // ── Deduct strategy cost ─────────────────────────────────────────────
+        if (strat.cost) {
+          const fresh = db.getEco(guildId, userId);
+          if (fresh.wallet < strat.cost) {
+            return i2.update({
+              embeds: [new EmbedBuilder()
+                .setColor(RED)
+                .setDescription(`❌ You can't afford the **${strat.label}** approach.\nYou need **${fmt(strat.cost)} ${s.currency_emoji}** in your wallet.`)],
+              components: [],
+            });
+          }
+          db.addWallet(guildId, userId, -strat.cost);
+        }
+
+        // ── Roll the dice ─────────────────────────────────────────────────────
+        const finalOdds   = Math.max(0.05, Math.min(0.95, crime.baseOdds + strat.oddsMod));
+        const success     = Math.random() < finalOdds;
+        const baseReward  = crime.minReward + Math.floor(Math.random() * (crime.maxReward - crime.minReward));
+        const reward      = Math.floor(baseReward * strat.rewardMod);
+
+        // Set cooldown immediately
+        db.setCrimeAt(guildId, userId, Math.floor(Date.now() / 1000));
+
+        // ── "Planning..." suspense embed ──────────────────────────────────────
+        const planningEmbed = new EmbedBuilder()
+          .setColor(YELLOW)
+          .setTitle(`${crime.emoji}  Executing the plan...`)
+          .setDescription('⏳ Your crew is in position. This is it...')
+          .setFooter({ text: 'flux economy' });
+
+        await i2.update({ embeds: [planningEmbed], components: [] });
+        await new Promise(r => setTimeout(r, 2500));
+
+        // ── Result ────────────────────────────────────────────────────────────
+        if (success) {
+          db.addWallet(guildId, userId, reward);
+          const updatedEco    = db.getEco(guildId, userId);
+          const flavor        = crime.successLines[Math.floor(Math.random() * crime.successLines.length)];
+          const resultEmbed   = new EmbedBuilder()
+            .setColor(GREEN)
+            .setTitle(`${crime.emoji}  ${crime.label} — Success!`)
+            .setDescription(`*${flavor}*`)
+            .addFields(
+              { name: '💰 Loot',         value: `**+${fmt(reward)} ${s.currency_emoji}**`,       inline: true },
+              { name: '👛 New Balance',  value: `**${fmt(updatedEco.wallet)} ${s.currency_emoji}**`, inline: true },
+              { name: '🎯 Strategy',     value: `${strat.emoji} ${strat.label}`,                  inline: true },
+            )
+            .setFooter({ text: `Cooldown: 45 min • flux economy` })
+            .setTimestamp();
+
+          await msg.edit({ embeds: [resultEmbed], components: [] });
+
+        } else {
+          const fine      = Math.min(Math.floor(db.getEco(guildId, userId).wallet * crime.finePct), reward);
+          if (fine > 0) db.addWallet(guildId, userId, -fine);
+          const updatedEco  = db.getEco(guildId, userId);
+          const flavor      = crime.caughtLines[Math.floor(Math.random() * crime.caughtLines.length)];
+          const resultEmbed = new EmbedBuilder()
+            .setColor(RED)
+            .setTitle(`${crime.emoji}  ${crime.label} — Caught!`)
+            .setDescription(`*${flavor}*`)
+            .addFields(
+              { name: '💸 Fine Paid',     value: fine > 0 ? `**−${fmt(fine)} ${s.currency_emoji}**` : '`None`', inline: true },
+              { name: '👛 New Balance',   value: `**${fmt(updatedEco.wallet)} ${s.currency_emoji}**`,            inline: true },
+              { name: '🎯 Strategy',      value: `${strat.emoji} ${strat.label}`,                                inline: true },
+            )
+            .setFooter({ text: `Cooldown: 45 min • flux economy` })
+            .setTimestamp();
+
+          await msg.edit({ embeds: [resultEmbed], components: [] });
+        }
+      });
+
+      s2Collector.on('end', async (collected, reason) => {
+        if (reason === 'time' && collected.size === 0) {
+          await msg.edit({
+            embeds: [new EmbedBuilder().setColor(RED).setDescription('⏰ You took too long. The job is off.')],
+            components: [],
+          }).catch(() => {});
+        }
+      });
+    });
+
+    s1Collector.on('end', async (collected, reason) => {
+      if (reason === 'time' && collected.size === 0) {
+        await msg.edit({
+          embeds: [new EmbedBuilder().setColor(RED).setDescription('⏰ Too slow — the crew left without you.')],
+          components: [],
+        }).catch(() => {});
+      }
+    });
+  },
+};
+
+module.exports = [balance, daily, work, depositCmd, withdrawCmd, pay, donate, rob, richlist, give, take, setbal, reseteco, ecoset, crime];
