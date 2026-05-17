@@ -15,6 +15,20 @@ const GREEN  = '#57F287';
 const RED    = '#ED4245';
 const YELLOW = '#FEE75C';
 
+/** username\nID — two-line value matching reference embed style */
+function uv(user) { return `${user.username}\n${user.id}`; }
+
+/** Log a mod action to mod_history, returns Case # */
+function logCase(guildId, userId, modId, action, reason = 'No reason provided') {
+  try {
+    const r = db.run(
+      'INSERT INTO mod_history (guild_id, user_id, mod_id, action, reason) VALUES (?,?,?,?,?)',
+      [guildId, userId, modId, action, reason],
+    );
+    return r?.lastInsertRowid ?? '?';
+  } catch { return '?'; }
+}
+
 // ─── /ping ───────────────────────────────────────────────────────────────────
 const ping = {
   data: new SlashCommandBuilder()
@@ -159,15 +173,22 @@ const lock = {
     .setName('lock')
     .setDescription('Lock a channel (prevent everyone from sending)')
     .addChannelOption(o => o.setName('channel').setDescription('Channel (defaults to current)'))
+    .addStringOption(o => o.setName('reason').setDescription('Reason for locking'))
     .setDefaultMemberPermissions(PermissionFlagsBits.ManageChannels),
   async execute(interaction) {
     const channel = interaction.options.getChannel('channel') || interaction.channel;
+    const reason  = interaction.options.getString('reason') || 'No reason provided';
     await channel.permissionOverwrites.edit(interaction.guild.roles.everyone, { SendMessages: false });
+    const caseId = logCase(interaction.guild.id, channel.id, interaction.user.id, 'lock', reason);
     const embed = new EmbedBuilder()
       .setColor(RED)
-      .setAuthor({ name: '🔒 Channel Locked', iconURL: interaction.user.displayAvatarURL() })
-      .addFields({ name: '📍 Channel', value: `${channel}`, inline: true })
-      .setFooter({ text: 'flux bot' })
+      .setTitle('🔒 Channel Locked')
+      .addFields(
+        { name: 'Channel',   value: `#${channel.name}\n${channel.id}`, inline: true },
+        { name: 'Moderator', value: uv(interaction.user),              inline: true },
+        { name: 'Reason',    value: reason },
+      )
+      .setFooter({ text: `Case #${caseId}` })
       .setTimestamp();
     await interaction.reply({ embeds: [embed], ephemeral: true });
   },
@@ -179,15 +200,22 @@ const unlock = {
     .setName('unlock')
     .setDescription('Unlock a channel')
     .addChannelOption(o => o.setName('channel').setDescription('Channel (defaults to current)'))
+    .addStringOption(o => o.setName('reason').setDescription('Reason for unlocking'))
     .setDefaultMemberPermissions(PermissionFlagsBits.ManageChannels),
   async execute(interaction) {
     const channel = interaction.options.getChannel('channel') || interaction.channel;
+    const reason  = interaction.options.getString('reason') || 'No reason provided';
     await channel.permissionOverwrites.edit(interaction.guild.roles.everyone, { SendMessages: null });
+    const caseId = logCase(interaction.guild.id, channel.id, interaction.user.id, 'unlock', reason);
     const embed = new EmbedBuilder()
       .setColor(GREEN)
-      .setAuthor({ name: '🔓 Channel Unlocked', iconURL: interaction.user.displayAvatarURL() })
-      .addFields({ name: '📍 Channel', value: `${channel}`, inline: true })
-      .setFooter({ text: 'flux bot' })
+      .setTitle('🔓 Channel Unlocked')
+      .addFields(
+        { name: 'Channel',   value: `#${channel.name}\n${channel.id}`, inline: true },
+        { name: 'Moderator', value: uv(interaction.user),              inline: true },
+        { name: 'Reason',    value: reason },
+      )
+      .setFooter({ text: `Case #${caseId}` })
       .setTimestamp();
     await interaction.reply({ embeds: [embed], ephemeral: true });
   },
@@ -199,15 +227,22 @@ const hide = {
     .setName('hide')
     .setDescription('Hide a channel from @everyone')
     .addChannelOption(o => o.setName('channel').setDescription('Channel'))
+    .addStringOption(o => o.setName('reason').setDescription('Reason for hiding'))
     .setDefaultMemberPermissions(PermissionFlagsBits.ManageChannels),
   async execute(interaction) {
     const channel = interaction.options.getChannel('channel') || interaction.channel;
+    const reason  = interaction.options.getString('reason') || 'No reason provided';
     await channel.permissionOverwrites.edit(interaction.guild.roles.everyone, { ViewChannel: false });
+    const caseId = logCase(interaction.guild.id, channel.id, interaction.user.id, 'hide', reason);
     const embed = new EmbedBuilder()
       .setColor(RED)
-      .setAuthor({ name: '🙈 Channel Hidden', iconURL: interaction.user.displayAvatarURL() })
-      .addFields({ name: '📍 Channel', value: `${channel}`, inline: true })
-      .setFooter({ text: 'flux bot' })
+      .setTitle('🙈 Channel Hidden')
+      .addFields(
+        { name: 'Channel',   value: `#${channel.name}\n${channel.id}`, inline: true },
+        { name: 'Moderator', value: uv(interaction.user),              inline: true },
+        { name: 'Reason',    value: reason },
+      )
+      .setFooter({ text: `Case #${caseId}` })
       .setTimestamp();
     await interaction.reply({ embeds: [embed], ephemeral: true });
   },
@@ -219,15 +254,22 @@ const unhide = {
     .setName('unhide')
     .setDescription('Unhide a channel')
     .addChannelOption(o => o.setName('channel').setDescription('Channel'))
+    .addStringOption(o => o.setName('reason').setDescription('Reason for unhiding'))
     .setDefaultMemberPermissions(PermissionFlagsBits.ManageChannels),
   async execute(interaction) {
     const channel = interaction.options.getChannel('channel') || interaction.channel;
+    const reason  = interaction.options.getString('reason') || 'No reason provided';
     await channel.permissionOverwrites.edit(interaction.guild.roles.everyone, { ViewChannel: null });
+    const caseId = logCase(interaction.guild.id, channel.id, interaction.user.id, 'unhide', reason);
     const embed = new EmbedBuilder()
       .setColor(GREEN)
-      .setAuthor({ name: '👁️ Channel Visible', iconURL: interaction.user.displayAvatarURL() })
-      .addFields({ name: '📍 Channel', value: `${channel}`, inline: true })
-      .setFooter({ text: 'flux bot' })
+      .setTitle('👁️ Channel Visible')
+      .addFields(
+        { name: 'Channel',   value: `#${channel.name}\n${channel.id}`, inline: true },
+        { name: 'Moderator', value: uv(interaction.user),              inline: true },
+        { name: 'Reason',    value: reason },
+      )
+      .setFooter({ text: `Case #${caseId}` })
       .setTimestamp();
     await interaction.reply({ embeds: [embed], ephemeral: true });
   },
@@ -245,11 +287,16 @@ const slowmode = {
     const secs = interaction.options.getInteger('seconds');
     const channel = interaction.options.getChannel('channel') || interaction.channel;
     await channel.setRateLimitPerUser(secs);
+    const caseId = logCase(interaction.guild.id, channel.id, interaction.user.id, 'slowmode', `${secs}s`);
     const embed = new EmbedBuilder()
       .setColor(secs === 0 ? GREEN : YELLOW)
-      .setAuthor({ name: secs === 0 ? '🐇 Slowmode Disabled' : `🐌 Slowmode — ${secs}s`, iconURL: interaction.user.displayAvatarURL() })
-      .addFields({ name: '📍 Channel', value: `${channel}`, inline: true })
-      .setFooter({ text: 'flux bot' })
+      .setTitle(secs === 0 ? '🐇 Slowmode Disabled' : `🐌 Slowmode Set`)
+      .addFields(
+        { name: 'Channel',   value: `#${channel.name}\n${channel.id}`, inline: true },
+        { name: 'Moderator', value: uv(interaction.user),              inline: true },
+        { name: 'Duration',  value: secs === 0 ? 'Disabled' : `${secs}s` },
+      )
+      .setFooter({ text: `Case #${caseId}` })
       .setTimestamp();
     await interaction.reply({ embeds: [embed], ephemeral: true });
   },

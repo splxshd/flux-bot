@@ -8,29 +8,27 @@ const db = require('../database');
 const { parseDuration, formatDuration, truncate } = require('../utils/helpers');
 const { ensureMuteRole } = require('../utils/muteRole');
 
+/** username\nID — two-line value matching reference embed style */
+function uv(user) { return `${user.username}\n${user.id}`; }
+
 // Shared embed builder for mod actions
 function modEmbed(opts) {
   const {
     color, emoji, action, target, moderator,
-    reason, extra = [], thumbnail = true,
+    reason, extra = [], caseId = '?',
   } = opts;
 
-  const embed = new EmbedBuilder()
+  return new EmbedBuilder()
     .setColor(color)
-    .setAuthor({ name: `${emoji} ${action}`, iconURL: moderator.displayAvatarURL() })
+    .setTitle(`${emoji} ${action}`)
     .addFields(
-      { name: '👤 User', value: `${target.tag}\n<@${target.id}>`, inline: true },
-      { name: '🛡️ Moderator', value: `${moderator.tag}`, inline: true },
-      { name: '​', value: '​', inline: true },
-      { name: '📋 Reason', value: reason, inline: false },
+      { name: 'Member',    value: uv(target),    inline: true },
+      { name: 'Moderator', value: uv(moderator), inline: true },
+      { name: 'Reason',    value: reason },
       ...extra,
     )
-    .setFooter({ text: `ID: ${target.id}` })
+    .setFooter({ text: `Case #${caseId}` })
     .setTimestamp();
-
-  if (thumbnail) embed.setThumbnail(target.displayAvatarURL?.() ?? `https://cdn.discordapp.com/embed/avatars/0.png`);
-
-  return embed;
 }
 
 const COLORS = {
@@ -63,12 +61,13 @@ const ban = {
       return interaction.reply({ content: '❌ Failed to ban — check my role position and permissions.', ephemeral: true });
     }
 
-    db.addHistory(interaction.guild.id, target.id, interaction.user.id, 'ban', reason);
+    const banHist = db.addHistory(interaction.guild.id, target.id, interaction.user.id, 'ban', reason);
+    const banCase = banHist?.lastInsertRowid ?? '?';
 
     const embed = modEmbed({
       color: COLORS.ban, emoji: '🔨', action: 'Member Banned',
-      target, moderator: interaction.user, reason,
-      extra: [{ name: '🗑️ Messages Deleted', value: `${delDays} day(s)`, inline: true }],
+      target, moderator: interaction.user, reason, caseId: banCase,
+      extra: [{ name: 'Messages Deleted', value: `${delDays} day(s)`, inline: true }],
     });
 
     await interaction.reply({ embeds: [embed], ephemeral: true });
@@ -102,14 +101,15 @@ const tempban = {
     }
 
     db.addBan(interaction.guild.id, target.id, interaction.user.id, reason, expiresAt);
-    db.addHistory(interaction.guild.id, target.id, interaction.user.id, 'tempban', reason, `expires:${expiresAt}`);
+    const tbHist = db.addHistory(interaction.guild.id, target.id, interaction.user.id, 'tempban', reason, `expires:${expiresAt}`);
+    const tbCase = tbHist?.lastInsertRowid ?? '?';
 
     const embed = modEmbed({
       color: COLORS.ban, emoji: '⏱️', action: 'Member Temp-Banned',
-      target, moderator: interaction.user, reason,
+      target, moderator: interaction.user, reason, caseId: tbCase,
       extra: [
-        { name: '⏱️ Duration', value: formatDuration(durationMs), inline: true },
-        { name: '🔓 Expires', value: `<t:${expiresAt}:R>`, inline: true },
+        { name: 'Duration', value: formatDuration(durationMs), inline: true },
+        { name: 'Expires',  value: `<t:${expiresAt}:R>`,      inline: true },
       ],
     });
 
@@ -138,11 +138,12 @@ const kick = {
       return interaction.reply({ content: '❌ Failed to kick — check my role position.', ephemeral: true });
     }
 
-    db.addHistory(interaction.guild.id, target.id, interaction.user.id, 'kick', reason);
+    const kickHist = db.addHistory(interaction.guild.id, target.id, interaction.user.id, 'kick', reason);
+    const kickCase = kickHist?.lastInsertRowid ?? '?';
 
     const embed = modEmbed({
       color: COLORS.kick, emoji: '👢', action: 'Member Kicked',
-      target: target.user, moderator: interaction.user, reason,
+      target: target.user, moderator: interaction.user, reason, caseId: kickCase,
     });
 
     await interaction.reply({ embeds: [embed], ephemeral: true });
@@ -176,14 +177,15 @@ const mute = {
 
     const expiresAt = durationMs ? Math.floor((Date.now() + durationMs) / 1000) : null;
     db.addMute(interaction.guild.id, target.id, expiresAt, reason);
-    db.addHistory(interaction.guild.id, target.id, interaction.user.id, 'mute', reason, durationStr || 'permanent');
+    const muteHist = db.addHistory(interaction.guild.id, target.id, interaction.user.id, 'mute', reason, durationStr || 'permanent');
+    const muteCase = muteHist?.lastInsertRowid ?? '?';
 
     const embed = modEmbed({
       color: COLORS.mute, emoji: '🔇', action: 'Member Muted',
-      target: target.user, moderator: interaction.user, reason,
+      target: target.user, moderator: interaction.user, reason, caseId: muteCase,
       extra: [
-        { name: '⏱️ Duration', value: durationMs ? formatDuration(durationMs) : '**Permanent**', inline: true },
-        { name: '🔓 Expires', value: expiresAt ? `<t:${expiresAt}:R>` : '—', inline: true },
+        { name: 'Duration', value: durationMs ? formatDuration(durationMs) : 'Permanent', inline: true },
+        { name: 'Expires',  value: expiresAt ? `<t:${expiresAt}:R>` : '—',               inline: true },
       ],
     });
 
@@ -209,10 +211,12 @@ const unmute = {
     const muteRole = interaction.guild.roles.cache.find(r => r.name === 'Muted');
     if (muteRole) await target.roles.remove(muteRole, reason);
     db.removeMute(interaction.guild.id, target.id);
+    const unmuteHist = db.addHistory(interaction.guild.id, target.id, interaction.user.id, 'unmute', reason);
+    const unmuteCase = unmuteHist?.lastInsertRowid ?? '?';
 
     const embed = modEmbed({
       color: COLORS.good, emoji: '🔊', action: 'Member Unmuted',
-      target: target.user, moderator: interaction.user, reason,
+      target: target.user, moderator: interaction.user, reason, caseId: unmuteCase,
     });
 
     await interaction.reply({ embeds: [embed], ephemeral: true });
@@ -233,14 +237,14 @@ const warn = {
     const reason = interaction.options.getString('reason');
 
     db.addWarning(interaction.guild.id, target.id, interaction.user.id, reason);
-    db.addHistory(interaction.guild.id, target.id, interaction.user.id, 'warn', reason);
-
+    const warnHist = db.addHistory(interaction.guild.id, target.id, interaction.user.id, 'warn', reason);
+    const warnCase = warnHist?.lastInsertRowid ?? '?';
     const allWarns = db.getWarnings(interaction.guild.id, target.id);
 
     const embed = modEmbed({
       color: COLORS.warn, emoji: '⚠️', action: 'Member Warned',
-      target, moderator: interaction.user, reason,
-      extra: [{ name: '📊 Total Warnings', value: `**${allWarns.length}** warning(s)`, inline: true }],
+      target, moderator: interaction.user, reason, caseId: warnCase,
+      extra: [{ name: 'Total Warnings', value: `${allWarns.length} warning(s)`, inline: true }],
     });
 
     await interaction.reply({ embeds: [embed], ephemeral: true });
@@ -261,7 +265,7 @@ const warnings = {
 
     const embed = new EmbedBuilder()
       .setColor(warns.length === 0 ? COLORS.good : COLORS.warn)
-      .setAuthor({ name: `Warnings — ${target.tag}`, iconURL: target.displayAvatarURL() })
+      .setTitle(`⚠️ Warnings — ${target.username}`)
       .setThumbnail(target.displayAvatarURL())
       .setTimestamp()
       .setFooter({ text: `User ID: ${target.id}` });
@@ -293,12 +297,18 @@ const clearwarns = {
     const target = interaction.options.getUser('user');
     const before = db.getWarnings(interaction.guild.id, target.id).length;
     db.clearWarnings(interaction.guild.id, target.id);
+    const cwHist = db.addHistory(interaction.guild.id, target.id, interaction.user.id, 'clearwarns', `Cleared ${before} warning(s)`);
+    const cwCase = cwHist?.lastInsertRowid ?? '?';
 
     const embed = new EmbedBuilder()
       .setColor(COLORS.good)
-      .setAuthor({ name: `Warnings Cleared — ${target.tag}`, iconURL: interaction.user.displayAvatarURL() })
-      .setThumbnail(target.displayAvatarURL())
-      .setDescription(`Cleared **${before}** warning(s) from <@${target.id}>.`)
+      .setTitle('✅ Warnings Cleared')
+      .addFields(
+        { name: 'Member',    value: uv(target),            inline: true },
+        { name: 'Moderator', value: uv(interaction.user),  inline: true },
+        { name: 'Cleared',   value: `${before} warning(s)` },
+      )
+      .setFooter({ text: `Case #${cwCase}` })
       .setTimestamp();
 
     await interaction.reply({ embeds: [embed], ephemeral: true });
@@ -327,10 +337,13 @@ const notes = {
 
       const embed = new EmbedBuilder()
         .setColor(COLORS.info)
-        .setAuthor({ name: `Note Added — ${target.tag}`, iconURL: interaction.user.displayAvatarURL() })
-        .setDescription(`> ${content}`)
-        .setTimestamp()
-        .setFooter({ text: `Added by ${interaction.user.tag}` });
+        .setTitle('📝 Note Added')
+        .addFields(
+          { name: 'Member',    value: uv(target),            inline: true },
+          { name: 'Moderator', value: uv(interaction.user),  inline: true },
+          { name: 'Note',      value: content },
+        )
+        .setTimestamp();
 
       await interaction.reply({ embeds: [embed], ephemeral: true });
 
@@ -339,7 +352,7 @@ const notes = {
 
       const embed = new EmbedBuilder()
         .setColor(COLORS.info)
-        .setAuthor({ name: `Notes — ${target.tag}`, iconURL: target.displayAvatarURL() })
+        .setTitle(`📝 Notes — ${target.username}`)
         .setThumbnail(target.displayAvatarURL())
         .setFooter({ text: `User ID: ${target.id}` })
         .setTimestamp();
@@ -375,7 +388,7 @@ const history = {
 
     const embed = new EmbedBuilder()
       .setColor(COLORS.info)
-      .setAuthor({ name: `Mod History — ${target.tag}`, iconURL: target.displayAvatarURL() })
+      .setTitle(`📋 Mod History — ${target.username}`)
       .setThumbnail(target.displayAvatarURL())
       .setFooter({ text: `${hist.length} total action(s) • ID: ${target.id}` })
       .setTimestamp();
@@ -521,12 +534,11 @@ const role = {
 
     const embed = new EmbedBuilder()
       .setColor(had ? COLORS.warn : COLORS.good)
-      .setAuthor({ name: had ? 'Role Removed' : 'Role Added', iconURL: interaction.user.displayAvatarURL() })
-      .setThumbnail(member.user.displayAvatarURL())
+      .setTitle(had ? '🗑️ Role Removed' : '✅ Role Added')
       .addFields(
-        { name: '👤 Member', value: `${member.user.tag}`, inline: true },
-        { name: '🏷️ Role', value: `${r}`, inline: true },
-        { name: '🔄 Action', value: had ? 'Removed' : 'Added', inline: true },
+        { name: 'Member',    value: uv(member.user),        inline: true },
+        { name: 'Moderator', value: uv(interaction.user),   inline: true },
+        { name: 'Role',      value: `${r.name}\n${r.id}` },
       )
       .setTimestamp();
 
@@ -631,13 +643,13 @@ const temprole = {
 
     const embed = new EmbedBuilder()
       .setColor(COLORS.info)
-      .setAuthor({ name: 'Temporary Role Assigned', iconURL: interaction.user.displayAvatarURL() })
-      .setThumbnail(member.user.displayAvatarURL())
+      .setTitle('⏱️ Temporary Role Assigned')
       .addFields(
-        { name: '👤 Member', value: `${member.user.tag}`, inline: true },
-        { name: '🏷️ Role', value: `${r}`, inline: true },
-        { name: '⏱️ Duration', value: formatDuration(durationMs), inline: true },
-        { name: '🔓 Expires', value: `<t:${expiresAt}:R>`, inline: true },
+        { name: 'Member',    value: uv(member.user),        inline: true },
+        { name: 'Moderator', value: uv(interaction.user),   inline: true },
+        { name: 'Role',      value: `${r.name}\n${r.id}` },
+        { name: 'Duration',  value: formatDuration(durationMs), inline: true },
+        { name: 'Expires',   value: `<t:${expiresAt}:R>`,       inline: true },
       )
       .setTimestamp();
 
@@ -693,11 +705,11 @@ const forcenickname = {
 
       const embed = new EmbedBuilder()
         .setColor(COLORS.info)
-        .setAuthor({ name: 'Nickname Forced', iconURL: interaction.user.displayAvatarURL() })
-        .setThumbnail(member.user.displayAvatarURL())
+        .setTitle('📛 Nickname Forced')
         .addFields(
-          { name: '👤 Member', value: `${member.user.tag}`, inline: true },
-          { name: '📛 Nickname', value: `**${nick}**`, inline: true },
+          { name: 'Member',    value: uv(member.user),       inline: true },
+          { name: 'Moderator', value: uv(interaction.user),  inline: true },
+          { name: 'Nickname',  value: nick },
         )
         .setTimestamp();
 
@@ -820,9 +832,12 @@ const stripstaff = {
 
     const embed = new EmbedBuilder()
       .setColor(COLORS.warn)
-      .setAuthor({ name: 'Roles Stripped', iconURL: interaction.user.displayAvatarURL() })
-      .setThumbnail(member.user.displayAvatarURL())
-      .setDescription(`Removed **${count}** role(s) from **${member.user.tag}**.`)
+      .setTitle('🧹 Roles Stripped')
+      .addFields(
+        { name: 'Member',    value: uv(member.user),       inline: true },
+        { name: 'Moderator', value: uv(interaction.user),  inline: true },
+        { name: 'Removed',   value: `${count} role(s)` },
+      )
       .setTimestamp();
 
     await interaction.reply({ embeds: [embed], ephemeral: true });
