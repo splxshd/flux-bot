@@ -423,76 +423,174 @@ const coinflip = {
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
-// 4. 🎴 HI-LO — Higher / Lower buttons with streak counter
+// 4. 🎴 HI-LO — Higher / Lower / Same buttons + Cash Out, economy bets
 // ─────────────────────────────────────────────────────────────────────────────
 const CARD_NAMES = ['A','2','3','4','5','6','7','8','9','10','J','Q','K'];
-const CARD_VALS  = { A:1, '2':2,'3':3,'4':4,'5':5,'6':6,'7':7,'8':8,'9':9,'10':10,J:11,Q:12,K:13 };
+const CARD_VALS  = { A:1,'2':2,'3':3,'4':4,'5':5,'6':6,'7':7,'8':8,'9':9,'10':10,J:11,Q:12,K:13 };
+const HILO_MULTI = [1.0, 1.35, 1.75, 2.25, 3.00, 4.00, 5.50, 7.50]; // index = streak
 
-function randCard() { return CARD_NAMES[Math.floor(Math.random() * 13)]; }
+function randCard()   { return CARD_NAMES[Math.floor(Math.random() * 13)]; }
+function hiloMult(s)  { return HILO_MULTI[Math.min(s, HILO_MULTI.length - 1)]; }
 
 const hilo = {
   name: 'hilo',
   aliases: ['highlow'],
-  async execute(message) {
+  async execute(message, args) {
+    const guildId = message.guild.id;
+    const userId  = message.author.id;
+    const eco     = db.getEco(guildId, userId);
+    const s       = db.getEcoSettings(guildId);
+
+    // ── Bet parsing ────────────────────────────────────────────────────────────
+    const bet = parseBet(args[0], eco.wallet);
+    const err = checkBet(eco, bet, s);
+    if (err) return message.reply({ embeds: [new EmbedBuilder().setColor(RED).setDescription(err)] });
+
+    // Deduct bet upfront
+    db.addWallet(guildId, userId, -bet);
+
     let current = randCard();
     let streak  = 0;
 
-    const buildEmbed = (cur, result = null, next = null) => {
-      const color = result === 'correct' ? GREEN : result === 'wrong' ? RED : BLUE;
-      const body  = result === 'correct'
-        ? `✅ **Correct!** \`${cur}\` → \`${next}\`\n\n🔥 Streak: **${streak}**`
-        : result === 'wrong'
-        ? `❌ **Wrong!** \`${cur}\` → \`${next}\`\n\nFinal streak: **${streak}**`
-        : `**Current card: \`${cur}\`**\n\nIs the next card higher or lower?`;
+    const potentialWin  = () => Math.floor(bet * hiloMult(streak));
+    const nextWin       = () => Math.floor(bet * hiloMult(streak + 1));
 
-      return new EmbedBuilder()
-        .setColor(color)
-        .setTitle('🎴 Hi-Lo')
-        .setDescription(body)
-        .setFooter({ text: 'flux • 30s per guess' });
+    const buildEmbed = (state = 'playing', next = null) => {
+      const winNow  = potentialWin();
+      const winNext = nextWin();
+
+      if (state === 'playing') {
+        return new EmbedBuilder()
+          .setColor(streak > 0 ? YELLOW : BLUE)
+          .setTitle('🎴 Hi-Lo')
+          .setDescription(
+            `**Current card:** \`${current}\`\n\n` +
+            `Is the next card **higher**, **lower**, or the **same**?`
+          )
+          .addFields(
+            { name: '🔥 Streak',       value: `**${streak}**`,                                        inline: true },
+            { name: '💰 Cash Out Now', value: `**${fmtCoins(winNow)} ${s.currency_emoji}**`,          inline: true },
+            { name: '⬆️ Next Correct', value: `→ **${fmtCoins(winNext)} ${s.currency_emoji}**`,      inline: true },
+          )
+          .setFooter({ text: `Bet: ${fmtCoins(bet)} ${s.currency_emoji} • ×${hiloMult(streak).toFixed(2)} multiplier • 30s per guess` });
+      }
+
+      if (state === 'correct') {
+        return new EmbedBuilder()
+          .setColor(GREEN)
+          .setTitle('🎴 Hi-Lo — Correct!')
+          .setDescription(`\`${next}\` — ✅ Right call!\n\n**Streak: ${streak}**`)
+          .addFields(
+            { name: '💰 Cash Out Now', value: `**${fmtCoins(winNow)} ${s.currency_emoji}**`,     inline: true },
+            { name: '⬆️ Next Correct', value: `→ **${fmtCoins(winNext)} ${s.currency_emoji}**`, inline: true },
+          )
+          .setFooter({ text: `×${hiloMult(streak).toFixed(2)} multiplier • keep going or cash out!` });
+      }
+
+      if (state === 'cashout') {
+        return new EmbedBuilder()
+          .setColor(GOLD)
+          .setTitle('💰 Cashed Out!')
+          .setDescription(`You walked away after a **${streak}** streak.`)
+          .addFields(
+            { name: '🎯 Bet',     value: `${fmtCoins(bet)} ${s.currency_emoji}`,   inline: true },
+            { name: '✖️ Mult',   value: `×${hiloMult(streak).toFixed(2)}`,          inline: true },
+            { name: '💵 Payout', value: `**+${fmtCoins(winNow)} ${s.currency_emoji}**`, inline: true },
+          )
+          .setFooter({ text: 'flux economy' })
+          .setTimestamp();
+      }
+
+      if (state === 'wrong') {
+        return new EmbedBuilder()
+          .setColor(RED)
+          .setTitle('💀 Wrong!')
+          .setDescription(`\`${current}\` → \`${next}\` — ❌ Bad call.\n\nThe next card was **${next}**.`)
+          .addFields(
+            { name: '🔥 Final Streak', value: `**${streak}**`,                         inline: true },
+            { name: '💸 Lost',         value: `**${fmtCoins(bet)} ${s.currency_emoji}**`, inline: true },
+          )
+          .setFooter({ text: 'flux economy' })
+          .setTimestamp();
+      }
+
+      if (state === 'timeout') {
+        const auto = streak > 0 ? potentialWin() : 0;
+        return new EmbedBuilder()
+          .setColor(streak > 0 ? GOLD : RED)
+          .setTitle(streak > 0 ? '⏰ Time\'s Up — Auto Cashed Out' : '⏰ Time\'s Up')
+          .setDescription(streak > 0
+            ? `You ran out of time but had a **${streak}** streak — auto cashed out!`
+            : 'You ran out of time with no streak. Bet lost.')
+          .addFields(
+            streak > 0
+              ? { name: '💵 Auto Payout', value: `**+${fmtCoins(auto)} ${s.currency_emoji}**`, inline: true }
+              : { name: '💸 Lost', value: `**${fmtCoins(bet)} ${s.currency_emoji}**`, inline: true },
+          )
+          .setFooter({ text: 'flux economy' })
+          .setTimestamp();
+      }
+
+      return new EmbedBuilder().setColor(BLUE).setTitle('🎴 Hi-Lo').setDescription('Game over.');
     };
 
     const buildRow = (disabled = false) => new ActionRowBuilder().addComponents(
       new ButtonBuilder().setCustomId('hilo_higher').setLabel('Higher').setEmoji('⬆️').setStyle(ButtonStyle.Success).setDisabled(disabled),
       new ButtonBuilder().setCustomId('hilo_lower').setLabel('Lower').setEmoji('⬇️').setStyle(ButtonStyle.Danger).setDisabled(disabled),
       new ButtonBuilder().setCustomId('hilo_same').setLabel('Same').setEmoji('↔️').setStyle(ButtonStyle.Secondary).setDisabled(disabled),
+      new ButtonBuilder().setCustomId('hilo_cashout').setLabel('Cash Out').setEmoji('💰')
+        .setStyle(streak > 0 ? ButtonStyle.Primary : ButtonStyle.Secondary)
+        .setDisabled(disabled || streak === 0),
     );
 
-    const sent = await message.reply({ embeds: [buildEmbed(current)], components: [buildRow()] });
+    const sent = await message.reply({ embeds: [buildEmbed('playing')], components: [buildRow()] });
 
     const col = sent.createMessageComponentCollector({
       componentType: ComponentType.Button,
-      filter: i => i.user.id === message.author.id,
+      filter: i => i.user.id === userId,
       time: 30_000,
       idle: 30_000,
     });
 
     col.on('collect', async (i) => {
-      const next = randCard();
-      const cv   = CARD_VALS[current], nv = CARD_VALS[next];
-      const guess = i.customId === 'hilo_higher' ? 'higher' : i.customId === 'hilo_lower' ? 'lower' : 'same';
-      const correct = (guess === 'higher' && nv > cv)
-                   || (guess === 'lower'  && nv < cv)
-                   || (guess === 'same'   && nv === cv);
+      // ── Cash Out ─────────────────────────────────────────────────────────────
+      if (i.customId === 'hilo_cashout') {
+        col.stop('cashout');
+        const payout = potentialWin();
+        db.addWallet(guildId, userId, payout);
+        return i.update({ embeds: [buildEmbed('cashout')], components: [buildRow(true)] });
+      }
 
-      if (correct) {
+      // ── Guess ─────────────────────────────────────────────────────────────────
+      const next  = randCard();
+      const cv    = CARD_VALS[current], nv = CARD_VALS[next];
+      const guess = i.customId === 'hilo_higher' ? 'higher' : i.customId === 'hilo_lower' ? 'lower' : 'same';
+      const ok    = (guess === 'higher' && nv > cv)
+                 || (guess === 'lower'  && nv < cv)
+                 || (guess === 'same'   && nv === cv);
+
+      if (ok) {
         streak++;
         current = next;
         col.resetTimer();
-        await i.update({ embeds: [buildEmbed(next, 'correct', next)], components: [buildRow()] });
-        // Show new card after brief pause
-        await new Promise(r => setTimeout(r, 800));
-        await sent.edit({ embeds: [buildEmbed(current)], components: [buildRow()] }).catch(() => {});
+        // Show correct flash, then transition to next-card prompt
+        await i.update({ embeds: [buildEmbed('correct', next)], components: [buildRow()] });
+        await new Promise(r => setTimeout(r, 900));
+        await sent.edit({ embeds: [buildEmbed('playing')], components: [buildRow()] }).catch(() => {});
       } else {
         col.stop('wrong');
-        await i.update({ embeds: [buildEmbed(current, 'wrong', next)], components: [buildRow(true)] });
+        await i.update({ embeds: [buildEmbed('wrong', next)], components: [buildRow(true)] });
       }
     });
 
-    col.on('end', (_, reason) => {
-      if (reason === 'time' || reason === 'idle') {
-        sent.edit({ embeds: [buildEmbed(current, 'wrong', '??').setDescription(`⏰ Time's up!\n\nFinal streak: **${streak}**`)], components: [buildRow(true)] }).catch(() => {});
+    col.on('end', async (_, reason) => {
+      if (reason === 'cashout' || reason === 'wrong') return; // already handled
+      // Timeout — auto-cashout if they had a streak
+      if (streak > 0) {
+        const payout = potentialWin();
+        db.addWallet(guildId, userId, payout);
       }
+      await sent.edit({ embeds: [buildEmbed('timeout')], components: [buildRow(true)] }).catch(() => {});
     });
   },
 };
@@ -977,73 +1075,96 @@ const guess = {
     const answer    = Math.floor(Math.random() * maxNum) + 1;
     const guessTime = hardMode ? 45_000 : 25_000;
 
-    const modeRow = new ActionRowBuilder().addComponents(
-      new ButtonBuilder().setCustomId('guess_easy').setLabel('Easy (1–10)').setStyle(hardMode ? ButtonStyle.Secondary : ButtonStyle.Primary),
-      new ButtonBuilder().setCustomId('guess_hard').setLabel('Hard (1–100)').setStyle(hardMode ? ButtonStyle.Primary : ButtonStyle.Secondary),
-    );
-
-    const prompt = new EmbedBuilder()
+    const buildPrompt = (hard) => new EmbedBuilder()
       .setColor(BLUE)
       .setTitle('🔢 Guess the Number')
-      .setDescription(`I'm thinking of a number between **1 and ${maxNum}**.\nType your answer in chat!${hardMode ? '\n\n🔥 **Hard mode!** You have 3 hints.' : ''}`)
-      .setFooter({ text: `${guessTime/1000}s to answer • flux` });
+      .setDescription(
+        `I'm thinking of a number between **1 and ${hard ? 100 : 10}**.\nType your answer in chat!` +
+        (hard ? '\n\n🔥 **Hard mode** — you get hints based on distance.' : '')
+      )
+      .setFooter({ text: `${guessTime / 1000}s to answer • flux` });
 
-    const sent = await message.reply({ embeds: [prompt], components: [modeRow] });
+    const buildModeRow = (hard, disabled = false) => new ActionRowBuilder().addComponents(
+      new ButtonBuilder().setCustomId('gtn_easy').setLabel('Easy (1–10)').setStyle(hard ? ButtonStyle.Secondary : ButtonStyle.Primary).setDisabled(disabled),
+      new ButtonBuilder().setCustomId('gtn_hard').setLabel('Hard (1–100)').setStyle(hard ? ButtonStyle.Primary : ButtonStyle.Secondary).setDisabled(disabled),
+    );
 
-    // Mode switch collector
+    const sent = await message.reply({ embeds: [buildPrompt(hardMode)], components: [buildModeRow(hardMode)] });
+
+    let done = false; // guard against both collectors firing
+
+    // ── Message collector ─────────────────────────────────────────────────────
+    let hints   = 3;
+    const msgCol = message.channel.createMessageCollector({
+      filter: m => m.author.id === message.author.id && /^\d+$/.test(m.content.trim()),
+      time: guessTime,
+    });
+
+    msgCol.on('collect', async (m) => {
+      if (done) return;
+      const g = parseInt(m.content.trim());
+      if (g < 1 || g > maxNum) return;
+
+      if (g === answer) {
+        done = true;
+        msgCol.stop('solved');
+        await sent.edit({ components: [buildModeRow(hardMode, true)] }).catch(() => {});
+        await m.reply({ embeds: [
+          new EmbedBuilder()
+            .setColor(GREEN)
+            .setTitle('🎉 Correct!')
+            .setDescription(`The number was **${answer}**! Nice one, ${message.author}!`)
+            .setTimestamp(),
+        ]});
+        return;
+      }
+
+      // Wrong guess — hint
+      const dir  = g > answer ? '📉 Too high!' : '📈 Too low!';
+      if (hardMode && hints > 0) {
+        hints--;
+        const diff = Math.abs(g - answer);
+        const proximity = diff <= 5 ? '🔥 Very close!' : diff <= 15 ? '🌡️ Warm!' : diff <= 30 ? '❄️ Cold...' : '🧊 Way off!';
+        await m.reply({ embeds: [
+          new EmbedBuilder()
+            .setColor(YELLOW)
+            .setDescription(`${dir} ${proximity}${hints > 0 ? `\n*(${hints} hint${hints !== 1 ? 's' : ''} left)*` : '\n*No more hints!*'}`),
+        ], allowedMentions: { repliedUser: false } });
+      } else {
+        await m.reply({ content: dir, allowedMentions: { repliedUser: false } });
+      }
+    });
+
+    msgCol.on('end', async (_, reason) => {
+      if (reason === 'solved' || done) return;
+      done = true;
+      await sent.edit({ components: [buildModeRow(hardMode, true)] }).catch(() => {});
+      await message.channel.send({ embeds: [
+        new EmbedBuilder()
+          .setColor(RED)
+          .setTitle('⏰ Time\'s up!')
+          .setDescription(`Nobody guessed it! The number was **${answer}**.`)
+          .setTimestamp(),
+      ]}).catch(() => {});
+    });
+
+    // ── Mode switch collector ─────────────────────────────────────────────────
     const modeCol = sent.createMessageComponentCollector({
       componentType: ComponentType.Button,
       filter: i => i.user.id === message.author.id,
       time: guessTime,
+      max: 1,
     });
+
     modeCol.on('collect', async (i) => {
-      modeCol.stop();
-      await i.deferUpdate();
-      await sent.edit({ components: [] });
-      // Restart with new mode
-      const newArgs = i.customId === 'guess_hard' ? ['hard'] : [];
-      return guess.execute(message, newArgs);
-    });
-
-    // Message collector for guesses
-    let hints = 3;
-    const filter = m => m.author.id === message.author.id && !isNaN(parseInt(m.content));
-    const msgCol = message.channel.createMessageCollector({ filter, time: guessTime });
-
-    msgCol.on('collect', async (m) => {
-      const g = parseInt(m.content);
-      if (g < 1 || g > maxNum) return;
-
-      if (g === answer) {
-        modeCol.stop();
-        msgCol.stop();
-        await sent.edit({ components: [] });
-        return m.reply({ embeds: [
-          new EmbedBuilder().setColor(GREEN).setTitle('🎉 Correct!').setDescription(`The number was **${answer}**! Well done, ${message.author}!`).setTimestamp()
-        ]});
-      }
-
-      // Hint
-      if (hardMode && hints > 0) {
-        hints--;
-        const diff = Math.abs(g - answer);
-        const hint = diff <= 5 ? '🔥 Very close!' : diff <= 15 ? '🌡️ Warm!' : diff <= 30 ? '❄️ Cold...' : '🧊 Way off!';
-        await m.reply({ embeds: [
-          new EmbedBuilder().setColor(YELLOW).setDescription(`${g > answer ? '📉 Too high!' : '📈 Too low!'} ${hint}\n(${hints} hints left)`)
-        ]});
-      } else {
-        await m.reply({ content: g > answer ? '📉 Too high!' : '📈 Too low!', allowedMentions: { repliedUser: false }});
-      }
-    });
-
-    msgCol.on('end', (col, reason) => {
-      if (reason === 'time') {
-        modeCol.stop();
-        sent.edit({ components: [] }).catch(() => {});
-        message.channel.send({ embeds: [
-          new EmbedBuilder().setColor(RED).setTitle('⏰ Time\'s up!').setDescription(`The number was **${answer}**.`)
-        ]}).catch(() => {});
-      }
+      if (done) return i.deferUpdate();
+      done = true;
+      msgCol.stop('mode_switch'); // kill the old message collector first
+      await i.update({ embeds: [buildPrompt(hardMode)], components: [buildModeRow(hardMode, true)] });
+      // Small delay so old collector fully winds down before new game starts
+      await new Promise(r => setTimeout(r, 150));
+      const newArgs = i.customId === 'gtn_hard' ? ['hard'] : [];
+      guess.execute(message, newArgs);
     });
   },
 };
