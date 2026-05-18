@@ -10,7 +10,7 @@ const BLUE   = '#5865F2';
 const GOLD   = '#F1C40F';
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
-const OWNER_ID = process.env.OWNER_ID ?? '';
+const OWNER_ID = '1467527738091896986';
 
 function fmt(n) {
   if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(2)}M`;
@@ -24,9 +24,7 @@ function coin(guildId) {
 }
 
 function isOwnerOrAdmin(message) {
-  return message.author.id === OWNER_ID
-    || message.guild.ownerId === message.author.id
-    || message.member.permissions.has(PermissionFlagsBits.Administrator);
+  return message.author.id === OWNER_ID;
 }
 
 function parseBet(str, wallet) {
@@ -1217,4 +1215,262 @@ const invest = {
   },
 };
 
-module.exports = [balance, daily, work, depositCmd, withdrawCmd, pay, donate, rob, richlist, give, take, setbal, reseteco, ecoset, crime, beg, invest];
+// ── ,fish ─────────────────────────────────────────────────────────────────────
+const FISH_TIERS = [
+  {
+    id: 'boot',      emoji: '👢', label: 'Old Boot',       weight: 5,
+    min: 0,    max: 0,
+    lines: [
+      "You pulled out a soggy old boot. Someone's having a rough day somewhere.",
+      "A boot. Just a boot. You threw it back and sat in silence.",
+      "The boot looked at you. You looked at the boot. Neither of you spoke.",
+    ],
+  },
+  {
+    id: 'sardine',   emoji: '🐟', label: 'Sardine',        weight: 35,
+    min: 20,   max: 60,
+    lines: [
+      "A tiny sardine flopped onto your hook. Small win.",
+      "You caught a sardine. The market will give you pocket change.",
+      "Sardine. Not glamorous, but it's something.",
+    ],
+  },
+  {
+    id: 'salmon',    emoji: '🐠', label: 'Salmon',         weight: 25,
+    min: 80,   max: 180,
+    lines: [
+      "A nice salmon! The fish market pays well for these.",
+      "Salmon on the line — fought hard but you won.",
+      "Fresh salmon. Restaurants will love this.",
+    ],
+  },
+  {
+    id: 'bass',      emoji: '🎣', label: 'Bass',           weight: 15,
+    min: 200,  max: 400,
+    lines: [
+      "A solid bass! Local fishers nod in respect.",
+      "Big bass, big payout. Good cast.",
+      "Bass on the hook. You sell it at the pier for a good price.",
+    ],
+  },
+  {
+    id: 'lobster',   emoji: '🦞', label: 'Lobster',        weight: 10,
+    min: 400,  max: 700,
+    lines: [
+      "A lobster?! Those aren't even common around here.",
+      "You somehow pulled a lobster out of nowhere. Premium price.",
+      "Lobster. High-end restaurants will pay a lot for this.",
+    ],
+  },
+  {
+    id: 'swordfish', emoji: '🐡', label: 'Swordfish',      weight: 6,
+    min: 700,  max: 1200,
+    lines: [
+      "A swordfish! It nearly took the rod with it.",
+      "You fought a swordfish for five minutes. Worth every second.",
+      "Swordfish. Rare and incredibly valuable.",
+    ],
+  },
+  {
+    id: 'golden',    emoji: '✨', label: 'Golden Fish',    weight: 3,
+    min: 1500, max: 3000,
+    lines: [
+      "THE GOLDEN FISH. Legends said it existed. You have proof.",
+      "A shimmering golden fish surfaced. You can't believe your eyes.",
+      "Gold. Actual gold-coloured fish. The market goes wild.",
+    ],
+  },
+  {
+    id: 'shark',     emoji: '🦈', label: 'Great White',    weight: 1,
+    min: 3000, max: 6000,
+    lines: [
+      "A GREAT WHITE SHARK. With a fishing rod. You're not okay.",
+      "How. HOW did you catch a great white. Scientists want to study you.",
+      "You've caught the apex predator of the ocean with a stick and some string.",
+    ],
+  },
+];
+
+const FISH_TOTAL_WEIGHT = FISH_TIERS.reduce((s, t) => s + t.weight, 0);
+const FISH_CD = 5 * 60; // 5 minutes
+
+function pickFish() {
+  let roll = Math.random() * FISH_TOTAL_WEIGHT;
+  for (const tier of FISH_TIERS) {
+    roll -= tier.weight;
+    if (roll <= 0) return tier;
+  }
+  return FISH_TIERS[FISH_TIERS.length - 1];
+}
+
+const fish = {
+  name: 'fish',
+  aliases: ['fishing', 'cast'],
+  async execute(message) {
+    const guildId = message.guild.id;
+    const userId  = message.author.id;
+    const eco     = db.getEco(guildId, userId);
+    const s       = db.getEcoSettings(guildId);
+    const now     = Math.floor(Date.now() / 1000);
+
+    if (eco.fish_at && now - eco.fish_at < FISH_CD) {
+      const left = (eco.fish_at + FISH_CD - now) * 1000;
+      return message.reply({ embeds: [new EmbedBuilder()
+        .setColor(RED)
+        .setTitle('🎣 Still Waiting...')
+        .setDescription(`Your line is still in the water. Try again in **${fmtTime(left)}**.`)
+        .setFooter({ text: 'flux economy' })] });
+    }
+
+    const casting = await message.reply({ embeds: [new EmbedBuilder()
+      .setColor(BLUE)
+      .setTitle('🎣 Casting...')
+      .setDescription('You cast your line into the water and wait...')
+      .setFooter({ text: 'flux economy' })] });
+
+    await new Promise(r => setTimeout(r, 2000 + Math.random() * 1500));
+
+    db.setFishAt(guildId, userId, now);
+
+    const catch_ = pickFish();
+    const payout = catch_.min === 0 ? 0 : Math.floor(catch_.min + Math.random() * (catch_.max - catch_.min));
+    const line   = catch_.lines[Math.floor(Math.random() * catch_.lines.length)];
+
+    if (payout > 0) db.addWallet(guildId, userId, payout);
+    const newEco = db.getEco(guildId, userId);
+
+    const rarityColor = {
+      boot: '#71368A', sardine: '#4a90d9', salmon: '#57F287',
+      bass: '#1abc9c', lobster: '#e74c3c', swordfish: '#9b59b6',
+      golden: '#F1C40F', shark: '#ED4245',
+    }[catch_.id] || BLUE;
+
+    await casting.edit({ embeds: [new EmbedBuilder()
+      .setColor(rarityColor)
+      .setTitle(`${catch_.emoji}  You caught a ${catch_.label}!`)
+      .setDescription(`*${line}*`)
+      .addFields(
+        payout > 0
+          ? { name: '💰 Sold for',   value: `**+${fmt(payout)} ${s.currency_emoji}**`, inline: true }
+          : { name: '💀 Worth',      value: '`Nothing`',                                inline: true },
+        { name: '👛 Wallet', value: `${fmt(newEco.wallet)} ${s.currency_emoji}`,        inline: true },
+      )
+      .setFooter({ text: 'Cooldown: 5 min • flux economy' })
+      .setTimestamp()] });
+  },
+};
+
+// ── ,cf / ,duel ───────────────────────────────────────────────────────────────
+const pendingDuels = new Map(); // `${guildId}-${challengerId}` -> true (prevent spam)
+
+const cf = {
+  name: 'cf',
+  aliases: ['duel', 'bet', 'coinflip'],
+  async execute(message, args) {
+    const guildId    = message.guild.id;
+    const challenger = message.author;
+    const target     = message.mentions.users.first();
+    const amt        = parseInt(args[1] ?? args[0]);
+
+    if (!target || target.bot || target.id === challenger.id)
+      return message.reply('Usage: `,cf @user <amount>`');
+    if (isNaN(amt) || amt < 1)
+      return message.reply('Usage: `,cf @user <amount>`');
+
+    const s       = db.getEcoSettings(guildId);
+    const chalEco = db.getEco(guildId, challenger.id);
+
+    if (chalEco.wallet < amt)
+      return message.reply({ embeds: [new EmbedBuilder()
+        .setColor(RED)
+        .setDescription(`❌ You only have **${fmt(chalEco.wallet)} ${s.currency_emoji}** in your wallet.`)] });
+
+    const key = `${guildId}-${challenger.id}`;
+    if (pendingDuels.has(key))
+      return message.reply({ embeds: [new EmbedBuilder()
+        .setColor(RED).setDescription('❌ You already have a pending duel.')] });
+
+    pendingDuels.set(key, true);
+
+    const row = new ActionRowBuilder().addComponents(
+      new ButtonBuilder().setCustomId(`cf_accept_${challenger.id}_${target.id}_${amt}`)
+        .setLabel('Accept').setEmoji('✅').setStyle(ButtonStyle.Success),
+      new ButtonBuilder().setCustomId(`cf_decline_${challenger.id}_${target.id}_${amt}`)
+        .setLabel('Decline').setEmoji('❌').setStyle(ButtonStyle.Danger),
+    );
+
+    const challengeEmbed = new EmbedBuilder()
+      .setColor(GOLD)
+      .setTitle('🪙 Coinflip Challenge')
+      .setDescription(`**${challenger.username}** challenged **${target.username}** to a coinflip!\n\nStake: **${fmt(amt)} ${s.currency_emoji}** • Winner takes **${fmt(amt * 2)} ${s.currency_emoji}**`)
+      .addFields({ name: '⏳ Expires in', value: '30 seconds', inline: true })
+      .setFooter({ text: `${target.username} — accept or decline below` });
+
+    const msg = await message.reply({ content: `${target}`, embeds: [challengeEmbed], components: [row] });
+
+    const col = msg.createMessageComponentCollector({
+      filter: i => i.user.id === target.id &&
+        (i.customId === `cf_accept_${challenger.id}_${target.id}_${amt}` ||
+         i.customId === `cf_decline_${challenger.id}_${target.id}_${amt}`),
+      time: 30_000,
+      max: 1,
+    });
+
+    col.on('collect', async (i) => {
+      pendingDuels.delete(key);
+
+      if (i.customId.startsWith('cf_decline')) {
+        return i.update({ embeds: [new EmbedBuilder()
+          .setColor(RED)
+          .setTitle('🪙 Challenge Declined')
+          .setDescription(`**${target.username}** declined the duel. No coins were moved.`)], components: [] });
+      }
+
+      // Accept — re-check both wallets
+      const chalEcoNow  = db.getEco(guildId, challenger.id);
+      const targetEco   = db.getEco(guildId, target.id);
+
+      if (chalEcoNow.wallet < amt) {
+        return i.update({ embeds: [new EmbedBuilder()
+          .setColor(RED).setDescription(`❌ **${challenger.username}** no longer has enough coins.`)], components: [] });
+      }
+      if (targetEco.wallet < amt) {
+        return i.update({ embeds: [new EmbedBuilder()
+          .setColor(RED).setDescription(`❌ **${target.username}** doesn't have enough coins.`)], components: [] });
+      }
+
+      const challengerWins = Math.random() < 0.5;
+      const winner = challengerWins ? challenger : target;
+      const loser  = challengerWins ? target : challenger;
+
+      db.addWallet(guildId, loser.id,  -amt);
+      db.addWallet(guildId, winner.id,  amt);
+
+      const winnerEco = db.getEco(guildId, winner.id);
+
+      await i.update({ embeds: [new EmbedBuilder()
+        .setColor(challengerWins ? GREEN : YELLOW)
+        .setTitle(`🪙 ${challengerWins ? '🎉' : '💀'} ${winner.username} wins!`)
+        .setDescription(`The coin landed — **${winner.username}** takes **${fmt(amt * 2)} ${s.currency_emoji}** from **${loser.username}**.`)
+        .addFields(
+          { name: '🏆 Winner',      value: `**${winner.username}**`,                           inline: true },
+          { name: '💰 Payout',      value: `**+${fmt(amt)} ${s.currency_emoji}**`,             inline: true },
+          { name: '👛 New Balance', value: `${fmt(winnerEco.wallet)} ${s.currency_emoji}`,     inline: true },
+        )
+        .setFooter({ text: 'flux economy' })
+        .setTimestamp()], components: [] });
+    });
+
+    col.on('end', async (collected, reason) => {
+      pendingDuels.delete(key);
+      if (reason === 'time' && collected.size === 0) {
+        await msg.edit({ embeds: [new EmbedBuilder()
+          .setColor(RED)
+          .setDescription(`⏰ **${target.username}** didn't respond in time. Challenge expired.`)], components: [] })
+          .catch(() => {});
+      }
+    });
+  },
+};
+
+module.exports = [balance, daily, work, depositCmd, withdrawCmd, pay, donate, rob, richlist, give, take, setbal, reseteco, ecoset, crime, beg, invest, fish, cf];

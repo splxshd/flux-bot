@@ -1,0 +1,61 @@
+<%- include('../partials/head', { title: guild.name + ' — Giveaways' }) %>
+<div class="layout">
+  <%- include('../partials/sidebar', { guild: guild, activeGuildId: guild.id }) %>
+  <div class="main">
+    <%- include('../partials/topbar', { breadcrumbs: [{ label: 'Dashboard', href: '/dashboard/user' }, { label: guild.name, href: '/dashboard/admin/' + guild.id }, { label: 'Giveaways' }] }) %>
+    <div class="content">
+      <div class="page-header">
+        <h1>Giveaways</h1>
+        <p>View and manage giveaways in this server.</p>
+      </div>
+
+      <% const active = giveaways.filter(g => !g.ended && !g.cancelled); %>
+      <% const past   = giveaways.filter(g => g.ended || g.cancelled); %>
+
+      <% if (active.length > 0) { %>
+      <h3 style="font-family:'Sora',sans-serif;font-size:13px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.07em;margin-bottom:12px;">Active (<%= active.length %>)</h3>
+      <div class="giveaway-grid" style="margin-bottom:28px;">
+        <% active.forEach(function(g) { %>
+        <div class="giveaway-card">
+          <div class="giveaway-prize">🎁 <%= g.prize %></div>
+          <div class="giveaway-meta">
+            <span class="giveaway-stat"><strong><%= g.winners %></strong> winner<%= g.winners !== 1 ? 's' : '' %></span>
+            <span class="giveaway-stat"><strong><%= entryCounts[g.id] || 0 %></strong> entries</span>
+          </div>
+          <div class="giveaway-footer">
+            <span class="badge badge-success">active</span>
+            <span style="font-size:12px;color:var(--muted);">Ends <%= new Date(g.ends_at * 1000).toLocaleDateString() %></span>
+          </div>
+        </div>
+        <% }) %>
+      </div>
+      <% } %>
+
+      <% if (past.length > 0) { %>
+      <h3 style="font-family:'Sora',sans-serif;font-size:13px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.07em;margin-bottom:12px;">Past (<%= past.length %>)</h3>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Prize</th><th>Winners</th><th>Entries</th><th>Status</th><th>Ended</th></tr></thead>
+          <tbody>
+            <% past.forEach(function(g) { %>
+            <tr>
+              <td><%= g.prize %></td>
+              <td><%= g.winners %></td>
+              <td><%= entryCounts[g.id] || 0 %></td>
+              <td><span class="badge <%= g.cancelled ? 'badge-danger' : 'badge-muted' %>"><%= g.cancelled ? 'cancelled' : 'ended' %></span></td>
+              <td style="color:var(--muted);font-size:12px;"><%= new Date(g.ends_at * 1000).toLocaleDateString() %></td>
+            </tr>
+            <% }) %>
+          </tbody>
+        </table>
+      </div>
+      <% } %>
+
+      <% if (!active.length && !past.length) { %>
+      <div class="empty"><div class="empty-icon">🎁</div><p>No giveaways yet. Start one with <code style="font-family:'JetBrains Mono',monospace;font-size:13px;">/giveaways start</code>.</p></div>
+      <% } %>
+    </div>
+  </div>
+</div>
+</body>
+</html>

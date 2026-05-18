@@ -1,0 +1,69 @@
+<%- include('../partials/head', { title: guild.name + ' — Moderation' }) %>
+<div class="layout">
+  <%- include('../partials/sidebar', { guild: guild, activeGuildId: guild.id }) %>
+  <div class="main">
+    <%- include('../partials/topbar', { breadcrumbs: [{ label: 'Dashboard', href: '/dashboard/user' }, { label: guild.name, href: '/dashboard/admin/' + guild.id }, { label: 'Cases & Warnings' }] }) %>
+    <div class="content">
+      <div class="page-header">
+        <h1>Cases & Warnings</h1>
+        <p>Full moderation history and active warnings for this server.</p>
+      </div>
+
+      <!-- Warnings -->
+      <div class="card" style="margin-bottom:20px;">
+        <div class="card-title">Active Warnings <span class="badge"><%= warnings.length %></span></div>
+        <% if (warnings.length > 0) { %>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>#</th><th>User</th><th>Moderator</th><th>Reason</th><th>Date</th></tr></thead>
+            <tbody>
+              <% warnings.forEach(function(w, i) { %>
+              <tr>
+                <td style="color:var(--muted);font-size:12px;"><%= i + 1 %></td>
+                <td><span class="mono"><%= w.user_id %></span></td>
+                <td><span class="mono"><%= w.mod_id %></span></td>
+                <td><%= w.reason || 'No reason' %></td>
+                <td style="color:var(--muted);font-size:12px;white-space:nowrap;"><%= new Date(w.created_at * 1000).toLocaleDateString() %></td>
+              </tr>
+              <% }) %>
+            </tbody>
+          </table>
+        </div>
+        <% } else { %>
+        <div class="empty"><div class="empty-icon">✅</div><p>No active warnings.</p></div>
+        <% } %>
+      </div>
+
+      <!-- Mod history -->
+      <div class="card">
+        <div class="card-title">Mod History <span class="badge"><%= history.length %></span></div>
+        <% if (history.length > 0) { %>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Action</th><th>User</th><th>Moderator</th><th>Reason</th><th>Extra</th><th>Date</th></tr></thead>
+            <tbody>
+              <% history.forEach(function(r) { %>
+              <tr>
+                <td>
+                  <% const badgeMap = { ban:'badge-danger', tempban:'badge-danger', kick:'badge-warning', mute:'badge-warning', warn:'badge-info', unmute:'badge-success', unban:'badge-success', note:'badge-muted' }; %>
+                  <span class="badge <%= badgeMap[r.action] || 'badge-muted' %>"><%= r.action %></span>
+                </td>
+                <td><span class="mono"><%= r.user_id %></span></td>
+                <td><span class="mono"><%= r.mod_id %></span></td>
+                <td style="max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;"><%= r.reason || '—' %></td>
+                <td style="color:var(--muted);font-size:12px;"><%= r.extra || '—' %></td>
+                <td style="color:var(--muted);font-size:12px;white-space:nowrap;"><%= new Date(r.created_at * 1000).toLocaleDateString() %></td>
+              </tr>
+              <% }) %>
+            </tbody>
+          </table>
+        </div>
+        <% } else { %>
+        <div class="empty"><p>No moderation history.</p></div>
+        <% } %>
+      </div>
+    </div>
+  </div>
+</div>
+</body>
+</html>

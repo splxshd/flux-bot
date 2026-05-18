@@ -474,35 +474,72 @@ const stickymessage = {
     .setDescription('Manage sticky messages')
     .addSubcommand(s => s.setName('add').setDescription('Add a sticky message to a channel')
       .addStringOption(o => o.setName('content').setDescription('Message content').setRequired(true))
+      .addStringOption(o => o.setName('name').setDescription('Label to identify this sticky (required if adding multiple)'))
+      .addIntegerOption(o => o.setName('messages').setDescription('Repost after this many messages (default 25)').setMinValue(1).setMaxValue(500))
       .addChannelOption(o => o.setName('channel').setDescription('Channel')))
-    .addSubcommand(s => s.setName('remove').setDescription('Remove sticky message from a channel')
+    .addSubcommand(s => s.setName('remove').setDescription('Remove a sticky message from a channel')
+      .addStringOption(o => o.setName('name').setDescription('Name of the sticky to remove (omit to remove all)'))
       .addChannelOption(o => o.setName('channel').setDescription('Channel')))
-    .addSubcommand(s => s.setName('view').setDescription('View sticky for a channel')
+    .addSubcommand(s => s.setName('view').setDescription('View sticky messages for a channel')
       .addChannelOption(o => o.setName('channel').setDescription('Channel')))
-    .addSubcommand(s => s.setName('list').setDescription('List all sticky messages'))
+    .addSubcommand(s => s.setName('list').setDescription('List all sticky messages in this server'))
     .setDefaultMemberPermissions(PermissionFlagsBits.ManageMessages),
   async execute(interaction) {
-    const sub = interaction.options.getSubcommand();
-    const ch = interaction.options.getChannel('channel') || interaction.channel;
+    const sub      = interaction.options.getSubcommand();
+    const ch       = interaction.options.getChannel('channel') || interaction.channel;
+    const name     = interaction.options.getString('name');
 
     if (sub === 'add') {
-      const content = interaction.options.getString('content');
-      db.setStickyMessage(interaction.guild.id, ch.id, content);
-      await interaction.reply({ content: `✅ Sticky message set for ${ch}.`, ephemeral: true });
+      const content   = interaction.options.getString('content');
+      const interval  = interaction.options.getInteger('messages') ?? 25;
+      const existing  = db.getStickiesForChannel(interaction.guild.id, ch.id);
+      if (existing.length > 0 && !name) {
+        return interaction.reply({ content: '❌ This channel already has a sticky. Provide a `name` so you can tell them apart.', ephemeral: true });
+      }
+      if (name && existing.some(s => s.name === name)) {
+        return interaction.reply({ content: `❌ A sticky named \`${name}\` already exists in ${ch}.`, ephemeral: true });
+      }
+      db.setStickyMessage(interaction.guild.id, ch.id, content, name || null, interval);
+      const label = name ? ` (\`${name}\`)` : '';
+      await interaction.reply({ content: `✅ Sticky message${label} added to ${ch} — reposts every **${interval}** messages.`, ephemeral: true });
+
     } else if (sub === 'remove') {
-      db.removeStickyMessage(interaction.guild.id, ch.id);
-      await interaction.reply({ content: `✅ Sticky message removed from ${ch}.`, ephemeral: true });
+      const existing = db.getStickiesForChannel(interaction.guild.id, ch.id);
+      if (existing.length === 0) return interaction.reply({ content: `❌ No sticky messages in ${ch}.`, ephemeral: true });
+      if (name) {
+        const match = existing.find(s => s.name === name);
+        if (!match) return interaction.reply({ content: `❌ No sticky named \`${name}\` in ${ch}.`, ephemeral: true });
+        db.removeStickyById(match.id);
+        await interaction.reply({ content: `✅ Sticky \`${name}\` removed from ${ch}.`, ephemeral: true });
+      } else {
+        db.removeStickyMessage(interaction.guild.id, ch.id);
+        await interaction.reply({ content: `✅ All ${existing.length} sticky message(s) removed from ${ch}.`, ephemeral: true });
+      }
+
     } else if (sub === 'view') {
-      const row = db.getStickyMessage(interaction.guild.id, ch.id);
-      if (!row) return interaction.reply({ content: '❌ No sticky for that channel.', ephemeral: true });
-      await interaction.reply({ content: `**Sticky for ${ch}:**\n${row.content}`, ephemeral: true });
+      const rows = db.getStickiesForChannel(interaction.guild.id, ch.id);
+      if (rows.length === 0) return interaction.reply({ content: `❌ No sticky messages in ${ch}.`, ephemeral: true });
+      const embed = new EmbedBuilder()
+        .setTitle(`📌 Stickies in #${ch.name}`)
+        .setColor(BLUE)
+        .setDescription(rows.map((r, i) => {
+          const label = r.name ? `**${r.name}**` : `#${i + 1}`;
+          return `${label} · every ${r.interval || 25} msgs\n> ${truncate(r.content, 120)}`;
+        }).join('\n\n'))
+        .setFooter({ text: `${rows.length} sticky message(s)` })
+        .setTimestamp();
+      await interaction.reply({ embeds: [embed], ephemeral: true });
+
     } else if (sub === 'list') {
       const rows = db.getAllStickyMessages(interaction.guild.id);
-      if (rows.length === 0) return interaction.reply({ content: 'No sticky messages.', ephemeral: true });
+      if (rows.length === 0) return interaction.reply({ content: 'No sticky messages in this server.', ephemeral: true });
       const embed = new EmbedBuilder()
         .setTitle('📌 Sticky Messages')
         .setColor(BLUE)
-        .setDescription(rows.map(r => `<#${r.channel_id}>\n> ${truncate(r.content, 80)}`).join('\n\n'))
+        .setDescription(rows.map(r => {
+          const label = r.name ? ` \`${r.name}\`` : '';
+          return `<#${r.channel_id}>${label}\n> ${truncate(r.content, 80)}`;
+        }).join('\n\n'))
         .setFooter({ text: `${rows.length} sticky message(s) • flux bot` })
         .setTimestamp();
       await interaction.reply({ embeds: [embed], ephemeral: true });

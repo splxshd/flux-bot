@@ -1,0 +1,60 @@
+<%- include('../partials/head', { title: 'My Servers' }) %>
+<div class="layout">
+  <%- include('../partials/sidebar') %>
+  <div class="main">
+    <%- include('../partials/topbar', { title: 'My Servers', breadcrumbs: [{ label: 'Dashboard' }, { label: 'My Servers' }] }) %>
+    <div class="content">
+      <div class="page-header">
+        <h1>My Servers</h1>
+        <p>Select a server to manage it or view your stats.</p>
+      </div>
+
+      <% if (adminGuilds && adminGuilds.length > 0) { %>
+      <h3 style="font-family:'Sora',sans-serif;font-size:13px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.07em;margin-bottom:12px;">Servers you manage</h3>
+      <div class="guild-grid" style="margin-bottom:32px;">
+        <% adminGuilds.forEach(function(g) { %>
+        <a href="/dashboard/admin/<%= g.id %>" class="guild-card">
+          <% if (g.icon) { %>
+            <img src="https://cdn.discordapp.com/icons/<%= g.id %>/<%= g.icon %>.png?size=128" alt="<%= g.name %>" />
+          <% } else { %>
+            <div class="guild-initials"><%= g.name[0].toUpperCase() %></div>
+          <% } %>
+          <div class="guild-info">
+            <div class="guild-name"><%= g.name %></div>
+            <div class="guild-meta">Admin panel</div>
+          </div>
+        </a>
+        <% }) %>
+      </div>
+      <% } %>
+
+      <% if (memberGuilds && memberGuilds.length > 0) { %>
+      <h3 style="font-family:'Sora',sans-serif;font-size:13px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.07em;margin-bottom:12px;">Servers you're in</h3>
+      <div class="guild-grid">
+        <% memberGuilds.forEach(function(g) { %>
+        <a href="/dashboard/user/<%= g.id %>" class="guild-card">
+          <% if (g.icon) { %>
+            <img src="https://cdn.discordapp.com/icons/<%= g.id %>/<%= g.icon %>.png?size=128" alt="<%= g.name %>" />
+          <% } else { %>
+            <div class="guild-initials"><%= g.name[0].toUpperCase() %></div>
+          <% } %>
+          <div class="guild-info">
+            <div class="guild-name"><%= g.name %></div>
+            <div class="guild-meta">View stats</div>
+          </div>
+        </a>
+        <% }) %>
+      </div>
+      <% } %>
+
+      <% if ((!adminGuilds || !adminGuilds.length) && (!memberGuilds || !memberGuilds.length)) { %>
+      <div class="empty">
+        <div class="empty-icon">🤖</div>
+        <p>nights isn't in any of your servers yet.<br>Invite it to get started.</p>
+      </div>
+      <% } %>
+    </div>
+  </div>
+</div>
+</body>
+</html>

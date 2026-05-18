@@ -7,10 +7,11 @@ function requireAuth(req, res, next) {
   res.redirect('/login');
 }
 
-async function requireAdmin(req, res, next) {
+// Works both as a normal middleware and as a router.param callback (4-arg form)
+async function requireAdmin(req, res, next, guildId) {
   if (!req.session.user) return res.redirect('/login');
-  const { guildId } = req.params;
-  const guild = (req.session.guilds || []).find(g => g.id === guildId);
+  const id = guildId || req.params.guildId;
+  const guild = (req.session.guilds || []).find(g => g.id === id);
   if (!guild) return res.status(403).render('error', { code: 403, message: 'You do not have access to this server.' });
   if (!hasManageGuild(guild.permissions || '0')) {
     return res.status(403).render('error', { code: 403, message: 'You need Manage Server permission.' });

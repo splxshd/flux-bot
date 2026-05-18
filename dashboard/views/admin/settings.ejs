@@ -1,0 +1,71 @@
+<%- include('../partials/head', { title: guild.name + ' — Settings' }) %>
+<div class="layout">
+  <%- include('../partials/sidebar', { guild: guild, activeGuildId: guild.id }) %>
+  <div class="main">
+    <%- include('../partials/topbar', { breadcrumbs: [{ label: 'Dashboard', href: '/dashboard/user' }, { label: guild.name, href: '/dashboard/admin/' + guild.id }, { label: 'Settings' }] }) %>
+    <div class="content">
+      <div class="page-header">
+        <h1>Server Settings</h1>
+        <p>Configure prefix, logging, and welcome messages for this server.</p>
+      </div>
+
+      <% if (locals.flash) { %>
+      <div class="flash flash-<%= flash.type %>"><%= flash.msg %></div>
+      <% } %>
+
+      <form method="POST" action="/dashboard/admin/<%= guild.id %>/settings" id="settings-form">
+
+        <!-- General -->
+        <div class="card" style="margin-bottom:20px;">
+          <div class="card-title">General</div>
+          <div class="form-grid">
+            <div class="form-group">
+              <label for="prefix">Command Prefix</label>
+              <input type="text" id="prefix" name="prefix" value="<%= settings.prefix || '!' %>" maxlength="5" />
+              <span class="form-hint">Used for legacy prefix commands.</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Logging -->
+        <div class="card" style="margin-bottom:20px;">
+          <div class="card-title">Logging</div>
+          <div class="form-grid">
+            <div class="form-group full">
+              <label for="log_channel">Log Channel ID</label>
+              <input type="text" id="log_channel" name="log_channel" value="<%= settings.log_channel || '' %>" placeholder="Channel ID" />
+              <span class="form-hint">Moderation events will be posted to this channel.</span>
+            </div>
+            <div class="form-group">
+              <label for="log_color">Embed Color</label>
+              <input type="color" id="log_color" name="log_color" value="<%= settings.log_color || '#5865F2' %>" />
+            </div>
+          </div>
+        </div>
+
+        <!-- Welcome -->
+        <div class="card" style="margin-bottom:20px;">
+          <div class="card-title">Welcome</div>
+          <div class="form-grid">
+            <div class="form-group full">
+              <label for="welcome_channel">Welcome Channel ID</label>
+              <input type="text" id="welcome_channel" name="welcome_channel" value="<%= settings.welcome_channel || '' %>" placeholder="Channel ID" />
+            </div>
+            <div class="form-group full">
+              <label for="welcome_message">Welcome Message</label>
+              <textarea id="welcome_message" name="welcome_message" rows="3" placeholder="Welcome {user} to {server}!"><%= settings.welcome_message || '' %></textarea>
+              <span class="form-hint">Variables: <code style="font-family:'JetBrains Mono',monospace;font-size:12px;">{user}</code>, <code style="font-family:'JetBrains Mono',monospace;font-size:12px;">{server}</code>, <code style="font-family:'JetBrains Mono',monospace;font-size:12px;">{count}</code></span>
+            </div>
+          </div>
+        </div>
+
+        <div class="save-bar">
+          <span>Unsaved changes will be lost.</span>
+          <button type="submit" class="btn btn-primary">Save Changes</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+</body>
+</html>

@@ -1,0 +1,63 @@
+<%- include('../partials/head', { title: 'Owner Panel' }) %>
+<div class="layout">
+  <%- include('../partials/sidebar') %>
+  <div class="main">
+    <%- include('../partials/topbar', { breadcrumbs: [{ label: 'Dashboard' }, { label: 'Owner Panel' }] }) %>
+    <div class="content">
+      <div class="page-header">
+        <h1>Owner Panel</h1>
+        <p>Bot-wide statistics and management.</p>
+      </div>
+
+      <div class="stats-grid">
+        <div class="stat-card">
+          <div class="stat-label">Servers</div>
+          <div class="stat-value"><%= guildCount %></div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-label">Total Messages Logged</div>
+          <div class="stat-value"><%= totalMessages.toLocaleString() %></div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-label">Uptime</div>
+          <div class="stat-value" style="font-size:18px;"><%= uptime %></div>
+        </div>
+      </div>
+
+      <!-- Guild list -->
+      <div class="card">
+        <div class="card-title">All Servers <span class="badge"><%= guilds.length %></span></div>
+        <% if (guilds.length > 0) { %>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Server</th><th>ID</th><th>Members</th><th>Actions</th></tr></thead>
+            <tbody>
+              <% guilds.forEach(function(g) { %>
+              <tr>
+                <td>
+                  <div class="user-cell">
+                    <% if (g.icon) { %>
+                      <img class="avatar" style="border-radius:6px;" src="https://cdn.discordapp.com/icons/<%= g.id %>/<%= g.icon %>.png?size=64" alt="" />
+                    <% } else { %>
+                      <div style="width:28px;height:28px;background:var(--surface2);border-radius:6px;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:12px;color:var(--accent);flex-shrink:0;"><%= g.name[0] %></div>
+                    <% } %>
+                    <span><%= g.name %></span>
+                  </div>
+                </td>
+                <td><span class="mono"><%= g.id %></span></td>
+                <td><%= g.approximate_member_count ? g.approximate_member_count.toLocaleString() : '—' %></td>
+                <td><a href="/dashboard/admin/<%= g.id %>" class="btn btn-outline btn-sm">Admin</a></td>
+              </tr>
+              <% }) %>
+            </tbody>
+          </table>
+        </div>
+        <% } else { %>
+        <div class="empty"><p>No servers found.</p></div>
+        <% } %>
+      </div>
+    </div>
+  </div>
+</div>
+</body>
+</html>

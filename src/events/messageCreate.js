@@ -32,9 +32,8 @@ const GREEN  = '#57F287';
 // Anti-raid mention tracker
 const mentionTracker = new Map(); // userId -> count (reset per guild, simple per-message check)
 
-// Sticky message counter — tracks messages since last sticky post per channel
-const stickyCounter = new Map(); // channelId -> count
-const STICKY_INTERVAL = 25;
+// Sticky message counter — tracks messages since last repost per sticky id
+const stickyCounter = new Map(); // stickyId -> count
 
 module.exports = (client) => {
   console.log('[messageCreate] handler registered');
@@ -203,19 +202,20 @@ async function handleMessage(client, message) {
       }
     }
 
-    // 6. Sticky messages (repost every STICKY_INTERVAL messages)
-    const sticky = db.getStickyMessage(guild.id, message.channel.id);
-    if (sticky && message.id !== sticky.last_message_id) {
-      const count = (stickyCounter.get(message.channel.id) ?? 0) + 1;
-      stickyCounter.set(message.channel.id, count);
-      if (count >= STICKY_INTERVAL) {
-        stickyCounter.set(message.channel.id, 0);
+    // 6. Sticky messages (repost every STICKY_INTERVAL messages, supports multiple per channel)
+    const stickies = db.getStickiesForChannel(guild.id, message.channel.id);
+    for (const sticky of stickies) {
+      if (message.id === sticky.last_message_id) continue;
+      const count = (stickyCounter.get(sticky.id) ?? 0) + 1;
+      stickyCounter.set(sticky.id, count);
+      if (count >= (sticky.interval || 25)) {
+        stickyCounter.set(sticky.id, 0);
         if (sticky.last_message_id) {
           const lastMsg = await message.channel.messages.fetch(sticky.last_message_id).catch(() => null);
           if (lastMsg) await lastMsg.delete().catch(() => {});
         }
         const sent = await sendStickyContent(message.channel, sticky.content);
-        if (sent) db.updateStickyLastMessage(guild.id, message.channel.id, sent.id);
+        if (sent) db.updateStickyLastMessage(sticky.id, sent.id);
       }
     }
 }

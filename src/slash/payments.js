@@ -9,6 +9,11 @@ const QRCode = require('qrcode');
 const db = require('../database');
 const ltc = require('../utils/ltcWallet');
 
+const OWNER_ID = '1467527738091896986';
+const ownerOnly = (i) => i.user.id !== OWNER_ID
+  ? i.reply({ content: '❌ This command is restricted to the bot owner.', ephemeral: true }) || true
+  : false;
+
 const COLORS = {
   wallet: '#A8D8A8',
   send: '#FEE75C',
@@ -479,6 +484,7 @@ const payment = {
 
     // ── SET ───────────────────────────────────────────────────────────────────
     if (sub === 'set') {
+      if (ownerOnly(interaction)) return;
       const coin = interaction.options.getString('coin').toUpperCase();
       const addr = interaction.options.getString('address');
       db.setPaymentAddress(interaction.user.id, coin, addr);
@@ -741,6 +747,7 @@ const payment = {
 
     // ── SETPAYPAL ─────────────────────────────────────────────────────────────
     if (sub === 'setpaypal') {
+      if (ownerOnly(interaction)) return;
       const email = interaction.options.getString('email');
       db.setPaypal(interaction.user.id, email,
         interaction.options.getString('title'),
@@ -964,12 +971,14 @@ const vouch = {
     }
 
     if (sub === 'setup') {
+      if (ownerOnly(interaction)) return;
       const user = interaction.options.getUser('user');
       db.setVouch(interaction.user.id, user.id);
       return interaction.reply({ content: `✅ Your vouch target has been set to <@!${user.id}>.`, ephemeral: true });
     }
 
     if (sub === 'exch') {
+      if (ownerOnly(interaction)) return;
       const user = interaction.options.getUser('user');
       db.setVouchExch(interaction.user.id, user.id);
       return interaction.reply({ content: `✅ Your exchange vouch target has been set to <@!${user.id}>.`, ephemeral: true });

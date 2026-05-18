@@ -1,0 +1,69 @@
+<%- include('../partials/head', { title: guild.name + ' — Tickets' }) %>
+<div class="layout">
+  <%- include('../partials/sidebar', { guild: guild, activeGuildId: guild.id }) %>
+  <div class="main">
+    <%- include('../partials/topbar', { breadcrumbs: [{ label: 'Dashboard', href: '/dashboard/user' }, { label: guild.name, href: '/dashboard/admin/' + guild.id }, { label: 'Tickets' }] }) %>
+    <div class="content">
+      <div class="page-header">
+        <h1>Ticket System</h1>
+        <p>Overview of all support tickets in this server.</p>
+      </div>
+
+      <!-- Config summary -->
+      <% if (config) { %>
+      <div class="card" style="margin-bottom:20px;">
+        <div class="card-title">Configuration</div>
+        <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:12px;font-size:13px;">
+          <div>
+            <div style="color:var(--muted);font-size:11px;text-transform:uppercase;letter-spacing:.06em;margin-bottom:4px;">Status</div>
+            <span class="badge <%= config.enabled ? 'badge-success' : 'badge-danger' %>"><%= config.enabled ? 'Enabled' : 'Disabled' %></span>
+          </div>
+          <div>
+            <div style="color:var(--muted);font-size:11px;text-transform:uppercase;letter-spacing:.06em;margin-bottom:4px;">Total Tickets</div>
+            <strong><%= config.ticket_count || 0 %></strong>
+          </div>
+          <% if (config.support_role) { %>
+          <div>
+            <div style="color:var(--muted);font-size:11px;text-transform:uppercase;letter-spacing:.06em;margin-bottom:4px;">Support Role</div>
+            <span class="mono"><%= config.support_role %></span>
+          </div>
+          <% } %>
+          <% if (config.log_channel) { %>
+          <div>
+            <div style="color:var(--muted);font-size:11px;text-transform:uppercase;letter-spacing:.06em;margin-bottom:4px;">Log Channel</div>
+            <span class="mono"><%= config.log_channel %></span>
+          </div>
+          <% } %>
+        </div>
+      </div>
+      <% } %>
+
+      <!-- Ticket list -->
+      <div class="card">
+        <div class="card-title">Recent Tickets <span class="badge"><%= tickets.length %></span></div>
+        <% if (tickets.length > 0) { %>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>#</th><th>User</th><th>Status</th><th>Opened</th><th>Closed</th></tr></thead>
+            <tbody>
+              <% tickets.forEach(function(t) { %>
+              <tr>
+                <td class="mono">#<%= String(t.ticket_number).padStart(4, '0') %></td>
+                <td><span class="mono"><%= t.user_id %></span></td>
+                <td><span class="badge <%= t.status === 'open' ? 'badge-success' : 'badge-muted' %>"><%= t.status %></span></td>
+                <td style="color:var(--muted);font-size:12px;white-space:nowrap;"><%= new Date(t.created_at * 1000).toLocaleDateString() %></td>
+                <td style="color:var(--muted);font-size:12px;white-space:nowrap;"><%= t.closed_at ? new Date(t.closed_at * 1000).toLocaleDateString() : '—' %></td>
+              </tr>
+              <% }) %>
+            </tbody>
+          </table>
+        </div>
+        <% } else { %>
+        <div class="empty"><div class="empty-icon">🎫</div><p>No tickets yet. Set up the system with <code style="font-family:'JetBrains Mono',monospace;font-size:13px;">/ticketsetup</code>.</p></div>
+        <% } %>
+      </div>
+    </div>
+  </div>
+</div>
+</body>
+</html>

@@ -1,0 +1,81 @@
+<%- include('../partials/head', { title: guild.name + ' — Overview' }) %>
+<div class="layout">
+  <%- include('../partials/sidebar', { guild: guild, activeGuildId: guild.id }) %>
+  <div class="main">
+    <%- include('../partials/topbar', { breadcrumbs: [{ label: 'Dashboard', href: '/dashboard/user' }, { label: guild.name }, { label: 'Overview' }] }) %>
+    <div class="content">
+      <div class="page-header">
+        <h1><%= guild.name %></h1>
+        <p>Server overview and quick stats.</p>
+      </div>
+
+      <div class="stats-grid">
+        <div class="stat-card">
+          <div class="stat-label">Total Members</div>
+          <div class="stat-value"><%= (guild.approximate_member_count || 0).toLocaleString() %></div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-label">Mod Actions (30d)</div>
+          <div class="stat-value"><%= modCount %></div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-label">Active Warnings</div>
+          <div class="stat-value"><%= warnCount %></div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-label">Open Tickets</div>
+          <div class="stat-value"><%= openTickets %></div>
+        </div>
+      </div>
+
+      <!-- Recent mod actions -->
+      <div class="card" style="margin-bottom:20px;">
+        <div class="card-title">Recent Mod Actions</div>
+        <% if (recentMod && recentMod.length > 0) { %>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Action</th><th>User</th><th>Moderator</th><th>Reason</th><th>Date</th></tr></thead>
+            <tbody>
+              <% recentMod.forEach(function(r) { %>
+              <tr>
+                <td>
+                  <% const badgeMap = { ban:'badge-danger', tempban:'badge-danger', kick:'badge-warning', mute:'badge-warning', warn:'badge-info', unmute:'badge-success', unban:'badge-success' }; %>
+                  <span class="badge <%= badgeMap[r.action] || 'badge-muted' %>"><%= r.action %></span>
+                </td>
+                <td><span class="mono"><%= r.user_id %></span></td>
+                <td><span class="mono"><%= r.mod_id %></span></td>
+                <td style="max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;"><%= r.reason || '—' %></td>
+                <td style="color:var(--muted);font-size:12px;white-space:nowrap;"><%= new Date(r.created_at * 1000).toLocaleDateString() %></td>
+              </tr>
+              <% }) %>
+            </tbody>
+          </table>
+        </div>
+        <% } else { %>
+        <div class="empty"><p>No recent mod actions.</p></div>
+        <% } %>
+      </div>
+
+      <!-- Active giveaways -->
+      <% if (activeGiveaways && activeGiveaways.length > 0) { %>
+      <div class="card">
+        <div class="card-title">Active Giveaways <span class="badge"><%= activeGiveaways.length %></span></div>
+        <div class="giveaway-grid">
+          <% activeGiveaways.forEach(function(g) { %>
+          <div class="giveaway-card">
+            <div class="giveaway-prize">🎁 <%= g.prize %></div>
+            <div class="giveaway-meta">
+              <span class="giveaway-stat"><strong><%= g.winners %></strong> winner<%= g.winners !== 1 ? 's' : '' %></span>
+              <span class="giveaway-stat">Ends <strong><%= new Date(g.ends_at * 1000).toLocaleDateString() %></strong></span>
+            </div>
+            <span class="badge badge-success">active</span>
+          </div>
+          <% }) %>
+        </div>
+      </div>
+      <% } %>
+    </div>
+  </div>
+</div>
+</body>
+</html>

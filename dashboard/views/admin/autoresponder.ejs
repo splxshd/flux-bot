@@ -1,0 +1,67 @@
+<%- include('../partials/head', { title: guild.name + ' — Autoresponder' }) %>
+<div class="layout">
+  <%- include('../partials/sidebar', { guild: guild, activeGuildId: guild.id }) %>
+  <div class="main">
+    <%- include('../partials/topbar', { breadcrumbs: [{ label: 'Dashboard', href: '/dashboard/user' }, { label: guild.name, href: '/dashboard/admin/' + guild.id }, { label: 'Autoresponder' }] }) %>
+    <div class="content">
+      <div class="page-header">
+        <h1>Autoresponder</h1>
+        <p>Manage automatic responses to triggers in this server.</p>
+      </div>
+
+      <% if (locals.flash) { %>
+      <div class="flash flash-<%= flash.type %>"><%= flash.msg %></div>
+      <% } %>
+
+      <!-- Add form -->
+      <div class="card" style="margin-bottom:20px;">
+        <div class="card-title">Add Response</div>
+        <form method="POST" action="/dashboard/admin/<%= guild.id %>/autoresponder/add">
+          <div class="form-grid">
+            <div class="form-group">
+              <label for="trigger">Trigger</label>
+              <input type="text" id="trigger" name="trigger" required placeholder="e.g. !help" />
+            </div>
+            <div class="form-group">
+              <label for="response">Response</label>
+              <input type="text" id="response" name="response" required placeholder="Bot reply..." />
+            </div>
+          </div>
+          <div style="margin-top:12px;">
+            <button type="submit" class="btn btn-primary btn-sm">Add</button>
+          </div>
+        </form>
+      </div>
+
+      <!-- List -->
+      <div class="card">
+        <div class="card-title">Responses <span class="badge"><%= entries.length %></span></div>
+        <% if (entries.length > 0) { %>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Trigger</th><th>Response</th><th></th></tr></thead>
+            <tbody>
+              <% entries.forEach(function(e) { %>
+              <tr>
+                <td><code style="font-family:'JetBrains Mono',monospace;font-size:12px;color:var(--accent);"><%= e.trigger %></code></td>
+                <td style="max-width:300px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;"><%= e.response %></td>
+                <td style="text-align:right;">
+                  <form method="POST" action="/dashboard/admin/<%= guild.id %>/autoresponder/delete" style="display:inline;">
+                    <input type="hidden" name="trigger" value="<%= e.trigger %>" />
+                    <button type="submit" class="btn btn-danger btn-sm" onclick="return confirm('Delete this autoresponder?')">Delete</button>
+                  </form>
+                </td>
+              </tr>
+              <% }) %>
+            </tbody>
+          </table>
+        </div>
+        <% } else { %>
+        <div class="empty"><p>No autoresponders yet. Add one above.</p></div>
+        <% } %>
+      </div>
+    </div>
+  </div>
+</div>
+</body>
+</html>

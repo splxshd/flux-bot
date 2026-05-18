@@ -1,0 +1,60 @@
+<%- include('../partials/head', { title: guild.name + ' — Stats' }) %>
+<div class="layout">
+  <%- include('../partials/sidebar', { activeGuildId: guild.id }) %>
+  <div class="main">
+    <%- include('../partials/topbar', { breadcrumbs: [{ label: 'Dashboard', href: '/dashboard/user' }, { label: guild.name }, { label: 'My Stats' }] }) %>
+    <div class="content">
+      <div class="page-header">
+        <h1>My Stats</h1>
+        <p>Your activity in <strong><%= guild.name %></strong></p>
+      </div>
+
+      <div class="stats-grid">
+        <div class="stat-card">
+          <div class="stat-label">Messages (24h)</div>
+          <div class="stat-value"><%= stats.d1.toLocaleString() %></div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-label">Messages (7d)</div>
+          <div class="stat-value"><%= stats.d7.toLocaleString() %></div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-label">Messages (30d)</div>
+          <div class="stat-value"><%= stats.d30.toLocaleString() %></div>
+        </div>
+        <% if (rank) { %>
+        <div class="stat-card">
+          <div class="stat-label">Server Rank</div>
+          <div class="stat-value">#<%= rank %></div>
+          <div class="stat-sub">by messages (30d)</div>
+        </div>
+        <% } %>
+      </div>
+
+      <% if (warnings && warnings.length > 0) { %>
+      <div class="card">
+        <div class="card-title">
+          My Warnings
+          <span class="badge"><%= warnings.length %></span>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Reason</th><th>Moderator</th><th>Date</th></tr></thead>
+            <tbody>
+              <% warnings.forEach(function(w) { %>
+              <tr>
+                <td><%= w.reason || 'No reason' %></td>
+                <td><span class="mono"><%= w.mod_id %></span></td>
+                <td style="color:var(--muted);font-size:12px;"><%= new Date(w.created_at * 1000).toLocaleDateString() %></td>
+              </tr>
+              <% }) %>
+            </tbody>
+          </table>
+        </div>
+      </div>
+      <% } %>
+    </div>
+  </div>
+</div>
+</body>
+</html>

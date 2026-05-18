@@ -1,0 +1,56 @@
+<%- include('../partials/head', { title: guild.name + ' — Anti-Raid' }) %>
+<div class="layout">
+  <%- include('../partials/sidebar', { guild: guild, activeGuildId: guild.id }) %>
+  <div class="main">
+    <%- include('../partials/topbar', { breadcrumbs: [{ label: 'Dashboard', href: '/dashboard/user' }, { label: guild.name, href: '/dashboard/admin/' + guild.id }, { label: 'Anti-Raid' }] }) %>
+    <div class="content">
+      <div class="page-header">
+        <h1>Anti-Raid</h1>
+        <p>Configure automatic protection against mass-mention raids.</p>
+      </div>
+
+      <% if (locals.flash) { %>
+      <div class="flash flash-<%= flash.type %>"><%= flash.msg %></div>
+      <% } %>
+
+      <form method="POST" action="/dashboard/admin/<%= guild.id %>/antiraid">
+        <div class="card" style="margin-bottom:20px;">
+          <div class="card-title">Settings</div>
+          <div class="form-grid">
+            <div class="form-group full">
+              <div class="toggle">
+                <input type="checkbox" id="enabled" name="enabled" value="1" <%= config && config.enabled ? 'checked' : '' %> />
+                <label for="enabled">Enable Anti-Raid</label>
+              </div>
+              <span class="form-hint" style="margin-top:6px;">Automatically act when a user mass-mentions others.</span>
+            </div>
+            <div class="form-group">
+              <label for="mention_threshold">Mention Threshold</label>
+              <input type="number" id="mention_threshold" name="mention_threshold" min="1" max="50" value="<%= config ? config.mention_threshold : 5 %>" />
+              <span class="form-hint">Minimum mentions per message to trigger action.</span>
+            </div>
+            <div class="form-group">
+              <label for="action">Action</label>
+              <select id="action" name="action">
+                <option value="timeout" <%= (!config || config.action === 'timeout') ? 'selected' : '' %>>Timeout</option>
+                <option value="kick"    <%= config && config.action === 'kick'    ? 'selected' : '' %>>Kick</option>
+                <option value="ban"     <%= config && config.action === 'ban'     ? 'selected' : '' %>>Ban</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label for="log_channel">Log Channel ID</label>
+              <input type="text" id="log_channel" name="log_channel" value="<%= config ? config.log_channel || '' : '' %>" placeholder="Channel ID (optional)" />
+            </div>
+          </div>
+        </div>
+
+        <div class="save-bar">
+          <span>Changes take effect immediately.</span>
+          <button type="submit" class="btn btn-primary">Save Changes</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+</body>
+</html>

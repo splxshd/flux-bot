@@ -86,7 +86,7 @@ function getGuildSettings(guildId) {
 }
 
 function setGuildSettings(guildId, fields) {
-  const allowed = ['prefix','welcome_channel','welcome_message','log_channel'];
+  const allowed = ['prefix','welcome_channel','welcome_message','log_channel','log_color'];
   const keys = Object.keys(fields).filter(k => allowed.includes(k));
   if (!keys.length) return;
   const existing = get('SELECT 1 FROM guild_settings WHERE guild_id = ?', [guildId]);

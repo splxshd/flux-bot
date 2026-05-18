@@ -1,0 +1,17 @@
+<div class="topbar">
+  <div class="topbar-breadcrumb">
+    <% if (typeof breadcrumbs !== 'undefined') { %>
+      <% breadcrumbs.forEach(function(bc, i) { %>
+        <% if (i > 0) { %><span class="sep">/</span><% } %>
+        <% if (bc.href) { %><a href="<%= bc.href %>"><%= bc.label %></a><% } else { %><span><%= bc.label %></span><% } %>
+      <% }) %>
+    <% } else { %>
+      <span class="topbar-title"><%= typeof title !== 'undefined' ? title : 'Dashboard' %></span>
+    <% } %>
+  </div>
+  <div class="topbar-right">
+    <% if (locals.user) { %>
+      <span style="font-size:13px;color:var(--muted);">Hi, <strong style="color:var(--text)"><%= locals.user.username %></strong></span>
+    <% } %>
+  </div>
+</div>

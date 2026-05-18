@@ -1,0 +1,11 @@
+<%- include('partials/head', { title: 'Error ' + code }) %>
+<div class="error-wrap">
+  <div>
+    <div class="error-code"><%= code %></div>
+    <div class="error-msg"><%= message %></div>
+    <div class="error-sub">Something went wrong. Please try again.</div>
+    <a href="/" class="btn btn-primary">Go home</a>
+  </div>
+</div>
+</body>
+</html>

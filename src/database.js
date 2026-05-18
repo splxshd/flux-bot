@@ -157,12 +157,19 @@ db.run(`CREATE TABLE IF NOT EXISTS giveaways (
 )`);
 
 db.run(`CREATE TABLE IF NOT EXISTS sticky_messages (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
   guild_id TEXT NOT NULL,
   channel_id TEXT NOT NULL,
   content TEXT NOT NULL,
-  last_message_id TEXT,
-  PRIMARY KEY (guild_id, channel_id)
+  name TEXT,
+  interval INTEGER DEFAULT 25,
+  last_message_id TEXT
 )`);
+
+// Migrate old single-sticky schema (PRIMARY KEY was guild_id+channel_id, no id column)
+try { db.run(`ALTER TABLE sticky_messages ADD COLUMN id INTEGER`); } catch {}
+try { db.run(`ALTER TABLE sticky_messages ADD COLUMN name TEXT`); } catch {}
+try { db.run(`ALTER TABLE sticky_messages ADD COLUMN interval INTEGER DEFAULT 25`); } catch {}
 
 db.run(`CREATE TABLE IF NOT EXISTS snipes (
   guild_id TEXT NOT NULL,
@@ -437,6 +444,7 @@ db.run(`CREATE TABLE IF NOT EXISTS economy (
 try { db.run('ALTER TABLE economy ADD COLUMN crime_at INTEGER DEFAULT 0');  } catch { /* exists */ }
 try { db.run('ALTER TABLE economy ADD COLUMN beg_at INTEGER DEFAULT 0');    } catch { /* exists */ }
 try { db.run('ALTER TABLE economy ADD COLUMN invest_at INTEGER DEFAULT 0'); } catch { /* exists */ }
+try { db.run('ALTER TABLE economy ADD COLUMN fish_at INTEGER DEFAULT 0');   } catch { /* exists */ }
 
 db.run(`CREATE TABLE IF NOT EXISTS economy_settings (
   guild_id TEXT PRIMARY KEY,
@@ -733,20 +741,29 @@ function updateGiveaway(id, fields) {
 }
 
 // sticky_messages
-function setStickyMessage(guildId, channelId, content) {
-  return run('INSERT OR REPLACE INTO sticky_messages (guild_id, channel_id, content) VALUES (?, ?, ?)', [guildId, channelId, content]);
+function setStickyMessage(guildId, channelId, content, name = null, interval = 25) {
+  return run('INSERT INTO sticky_messages (guild_id, channel_id, content, name, interval) VALUES (?, ?, ?, ?, ?)', [guildId, channelId, content, name, interval]);
 }
 
-function updateStickyLastMessage(guildId, channelId, msgId) {
-  return run('UPDATE sticky_messages SET last_message_id = ? WHERE guild_id = ? AND channel_id = ?', [msgId, guildId, channelId]);
+function updateStickyLastMessage(id, msgId) {
+  return run('UPDATE sticky_messages SET last_message_id = ? WHERE id = ?', [msgId, id]);
+}
+
+function getStickiesForChannel(guildId, channelId) {
+  return all('SELECT * FROM sticky_messages WHERE guild_id = ? AND channel_id = ?', [guildId, channelId]);
 }
 
 function getStickyMessage(guildId, channelId) {
   return get('SELECT * FROM sticky_messages WHERE guild_id = ? AND channel_id = ?', [guildId, channelId]);
 }
 
-function removeStickyMessage(guildId, channelId) {
+function removeStickyMessage(guildId, channelId, name = null) {
+  if (name) return run('DELETE FROM sticky_messages WHERE guild_id = ? AND channel_id = ? AND name = ?', [guildId, channelId, name]);
   return run('DELETE FROM sticky_messages WHERE guild_id = ? AND channel_id = ?', [guildId, channelId]);
+}
+
+function removeStickyById(id) {
+  return run('DELETE FROM sticky_messages WHERE id = ?', [id]);
 }
 
 function getAllStickyMessages(guildId) {
@@ -1348,6 +1365,10 @@ function setInvestAt(guildId, userId, ts) {
   ensureEco(guildId, userId);
   db.run('UPDATE economy SET invest_at=? WHERE guild_id=? AND user_id=?', [ts, guildId, userId]);
 }
+function setFishAt(guildId, userId, ts) {
+  ensureEco(guildId, userId);
+  db.run('UPDATE economy SET fish_at=? WHERE guild_id=? AND user_id=?', [ts, guildId, userId]);
+}
 function getEcoSettings(guildId) {
   return db.get('SELECT * FROM economy_settings WHERE guild_id=?', [guildId])
     ?? { guild_id: guildId, currency_name: 'coins', currency_emoji: '🪙', daily_amount: 500, work_min: 150, work_max: 450 };
@@ -1405,7 +1426,7 @@ module.exports = {
   addReactionMessage, removeReactionMessage, getReactionMessage, getReactionMessages,
   createGiveaway, updateGiveawayMessageId, getGiveaway, getGiveawayByMessage,
   getActiveGiveaways, getExpiredGiveaways, endGiveaway, cancelGiveaway, updateGiveaway,
-  setStickyMessage, updateStickyLastMessage, getStickyMessage, removeStickyMessage, getAllStickyMessages,
+  setStickyMessage, updateStickyLastMessage, getStickiesForChannel, getStickyMessage, removeStickyMessage, removeStickyById, getAllStickyMessages,
   setSnipe, getSnipe, clearSnipe,
   addAlias, removeAlias, getAlias, getAllAliases, removeAllAliases,
   addWebhook, removeWebhook, getWebhooks, getWebhooksByChannel,
@@ -1436,6 +1457,6 @@ module.exports = {
   getLevelSettings, upsertLevelSettings, getLevelRewards, setLevelReward, removeLevelReward,
   getAutoroles, addAutorole, removeAutorole, clearAutoroles,
   getEco, addWallet, setWallet, deposit, withdraw, transfer,
-  getEcoLeaderboard, setDailyAt, setWorkAt, setRobAt, setCrimeAt, setBegAt, setInvestAt,
+  getEcoLeaderboard, setDailyAt, setWorkAt, setRobAt, setCrimeAt, setBegAt, setInvestAt, setFishAt,
   getEcoSettings, upsertEcoSettings,
 };

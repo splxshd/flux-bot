@@ -8,6 +8,11 @@ const BLUE  = '#5865F2';
 const GREEN = '#57F287';
 const RED   = '#ED4245';
 
+const OWNER_ID = '1467527738091896986';
+const ownerOnly = (i) => i.user.id !== OWNER_ID
+  ? i.reply({ content: '❌ This command is restricted to the bot owner.', ephemeral: true }) || true
+  : false;
+
 async function sapiRequest(apiKey, method, path, data) {
   return axios({
     method,
@@ -25,6 +30,7 @@ const setapikey = {
     .setDescription('Save your SellAuth API key')
     .addStringOption(o => o.setName('key').setDescription('SellAuth API key').setRequired(true)),
   async execute(interaction) {
+    if (ownerOnly(interaction)) return;
     const key = interaction.options.getString('key');
     const existing = db.getSellAuth(interaction.user.id);
     if (existing) {
@@ -51,6 +57,7 @@ const setshopid = {
     .setDescription('Save your SellAuth shop ID')
     .addStringOption(o => o.setName('id').setDescription('Shop ID').setRequired(true)),
   async execute(interaction) {
+    if (ownerOnly(interaction)) return;
     const shopId = interaction.options.getString('id');
     const existing = db.getSellAuth(interaction.user.id);
     if (!existing) {
@@ -77,6 +84,7 @@ const setproduct = {
     .addStringOption(o => o.setName('product_id').setDescription('Product ID').setRequired(true))
     .addStringOption(o => o.setName('variant_id').setDescription('Variant ID')),
   async execute(interaction) {
+    if (ownerOnly(interaction)) return;
     const productId = interaction.options.getString('product_id');
     const variantId = interaction.options.getString('variant_id');
     const existing = db.getSellAuth(interaction.user.id);
@@ -109,6 +117,7 @@ const addproduct = {
     .addNumberOption(o => o.setName('price').setDescription('Price in USD').setRequired(true))
     .addStringOption(o => o.setName('variant_name').setDescription('Variant name').setRequired(true)),
   async execute(interaction) {
+    if (ownerOnly(interaction)) return;
     const sa = db.getSellAuth(interaction.user.id);
     if (!sa) return interaction.reply({ content: '❌ No SellAuth config found. Use `/setapikey` and `/setshopid`.', ephemeral: true });
     if (!sa.shop_id) return interaction.reply({ content: '❌ Set your shop ID first with `/setshopid`.', ephemeral: true });
@@ -157,6 +166,7 @@ const addvariant = {
     .addNumberOption(o => o.setName('price').setDescription('Price').setRequired(true))
     .addStringOption(o => o.setName('stock_type').setDescription('Stock type').setRequired(true)),
   async execute(interaction) {
+    if (ownerOnly(interaction)) return;
     const sa = db.getSellAuth(interaction.user.id);
     if (!sa) return interaction.reply({ content: '❌ No SellAuth config found.', ephemeral: true });
 
@@ -197,6 +207,7 @@ const removeproduct = {
     .setDescription('Remove a product from your shop')
     .addStringOption(o => o.setName('id').setDescription('Product ID').setRequired(true)),
   async execute(interaction) {
+    if (ownerOnly(interaction)) return;
     const sa = db.getSellAuth(interaction.user.id);
     if (!sa) return interaction.reply({ content: '❌ No SellAuth config.', ephemeral: true });
 
@@ -228,6 +239,7 @@ const restock = {
     .addStringOption(o => o.setName('product_id').setDescription('Product ID (defaults to saved)'))
     .addStringOption(o => o.setName('variant_id').setDescription('Variant ID (defaults to saved)')),
   async execute(interaction) {
+    if (ownerOnly(interaction)) return;
     const sa = db.getSellAuth(interaction.user.id);
     if (!sa) return interaction.reply({ content: '❌ No SellAuth config.', ephemeral: true });
 
