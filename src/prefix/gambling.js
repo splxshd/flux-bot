@@ -1170,4 +1170,281 @@ const guess = {
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
-module.exports = [blackjack, slots, coinflip, hilo, dice, roulette, poker, guess];
+// HILO DUEL — challenger plays first, target must beat their streak
+// ─────────────────────────────────────────────────────────────────────────────
+const pendingHiloDuels = new Map(); // `${guildId}-${challengerId}` -> true
+
+async function runHiloTurn(message, guildId, player, bet, s, opts = {}) {
+  // opts.targetStreak — if set, player must beat this to win (target's turn)
+  // opts.opponentName — shown in embed footer
+  // Returns: { streak, reason } where reason is 'cashout' | 'bust' | 'timeout'
+  return new Promise(async (resolve) => {
+    const uid     = `hd_${player.id}_${Date.now()}`;
+    let current   = randCard();
+    let streak    = 0;
+
+    const potWin  = () => Math.floor(bet * hiloMult(streak));
+    const nextWin = () => Math.floor(bet * hiloMult(streak + 1));
+
+    const targetLine = opts.targetStreak != null
+      ? `\nYou need a streak of **${opts.targetStreak + 1}+** to win.`
+      : '';
+
+    const buildEmbed = (state = 'playing', next = null) => {
+      const winNow  = potWin();
+      const winNext = nextWin();
+      const context = opts.targetStreak != null
+        ? ` • Beat streak: **${opts.targetStreak}**`
+        : ' • Opponent watches';
+
+      if (state === 'playing') {
+        return new EmbedBuilder()
+          .setColor(streak > 0 ? YELLOW : BLUE)
+          .setTitle(`🎴 Hi-Lo Duel — ${player.username}'s Turn`)
+          .setDescription(`**Current card:** \`${current}\`\n\nIs the next card **higher**, **lower**, or the **same**?${targetLine}`)
+          .addFields(
+            { name: '🔥 Streak',       value: `**${streak}**`,                                   inline: true },
+            { name: '💰 Cash Out',     value: `**${fmtCoins(winNow)} ${s.currency_emoji}**`,     inline: true },
+            { name: '⬆️ Next Correct', value: `→ **${fmtCoins(winNext)} ${s.currency_emoji}**`, inline: true },
+          )
+          .setFooter({ text: `Bet: ${fmtCoins(bet)} ${s.currency_emoji}${context} • 30s per guess` });
+      }
+      if (state === 'correct') {
+        return new EmbedBuilder()
+          .setColor(GREEN)
+          .setTitle(`🎴 Hi-Lo Duel — Correct!`)
+          .setDescription(`\`${next}\` — ✅ Right call! Streak: **${streak}**${targetLine}`)
+          .addFields(
+            { name: '💰 Cash Out', value: `**${fmtCoins(winNow)} ${s.currency_emoji}**`,     inline: true },
+            { name: '⬆️ Next',    value: `→ **${fmtCoins(winNext)} ${s.currency_emoji}**`, inline: true },
+          )
+          .setFooter({ text: `×${hiloMult(streak).toFixed(2)} multiplier` });
+      }
+      if (state === 'bust') {
+        return new EmbedBuilder()
+          .setColor(RED)
+          .setTitle(`💀 ${player.username} Busted!`)
+          .setDescription(`\`${current}\` → \`${next}\` — ❌ Wrong call.\nFinal streak: **${streak}**`)
+          .setFooter({ text: 'flux economy' }).setTimestamp();
+      }
+      if (state === 'cashout') {
+        return new EmbedBuilder()
+          .setColor(GOLD)
+          .setTitle(`💰 ${player.username} Locked In`)
+          .setDescription(`Cashed out with a streak of **${streak}**.`)
+          .addFields({ name: '🔒 Streak Locked', value: `**${streak}**`, inline: true })
+          .setFooter({ text: 'flux economy' }).setTimestamp();
+      }
+      if (state === 'timeout') {
+        return new EmbedBuilder()
+          .setColor(streak > 0 ? GOLD : RED)
+          .setTitle(`⏰ ${player.username} Timed Out`)
+          .setDescription(streak > 0
+            ? `Ran out of time — streak of **${streak}** locked in.`
+            : `Ran out of time with no streak.`)
+          .setFooter({ text: 'flux economy' }).setTimestamp();
+      }
+      return new EmbedBuilder().setColor(BLUE).setDescription('Done.');
+    };
+
+    const buildRow = (disabled = false) => new ActionRowBuilder().addComponents(
+      new ButtonBuilder().setCustomId(`${uid}_higher`).setLabel('Higher').setEmoji('⬆️').setStyle(ButtonStyle.Success).setDisabled(disabled),
+      new ButtonBuilder().setCustomId(`${uid}_lower`).setLabel('Lower').setEmoji('⬇️').setStyle(ButtonStyle.Danger).setDisabled(disabled),
+      new ButtonBuilder().setCustomId(`${uid}_same`).setLabel('Same').setEmoji('↔️').setStyle(ButtonStyle.Secondary).setDisabled(disabled),
+      new ButtonBuilder().setCustomId(`${uid}_cashout`).setLabel('Cash Out').setEmoji('💰')
+        .setStyle(streak > 0 ? ButtonStyle.Primary : ButtonStyle.Secondary)
+        .setDisabled(disabled || streak === 0),
+    );
+
+    const sent = await message.channel.send({
+      content: `${player} — it's your turn!`,
+      embeds: [buildEmbed('playing')],
+      components: [buildRow()],
+    });
+
+    const col = sent.createMessageComponentCollector({
+      componentType: ComponentType.Button,
+      filter: i => i.user.id === player.id,
+      time: 30_000,
+      idle: 30_000,
+    });
+
+    col.on('collect', async (i) => {
+      if (i.customId === `${uid}_cashout`) {
+        col.stop('cashout');
+        await i.update({ embeds: [buildEmbed('cashout')], components: [buildRow(true)] });
+        return resolve({ streak, reason: 'cashout' });
+      }
+
+      const next  = randCard();
+      const cv    = CARD_VALS[current], nv = CARD_VALS[next];
+      const guess = i.customId === `${uid}_higher` ? 'higher' : i.customId === `${uid}_lower` ? 'lower' : 'same';
+      const ok    = (guess === 'higher' && nv > cv) || (guess === 'lower' && nv < cv) || (guess === 'same' && nv === cv);
+
+      if (ok) {
+        streak++;
+        current = next;
+        col.resetTimer();
+        await i.update({ embeds: [buildEmbed('correct', next)], components: [buildRow()] });
+        await new Promise(r => setTimeout(r, 900));
+        await sent.edit({ embeds: [buildEmbed('playing')], components: [buildRow()] }).catch(() => {});
+      } else {
+        col.stop('bust');
+        await i.update({ embeds: [buildEmbed('bust', next)], components: [buildRow(true)] });
+        return resolve({ streak, reason: 'bust' });
+      }
+    });
+
+    col.on('end', async (_, reason) => {
+      if (reason === 'cashout' || reason === 'bust') return;
+      await sent.edit({ embeds: [buildEmbed('timeout')], components: [buildRow(true)] }).catch(() => {});
+      resolve({ streak, reason: 'timeout' });
+    });
+  });
+}
+
+const hiloduel = {
+  name: 'hiloduel',
+  aliases: ['hd', 'hilobet', 'hduel'],
+  async execute(message, args) {
+    const guildId    = message.guild.id;
+    const challenger = message.author;
+    const target     = message.mentions.users.first();
+    const s          = db.getEcoSettings(guildId);
+    const amt        = parseBet(args[1] ?? args[0], db.getEco(guildId, challenger.id).wallet);
+
+    if (!target || target.bot || target.id === challenger.id)
+      return message.reply('Usage: `,hiloduel @user <amount>`');
+    if (amt < 1)
+      return message.reply('Usage: `,hiloduel @user <amount>`');
+
+    const chalEco = db.getEco(guildId, challenger.id);
+    const err = checkBet(chalEco, amt, s);
+    if (err) return message.reply({ embeds: [new EmbedBuilder().setColor(RED).setDescription(err)] });
+
+    const key = `${guildId}-${challenger.id}`;
+    if (pendingHiloDuels.has(key))
+      return message.reply({ embeds: [new EmbedBuilder().setColor(RED).setDescription('❌ You already have a pending Hi-Lo duel.')] });
+
+    pendingHiloDuels.set(key, true);
+
+    // ── Challenge embed ───────────────────────────────────────────────────────
+    const row = new ActionRowBuilder().addComponents(
+      new ButtonBuilder().setCustomId(`hdc_accept_${challenger.id}`).setLabel('Accept').setEmoji('✅').setStyle(ButtonStyle.Success),
+      new ButtonBuilder().setCustomId(`hdc_decline_${challenger.id}`).setLabel('Decline').setEmoji('❌').setStyle(ButtonStyle.Danger),
+    );
+
+    const challengeMsg = await message.reply({
+      content: `${target}`,
+      embeds: [new EmbedBuilder()
+        .setColor(PURPLE)
+        .setTitle('🎴 Hi-Lo Duel Challenge')
+        .setDescription(
+          `**${challenger.username}** challenged **${target.username}** to a Hi-Lo duel!\n\n` +
+          `**Stake:** ${fmtCoins(amt)} ${s.currency_emoji} each — pot of **${fmtCoins(amt * 2)} ${s.currency_emoji}**\n\n` +
+          `**How it works:**\n> ${challenger.username} plays first and locks in a streak.\n> ${target.username} must beat that streak to win.`
+        )
+        .setFooter({ text: `${target.username} — accept or decline • 30s` })],
+      components: [row],
+    });
+
+    const acceptCol = challengeMsg.createMessageComponentCollector({
+      componentType: ComponentType.Button,
+      filter: i => i.user.id === target.id,
+      time: 30_000,
+      max: 1,
+    });
+
+    acceptCol.on('collect', async (i) => {
+      pendingHiloDuels.delete(key);
+
+      if (i.customId === `hdc_decline_${challenger.id}`) {
+        return i.update({
+          embeds: [new EmbedBuilder().setColor(RED).setTitle('🎴 Duel Declined').setDescription(`**${target.username}** declined the duel.`)],
+          components: [],
+        });
+      }
+
+      // Re-check both wallets
+      const chalEcoNow = db.getEco(guildId, challenger.id);
+      const targEco    = db.getEco(guildId, target.id);
+      if (chalEcoNow.wallet < amt)
+        return i.update({ embeds: [new EmbedBuilder().setColor(RED).setDescription(`❌ **${challenger.username}** no longer has enough coins.`)], components: [] });
+      if (targEco.wallet < amt)
+        return i.update({ embeds: [new EmbedBuilder().setColor(RED).setDescription(`❌ **${target.username}** doesn't have enough coins.`)], components: [] });
+
+      // Deduct both upfront
+      db.addWallet(guildId, challenger.id, -amt);
+      db.addWallet(guildId, target.id, -amt);
+
+      await i.update({
+        embeds: [new EmbedBuilder()
+          .setColor(PURPLE)
+          .setTitle('🎴 Hi-Lo Duel — Starting!')
+          .setDescription(`Both players put up **${fmtCoins(amt)} ${s.currency_emoji}**.\n**${challenger.username}** goes first!`)],
+        components: [],
+      });
+
+      // ── Round 1: Challenger ───────────────────────────────────────────────
+      const { streak: chalStreak } = await runHiloTurn(message, guildId, challenger, amt, s, {
+        targetStreak: null,
+        opponentName: target.username,
+      });
+
+      // ── Transition ────────────────────────────────────────────────────────
+      await message.channel.send({ embeds: [new EmbedBuilder()
+        .setColor(PURPLE)
+        .setTitle('🎴 Hi-Lo Duel — Round 2')
+        .setDescription(
+          `**${challenger.username}** locked in a streak of **${chalStreak}**.\n\n` +
+          `**${target.username}**, you need a streak of **${chalStreak + 1}+** to win!\n` +
+          (chalStreak === 0 ? '> They busted immediately — any streak wins! 👀' : '')
+        )
+        .setFooter({ text: `Target to beat: ${chalStreak}` })] });
+
+      // ── Round 2: Target ───────────────────────────────────────────────────
+      const { streak: targStreak, reason: targReason } = await runHiloTurn(message, guildId, target, amt, s, {
+        targetStreak: chalStreak,
+        opponentName: challenger.username,
+      });
+
+      // ── Result ────────────────────────────────────────────────────────────
+      const targetWins = targStreak > chalStreak;
+      const winner = targetWins ? target : challenger;
+      const loser  = targetWins ? challenger : target;
+      const pot    = amt * 2;
+
+      db.addWallet(guildId, winner.id, pot);
+      const winnerEco = db.getEco(guildId, winner.id);
+
+      await message.channel.send({ embeds: [new EmbedBuilder()
+        .setColor(targetWins ? GREEN : GOLD)
+        .setTitle(`🏆 ${winner.username} wins the duel!`)
+        .setDescription(
+          `**${challenger.username}** streak: **${chalStreak}**\n` +
+          `**${target.username}** streak: **${targStreak}**\n\n` +
+          `**${winner.username}** takes the pot of **${fmtCoins(pot)} ${s.currency_emoji}**!`
+        )
+        .addFields(
+          { name: '🏆 Winner',      value: winner.username,                              inline: true },
+          { name: '💰 Pot',         value: `${fmtCoins(pot)} ${s.currency_emoji}`,      inline: true },
+          { name: '👛 New Balance', value: `${fmtCoins(winnerEco.wallet)} ${s.currency_emoji}`, inline: true },
+        )
+        .setFooter({ text: 'flux economy' })
+        .setTimestamp()] });
+    });
+
+    acceptCol.on('end', async (collected, reason) => {
+      pendingHiloDuels.delete(key);
+      if (reason === 'time' && collected.size === 0) {
+        await challengeMsg.edit({
+          embeds: [new EmbedBuilder().setColor(RED).setDescription(`⏰ **${target.username}** didn't respond. Duel expired.`)],
+          components: [],
+        }).catch(() => {});
+      }
+    });
+  },
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
+module.exports = [blackjack, slots, coinflip, hilo, dice, roulette, poker, guess, hiloduel];
