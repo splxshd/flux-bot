@@ -7,35 +7,39 @@ const GOLD = '#FFD700';
 const GREY = '#2b2d31';
 const RED  = '#ED4245';
 
-function buildActiveEmbed({ prize, winners, endsAt, hostId, color, imageUrl }) {
+function buildActiveEmbed({ prize, winners, endsAt, hostId, hostAvatarURL, color, imageUrl, giveawayId }) {
   const embed = new EmbedBuilder()
-    .setColor(color || GOLD)
+    .setAuthor({ name: '🎉 GIVEAWAY', iconURL: hostAvatarURL || null })
     .setTitle(prize)
+    .setColor(color || GOLD)
     .addFields(
-      { name: '⏰ Time Remaining', value: `<t:${endsAt}:R>`, inline: true },
-      { name: '🎟️ Hosted By',     value: `<@${hostId}>`,     inline: true },
+      { name: '🏆 Winners', value: winners.toString(),   inline: true },
+      { name: '⏰ Ends',    value: `<t:${endsAt}:R>`,   inline: true },
+      { name: '🎟️ Host',   value: `<@${hostId}>`,       inline: true },
     )
-    .setFooter({ text: `🏆 ${winners} winner${winners !== 1 ? 's' : ''} · Ends at` })
+    .setFooter({ text: `ID: ${giveawayId} • Click 🎉 to enter!` })
     .setTimestamp(endsAt * 1000);
   if (imageUrl) embed.setImage(imageUrl);
   return embed;
 }
 
-function buildEndedEmbed({ prize, winners, endsAt, hostId, winnerIds, color, imageUrl }) {
+function buildEndedEmbed({ prize, winners, endsAt, hostId, hostAvatarURL, winnerIds, color, imageUrl, giveawayId }) {
   const embed = new EmbedBuilder()
-    .setColor(GREY)
+    .setAuthor({ name: '🎉 GIVEAWAY (ENDED)', iconURL: hostAvatarURL || null })
     .setTitle(prize)
+    .setColor(GREY)
     .addFields(
-      { name: '⏰ Time Remaining', value: 'Ended!',       inline: true },
-      { name: '🎟️ Hosted By',     value: `<@${hostId}>`, inline: true },
+      { name: '🏆 Winners', value: winners.toString(), inline: true },
+      { name: '⏰ Ended',   value: `<t:${endsAt}:R>`, inline: true },
+      { name: '🎟️ Host',   value: `<@${hostId}>`,     inline: true },
       {
-        name: '🏆 Winners',
+        name: '🎊 Winner(s)',
         value: winnerIds?.length
           ? winnerIds.map(id => `<@${id}>`).join('\n')
           : 'No winners — not enough entries.',
       },
     )
-    .setFooter({ text: `🏆 ${winners} winner${winners !== 1 ? 's' : ''} · Ended at` })
+    .setFooter({ text: `ID: ${giveawayId} • Giveaway ended` })
     .setTimestamp(endsAt * 1000);
   if (imageUrl) embed.setImage(imageUrl);
   return embed;
@@ -46,7 +50,7 @@ function buildRow(giveawayId, entryCount, ended = false) {
     new ButtonBuilder()
       .setCustomId(`giveaway_enter_${giveawayId}`)
       .setEmoji('🎉')
-      .setLabel(`Enter  ·  ${entryCount}`)
+      .setLabel(`Enter Giveaway${entryCount > 0 ? ` · ${entryCount}` : ''}`)
       .setStyle(ButtonStyle.Success)
       .setDisabled(ended),
     new ButtonBuilder()
@@ -69,18 +73,23 @@ async function processGiveawayEnd(client, giveaway) {
   const shuffled   = [...entries].sort(() => Math.random() - 0.5);
   const winnerIds  = shuffled.slice(0, winnerCount).map(e => e.user_id);
 
+  const hostUser = await client.users.fetch(giveaway.host_id).catch(() => null);
+  const hostAvatarURL = hostUser?.displayAvatarURL() || null;
+
   // Edit the live giveaway message to show ended state
   if (giveaway.message_id) {
     const msg = await channel.messages.fetch(giveaway.message_id).catch(() => null);
     if (msg) {
       const embed = buildEndedEmbed({
-        prize:     giveaway.prize,
-        winners:   giveaway.winners,
-        endsAt:    giveaway.ends_at,
-        hostId:    giveaway.host_id,
+        prize:          giveaway.prize,
+        winners:        giveaway.winners,
+        endsAt:         giveaway.ends_at,
+        hostId:         giveaway.host_id,
+        hostAvatarURL,
         winnerIds,
-        color:     giveaway.color,
-        imageUrl:  giveaway.image_url,
+        color:          giveaway.color,
+        imageUrl:       giveaway.image_url,
+        giveawayId:     giveaway.id,
       });
       const row = buildRow(giveaway.id, entryCount, true);
       await msg.edit({ embeds: [embed], components: [row] }).catch(() => {});
