@@ -603,21 +603,43 @@ const calc = {
     .setDescription('Evaluate a math expression')
     .addStringOption(o => o.setName('expression').setDescription('Math expression').setRequired(true)),
   async execute(interaction) {
-    const expr = interaction.options.getString('expression');
+    const raw = interaction.options.getString('expression');
     try {
-      const result = Function('"use strict"; const Math = globalThis.Math; return (' + expr + ')')();
-      const embed = new EmbedBuilder()
+      // Normalise common math notation before evaluating
+      let expr = raw
+        .replace(/\^/g, '**')                                        // 2^3 → 2**3
+        .replace(/(\d)\s*\(/g, '$1*(')                               // 2(3+1) → 2*(3+1)
+        .replace(/\b(sin|cos|tan|asin|acos|atan|atan2|sqrt|cbrt|abs|ceil|floor|round|log|log2|log10|pow|exp|max|min|hypot|sign|trunc)\s*\(/gi,
+          (_, fn) => `Math.${fn.toLowerCase()}(`)                    // sqrt( → Math.sqrt(
+        .replace(/\bPI\b/gi, 'Math.PI')                              // PI → Math.PI
+        .replace(/\bE\b/g,   'Math.E');                              // E  → Math.E
+
+      // Whitelist: only allow digits, operators, whitespace, dots, Math identifiers
+      if (!/^[\d\s+\-*/%().,'"`Math\[\]a-zA-Z_]+$/.test(expr))
+        throw new Error('blocked');
+
+      // eslint-disable-next-line no-new-func
+      const result = Function(`'use strict'; return (${expr})`)();
+
+      if (typeof result !== 'number' && typeof result !== 'bigint')
+        throw new Error('non-numeric');
+      if (!isFinite(result))
+        throw new Error(result === Infinity ? 'Result is Infinity' : 'Result is NaN');
+
+      const display = Number.isInteger(result) ? result.toLocaleString() : parseFloat(result.toPrecision(12)).toLocaleString();
+
+      await interaction.reply({ embeds: [new EmbedBuilder()
         .setColor(BLUE)
         .setAuthor({ name: '🧮 Calculator' })
         .addFields(
-          { name: 'Expression', value: `\`${expr}\``, inline: true },
-          { name: 'Result', value: `**${result}**`, inline: true },
+          { name: 'Expression', value: `\`${raw}\``,      inline: true },
+          { name: 'Result',     value: `**${display}**`,  inline: true },
         )
         .setFooter({ text: 'flux bot' })
-        .setTimestamp();
-      await interaction.reply({ embeds: [embed] });
-    } catch {
-      await interaction.reply({ content: '❌ Invalid expression.', ephemeral: true });
+        .setTimestamp()] });
+    } catch (e) {
+      const msg = e.message && !['blocked','non-numeric'].includes(e.message) ? e.message : 'Invalid expression.';
+      await interaction.reply({ content: `❌ ${msg}`, ephemeral: true });
     }
   },
 };
