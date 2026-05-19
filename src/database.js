@@ -153,7 +153,17 @@ db.run(`CREATE TABLE IF NOT EXISTS giveaways (
   max_level INTEGER,
   stay_in_server INTEGER DEFAULT 0,
   color TEXT DEFAULT '#FFD700',
-  voice_channel TEXT
+  voice_channel TEXT,
+  image_url TEXT
+)`);
+
+try { db.run(`ALTER TABLE giveaways ADD COLUMN image_url TEXT`); } catch (_) {}
+
+db.run(`CREATE TABLE IF NOT EXISTS giveaway_entries (
+  giveaway_id INTEGER NOT NULL,
+  user_id TEXT NOT NULL,
+  entered_at INTEGER NOT NULL DEFAULT (strftime('%s','now')),
+  PRIMARY KEY (giveaway_id, user_id)
 )`);
 
 db.run(`CREATE TABLE IF NOT EXISTS sticky_messages (
@@ -701,9 +711,31 @@ function getReactionMessages(guildId) {
 // giveaways
 function createGiveaway(data) {
   return run(
-    'INSERT INTO giveaways (guild_id, channel_id, host_id, prize, winners, ends_at, required_roles, blacklisted_roles, min_level, max_level, stay_in_server, color, voice_channel) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
-    [data.guild_id, data.channel_id, data.host_id, data.prize, data.winners, data.ends_at, data.required_roles || '[]', data.blacklisted_roles || '[]', data.min_level || 0, data.max_level || null, data.stay_in_server || 0, data.color || '#FFD700', data.voice_channel || null]
+    'INSERT INTO giveaways (guild_id, channel_id, host_id, prize, winners, ends_at, required_roles, blacklisted_roles, min_level, max_level, stay_in_server, color, voice_channel, image_url) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+    [data.guild_id, data.channel_id, data.host_id, data.prize, data.winners, data.ends_at, data.required_roles || '[]', data.blacklisted_roles || '[]', data.min_level || 0, data.max_level || null, data.stay_in_server || 0, data.color || '#FFD700', data.voice_channel || null, data.image_url || null]
   );
+}
+
+// giveaway entries
+function addEntry(giveawayId, userId) {
+  return run('INSERT OR IGNORE INTO giveaway_entries (giveaway_id, user_id) VALUES (?, ?)', [giveawayId, userId]);
+}
+
+function removeEntry(giveawayId, userId) {
+  return run('DELETE FROM giveaway_entries WHERE giveaway_id = ? AND user_id = ?', [giveawayId, userId]);
+}
+
+function hasEntry(giveawayId, userId) {
+  return !!get('SELECT 1 FROM giveaway_entries WHERE giveaway_id = ? AND user_id = ?', [giveawayId, userId]);
+}
+
+function getEntries(giveawayId) {
+  return all('SELECT * FROM giveaway_entries WHERE giveaway_id = ?', [giveawayId]);
+}
+
+function getEntryCount(giveawayId) {
+  const row = get('SELECT COUNT(*) AS cnt FROM giveaway_entries WHERE giveaway_id = ?', [giveawayId]);
+  return row?.cnt ?? 0;
 }
 
 function updateGiveawayMessageId(id, messageId) {
@@ -1426,6 +1458,7 @@ module.exports = {
   addReactionMessage, removeReactionMessage, getReactionMessage, getReactionMessages,
   createGiveaway, updateGiveawayMessageId, getGiveaway, getGiveawayByMessage,
   getActiveGiveaways, getExpiredGiveaways, endGiveaway, cancelGiveaway, updateGiveaway,
+  addEntry, removeEntry, hasEntry, getEntries, getEntryCount,
   setStickyMessage, updateStickyLastMessage, getStickiesForChannel, getStickyMessage, removeStickyMessage, removeStickyById, getAllStickyMessages,
   setSnipe, getSnipe, clearSnipe,
   addAlias, removeAlias, getAlias, getAllAliases, removeAllAliases,

@@ -186,10 +186,71 @@ module.exports = (client) => {
           return;
         }
 
-        // Giveaway enter
+        // Giveaway enter / leave toggle
         if (id.startsWith('giveaway_enter_')) {
-          await interaction.reply({ content: '🎉 You have entered the giveaway!', ephemeral: true });
-          return;
+          const gwId = parseInt(id.replace('giveaway_enter_', ''));
+          const giveaway = db.getGiveaway(gwId);
+
+          if (!giveaway || giveaway.ended || giveaway.cancelled) {
+            return interaction.reply({ content: '❌ This giveaway has ended.', ephemeral: true });
+          }
+
+          // Check requirements
+          if (giveaway.required_roles) {
+            const roles = JSON.parse(giveaway.required_roles);
+            if (roles.length > 0) {
+              const member = interaction.member;
+              const hasRole = roles.some(rid => member?.roles?.cache?.has(rid));
+              if (!hasRole) {
+                return interaction.reply({ content: `❌ You need <@&${roles[0]}> to enter this giveaway.`, ephemeral: true });
+              }
+            }
+          }
+
+          if (giveaway.min_level > 0 || giveaway.max_level != null) {
+            const lvl = db.getUserLevel(giveaway.guild_id, interaction.user.id);
+            const userLevel = lvl?.level ?? 0;
+            if (giveaway.min_level > 0 && userLevel < giveaway.min_level) {
+              return interaction.reply({ content: `❌ You need to be at least level **${giveaway.min_level}** to enter.`, ephemeral: true });
+            }
+            if (giveaway.max_level != null && userLevel > giveaway.max_level) {
+              return interaction.reply({ content: `❌ You must be level **${giveaway.max_level}** or below to enter.`, ephemeral: true });
+            }
+          }
+
+          const userId = interaction.user.id;
+          const alreadyIn = db.hasEntry(gwId, userId);
+
+          if (alreadyIn) {
+            db.removeEntry(gwId, userId);
+          } else {
+            db.addEntry(gwId, userId);
+          }
+
+          const newCount = db.getEntryCount(gwId);
+          const { buildRow } = require('../utils/giveawayHelpers');
+          await interaction.message.edit({ components: [buildRow(gwId, newCount, false)] }).catch(() => {});
+
+          return interaction.reply({
+            content: alreadyIn
+              ? '👋 You have left the giveaway.'
+              : '🎉 You\'ve entered the giveaway! Good luck!',
+            ephemeral: true,
+          });
+        }
+
+        // Giveaway participants list
+        if (id.startsWith('giveaway_participants_')) {
+          const gwId = parseInt(id.replace('giveaway_participants_', ''));
+          const entries = db.getEntries(gwId);
+          if (entries.length === 0) {
+            return interaction.reply({ content: '📭 No participants yet.', ephemeral: true });
+          }
+          const list = entries.map(e => `<@${e.user_id}>`).join(', ');
+          return interaction.reply({
+            content: `**👥 Participants (${entries.length}):**\n${list}`,
+            ephemeral: true,
+          });
         }
 
         // Autoping clear confirm
