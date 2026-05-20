@@ -163,6 +163,53 @@ const roleall = {
   }
 };
 
+// ── ,rolegive ────────────────────────────────────────────────────────────────
+// Adds (or removes) a role to/from every member who has a specific source role
+const rolegive = {
+  name: 'rolegive',
+  aliases: ['giverole', 'roleto'],
+  async execute(message, args) {
+    if (!hasPerm(message.member, PermissionFlagsBits.ManageRoles))
+      return message.reply({ embeds: [new EmbedBuilder().setColor(RED).setDescription('❌ You need **Manage Roles** permission.')] });
+
+    // ,rolegive <add|remove> <source role> <target role>
+    const action = args[0]?.toLowerCase();
+    if (!['add', 'remove'].includes(action))
+      return message.reply('Usage: `,rolegive <add/remove> <source role> <target role>`\nExample: `,rolegive add @Members @Verified`');
+
+    const mentioned = [...message.mentions.roles.values()];
+    if (mentioned.length < 2)
+      return message.reply('❌ You need to mention two roles: `,rolegive <add/remove> <source role> <target role>`');
+
+    const [sourceRole, targetRole] = mentioned;
+
+    await message.guild.members.fetch().catch(() => {});
+    const targets = message.guild.members.cache.filter(m => m.roles.cache.has(sourceRole.id));
+
+    if (targets.size === 0)
+      return message.reply({ embeds: [new EmbedBuilder().setColor(YELLOW).setDescription(`⚠️ No members have **${sourceRole.name}**.`)] });
+
+    const msg = await message.reply({
+      embeds: [new EmbedBuilder().setColor(YELLOW).setDescription(
+        `⏳ ${action === 'add' ? 'Adding' : 'Removing'} **${targetRole.name}** ${action === 'add' ? 'to' : 'from'} **${targets.size}** members with **${sourceRole.name}**...`
+      )],
+    });
+
+    let done = 0, failed = 0;
+    for (const [, m] of targets) {
+      const ok = await (action === 'add' ? m.roles.add(targetRole) : m.roles.remove(targetRole)).then(() => true).catch(() => false);
+      ok ? done++ : failed++;
+    }
+
+    return msg.edit({
+      embeds: [new EmbedBuilder().setColor(GREEN).setDescription(
+        `✅ ${action === 'add' ? 'Added' : 'Removed'} **${targetRole.name}** ${action === 'add' ? 'to' : 'from'} **${done}** members with **${sourceRole.name}**` +
+        (failed ? ` (${failed} failed — missing permissions or role hierarchy)` : '.')
+      )],
+    });
+  }
+};
+
 // ── ,rrs ─────────────────────────────────────────────────────────────────────
 const rrs = {
   name: 'rrs',
@@ -215,4 +262,4 @@ const buttonrole = {
   }
 };
 
-module.exports = [role, roles, inrole, roleall, rrs, reactionrole, buttonrole];
+module.exports = [role, roles, inrole, roleall, rolegive, rrs, reactionrole, buttonrole];
