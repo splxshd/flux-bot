@@ -86,14 +86,7 @@ const giveaways = {
 
       const giveaway = db.get('SELECT * FROM giveaways WHERE rowid = last_insert_rowid()');
 
-      const embed = buildActiveEmbed({
-        prize, winners, endsAt,
-        hostId:       interaction.user.id,
-        hostAvatarURL: interaction.user.displayAvatarURL(),
-        color,
-        imageUrl,
-        giveawayId:   giveaway?.id || 0,
-      });
+      const embed = buildActiveEmbed({ prize, winners, endsAt, hostId: interaction.user.id, color, imageUrl });
 
       const row = buildRow(giveaway?.id || 0, 0, false);
 
@@ -154,15 +147,13 @@ const giveaways = {
           const msg = await gChannel.messages.fetch(giveaway.message_id).catch(() => null);
           if (msg) {
             const cancelledEmbed = buildEndedEmbed({
-              prize:          giveaway.prize,
-              winners:        giveaway.winners,
-              endsAt:         giveaway.ends_at,
-              hostId:         giveaway.host_id,
-              hostAvatarURL:  interaction.user.displayAvatarURL(),
-              winnerIds:      [],
-              color:          giveaway.color,
-              imageUrl:       giveaway.image_url,
-              giveawayId:     id,
+              prize:    giveaway.prize,
+              winners:  giveaway.winners,
+              endsAt:   giveaway.ends_at,
+              hostId:   giveaway.host_id,
+              winnerIds: [],
+              color:    giveaway.color,
+              imageUrl: giveaway.image_url,
             });
             const row = buildRow(id, db.getEntryCount(id), true);
             await msg.edit({ embeds: [cancelledEmbed], components: [row] }).catch(() => {});
@@ -255,16 +246,13 @@ const giveaways = {
         if (gChannel && updated) {
           const msg = await gChannel.messages.fetch(giveaway.message_id).catch(() => null);
           if (msg) {
-            const hostUser = await interaction.client.users.fetch(updated.host_id).catch(() => null);
             const newEmbed = buildActiveEmbed({
-              prize:         updated.prize,
-              winners:       updated.winners,
-              endsAt:        updated.ends_at,
-              hostId:        updated.host_id,
-              hostAvatarURL: hostUser?.displayAvatarURL() || null,
-              color:         updated.color,
-              imageUrl:      updated.image_url,
-              giveawayId:    id,
+              prize:    updated.prize,
+              winners:  updated.winners,
+              endsAt:   updated.ends_at,
+              hostId:   updated.host_id,
+              color:    updated.color,
+              imageUrl: updated.image_url,
             });
             await msg.edit({ embeds: [newEmbed] }).catch(() => {});
           }
