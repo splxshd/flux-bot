@@ -136,6 +136,13 @@ db.run(`CREATE TABLE IF NOT EXISTS reaction_messages (
   PRIMARY KEY (guild_id, message_id, emoji)
 )`);
 
+db.run(`CREATE TABLE IF NOT EXISTS channel_autoreact (
+  guild_id TEXT NOT NULL,
+  channel_id TEXT NOT NULL,
+  emoji TEXT NOT NULL,
+  PRIMARY KEY (guild_id, channel_id, emoji)
+)`);
+
 db.run(`CREATE TABLE IF NOT EXISTS giveaways (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   guild_id TEXT NOT NULL,
@@ -689,6 +696,24 @@ function deleteAllReactions(guildId) {
 
 function getReactions(guildId) {
   return all('SELECT * FROM reactions WHERE guild_id = ?', [guildId]);
+}
+
+// channel_autoreact
+function addChannelAutoreact(guildId, channelId, emoji) {
+  return run('INSERT OR IGNORE INTO channel_autoreact (guild_id, channel_id, emoji) VALUES (?, ?, ?)', [guildId, channelId, emoji]);
+}
+
+function removeChannelAutoreact(guildId, channelId, emoji) {
+  if (emoji) return run('DELETE FROM channel_autoreact WHERE guild_id = ? AND channel_id = ? AND emoji = ?', [guildId, channelId, emoji]);
+  return run('DELETE FROM channel_autoreact WHERE guild_id = ? AND channel_id = ?', [guildId, channelId]);
+}
+
+function getChannelAutoreacts(guildId, channelId) {
+  return all('SELECT * FROM channel_autoreact WHERE guild_id = ? AND channel_id = ?', [guildId, channelId]);
+}
+
+function getAllChannelAutoreacts(guildId) {
+  return all('SELECT * FROM channel_autoreact WHERE guild_id = ?', [guildId]);
 }
 
 // reaction_messages
@@ -1455,6 +1480,7 @@ module.exports = {
   addNukeSchedule, getNukeSchedules, removeNukeSchedule,
   addAutoresponder, removeAutoresponder, getAutoresponders, clearAutoresponders,
   addReaction, removeReaction, deleteAllReactions, getReactions,
+  addChannelAutoreact, removeChannelAutoreact, getChannelAutoreacts, getAllChannelAutoreacts,
   addReactionMessage, removeReactionMessage, getReactionMessage, getReactionMessages,
   createGiveaway, updateGiveawayMessageId, getGiveaway, getGiveawayByMessage,
   getActiveGiveaways, getExpiredGiveaways, endGiveaway, cancelGiveaway, updateGiveaway,

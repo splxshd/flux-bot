@@ -340,4 +340,52 @@ const blacktea = {
 
 // poker moved to gambling.js (interactive with real hand evaluation)
 
-module.exports = [lvl, botinfo, whois, nick, timeout_cmd, channelinfo, roleinfo, emoteinfo, permissions_cmd, stats, support, ttt, blacktea];
+// ── ,autoreact ───────────────────────────────────────────────────────────────
+const autoreact = {
+  name: 'autoreact',
+  aliases: ['chanreact', 'channelreact'],
+  async execute(message, args) {
+    if (!message.member.permissions.has(PermissionFlagsBits.ManageChannels))
+      return message.reply({ embeds: [new EmbedBuilder().setColor(RED).setDescription('❌ You need **Manage Channels** permission.')] });
+
+    const sub = args[0]?.toLowerCase();
+
+    // ,autoreact add [#channel] <emoji>
+    if (sub === 'add') {
+      const channel = message.mentions.channels.first() || message.channel;
+      const emoji = message.mentions.channels.first() ? args[2] : args[1];
+      if (!emoji) return message.reply('Usage: `,autoreact add [#channel] <emoji>`');
+      db.addChannelAutoreact(message.guild.id, channel.id, emoji);
+      return message.reply({ embeds: [new EmbedBuilder().setColor(GREEN).setDescription(`✅ Will now auto-react ${emoji} to every message in ${channel}.`)] });
+    }
+
+    // ,autoreact remove [#channel] [emoji]
+    if (sub === 'remove') {
+      const channel = message.mentions.channels.first() || message.channel;
+      const emoji = message.mentions.channels.first() ? args[2] : args[1];
+      db.removeChannelAutoreact(message.guild.id, channel.id, emoji || null);
+      return message.reply({ embeds: [new EmbedBuilder().setColor(GREEN).setDescription(
+        emoji
+          ? `✅ Removed ${emoji} auto-react from ${channel}.`
+          : `✅ Removed all auto-reacts from ${channel}.`
+      )] });
+    }
+
+    // ,autoreact list
+    if (sub === 'list') {
+      const all = db.getAllChannelAutoreacts(message.guild.id);
+      if (!all.length) return message.reply({ embeds: [new EmbedBuilder().setColor(BLUE).setDescription('📭 No channel auto-reacts set.')] });
+      const grouped = {};
+      for (const row of all) {
+        grouped[row.channel_id] = grouped[row.channel_id] || [];
+        grouped[row.channel_id].push(row.emoji);
+      }
+      const desc = Object.entries(grouped).map(([id, emojis]) => `<#${id}> — ${emojis.join('  ')}`).join('\n');
+      return message.reply({ embeds: [new EmbedBuilder().setColor(BLUE).setTitle('Channel Auto-Reacts').setDescription(desc)] });
+    }
+
+    return message.reply('Usage: `,autoreact add [#channel] <emoji>` · `,autoreact remove [#channel] [emoji]` · `,autoreact list`');
+  }
+};
+
+module.exports = [lvl, botinfo, whois, nick, timeout_cmd, channelinfo, roleinfo, emoteinfo, permissions_cmd, stats, support, ttt, blacktea, autoreact];

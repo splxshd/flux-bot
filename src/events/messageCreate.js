@@ -194,12 +194,18 @@ async function handleMessage(client, message) {
       }
     }
 
-    // 5. Auto reactions
+    // 5. Auto reactions (trigger-based)
     const reactions = db.getReactions(guild.id);
     for (const row of reactions) {
       if (message.content.toLowerCase().includes(row.trigger.toLowerCase())) {
         await message.react(row.emoji).catch(() => {});
       }
+    }
+
+    // 5b. Channel auto-react (react to every message in configured channels)
+    const chReacts = db.getChannelAutoreacts(guild.id, message.channel.id);
+    for (const row of chReacts) {
+      await message.react(row.emoji).catch(() => {});
     }
 
     // 6. Sticky messages (repost every STICKY_INTERVAL messages, supports multiple per channel)
