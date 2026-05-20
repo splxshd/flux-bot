@@ -24,7 +24,8 @@ const giveaways = {
       .addIntegerOption(o => o.setName('min_level').setDescription('Minimum level required'))
       .addIntegerOption(o => o.setName('max_level').setDescription('Maximum level allowed'))
       .addBooleanOption(o => o.setName('stay').setDescription('Must stay in server to win'))
-      .addChannelOption(o => o.setName('vc').setDescription('Must be in this voice channel')))
+      .addChannelOption(o => o.setName('vc').setDescription('Must be in this voice channel'))
+      .addUserOption(o => o.setName('host').setDescription('Host of the giveaway (defaults to you)')))
     .addSubcommand(s => s.setName('list').setDescription('List active giveaways'))
     .addSubcommand(s => s.setName('cancel').setDescription('Cancel a giveaway')
       .addIntegerOption(o => o.setName('id').setDescription('Giveaway ID').setRequired(true)))
@@ -62,6 +63,7 @@ const giveaways = {
       const maxLevel     = interaction.options.getInteger('max_level') || null;
       const stay         = interaction.options.getBoolean('stay') || false;
       const vc           = interaction.options.getChannel('vc');
+      const hostUser     = interaction.options.getUser('host') || interaction.user;
 
       const durationMs = parseDuration(durationStr);
       if (!durationMs) return interaction.reply({ content: '❌ Invalid duration.', ephemeral: true });
@@ -71,7 +73,7 @@ const giveaways = {
       db.createGiveaway({
         guild_id:       interaction.guild.id,
         channel_id:     channel.id,
-        host_id:        interaction.user.id,
+        host_id:        hostUser.id,
         prize,
         winners,
         ends_at:        endsAt,
@@ -86,7 +88,7 @@ const giveaways = {
 
       const giveaway = db.get('SELECT * FROM giveaways WHERE rowid = last_insert_rowid()');
 
-      const embed = buildActiveEmbed({ prize, winners, endsAt, hostId: interaction.user.id, color, imageUrl });
+      const embed = buildActiveEmbed({ prize, winners, endsAt, hostId: hostUser.id, color, imageUrl });
 
       const row = buildRow(giveaway?.id || 0, 0, false);
 
