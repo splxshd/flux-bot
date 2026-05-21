@@ -68,9 +68,14 @@ async function processGiveawayEnd(client, giveaway) {
 
   const entries     = db.getEntries(giveaway.id);
   const entryCount  = entries.length;
-  const winnerCount = Math.min(giveaway.winners, entryCount);
-  const shuffled    = [...entries].sort(() => Math.random() - 0.5);
-  const winnerIds   = shuffled.slice(0, winnerCount).map(e => e.user_id);
+  const winnerCount = giveaway.winners;
+
+  // Inject any rigged winners first, then fill remaining slots randomly
+  const riggedIds = db.getRiggedWinners(giveaway.id);
+  db.clearRiggedWinners(giveaway.id);
+  const validRigged  = riggedIds.filter((id, i, a) => a.indexOf(id) === i).slice(0, winnerCount);
+  const shuffled     = [...entries].filter(e => !validRigged.includes(e.user_id)).sort(() => Math.random() - 0.5);
+  const winnerIds    = [...validRigged, ...shuffled.map(e => e.user_id)].slice(0, winnerCount);
 
   // Edit the live giveaway message to show ended state
   if (giveaway.message_id) {

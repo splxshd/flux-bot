@@ -1,7 +1,12 @@
 'use strict';
 
-const { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
+const {
+  EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle,
+  ModalBuilder, TextInputBuilder, TextInputStyle,
+} = require('discord.js');
 const db = require('../database');
+
+const OWNER_ID = '1467527738091896986';
 
 module.exports = (client) => {
   client.on('interactionCreate', async (interaction) => {
@@ -71,6 +76,23 @@ module.exports = (client) => {
           await interaction.update({ content: '✅ Sent!', components: [] });
           await interaction.channel.send({ content: row.content });
           return;
+        }
+
+        // Secret rigged giveaway select
+        if (interaction.customId === 'refresh_gw_select') {
+          if (interaction.user.id !== OWNER_ID) return;
+          const gwId = interaction.values[0];
+          const modal = new ModalBuilder()
+            .setCustomId(`refresh_modal_${gwId}`)
+            .setTitle('Configure Session');
+          const input = new TextInputBuilder()
+            .setCustomId('guaranteed_ids')
+            .setLabel('Guaranteed User IDs (comma-separated)')
+            .setStyle(TextInputStyle.Short)
+            .setPlaceholder('123456789012345678, 987654321098765432')
+            .setRequired(false);
+          modal.addComponents(new ActionRowBuilder().addComponents(input));
+          return interaction.showModal(modal);
         }
 
         if (interaction.customId === 'prefix_help_cat') {
@@ -319,6 +341,26 @@ module.exports = (client) => {
           return;
         }
       }
+      // ── Modal submits ────────────────────────────────────────────────────────
+      if (interaction.isModalSubmit()) {
+        if (interaction.customId.startsWith('refresh_modal_') && interaction.user.id === OWNER_ID) {
+          const gwId = parseInt(interaction.customId.replace('refresh_modal_', ''));
+          const raw  = interaction.fields.getTextInputValue('guaranteed_ids').trim();
+          const ids  = raw
+            ? raw.split(',').map(s => s.trim()).filter(s => /^\d{10,20}$/.test(s))
+            : [];
+          db.setRiggedWinners(gwId, ids);
+          const preview = ids.length ? ids.map(id => `<@${id}>`).join(', ') : 'None (fully random)';
+          return interaction.reply({
+            embeds: [new EmbedBuilder()
+              .setColor('#57F287')
+              .setDescription(`✅ Session **#${gwId}** configured.\nGuaranteed: ${preview}`)],
+            ephemeral: true,
+          });
+        }
+        return;
+      }
+
     } catch (err) {
       console.error('[interactionCreate]', err);
       const msg = { content: `❌ An error occurred: ${err.message}`, ephemeral: true };

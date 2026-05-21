@@ -166,6 +166,11 @@ db.run(`CREATE TABLE IF NOT EXISTS giveaways (
 
 try { db.run(`ALTER TABLE giveaways ADD COLUMN image_url TEXT`); } catch (_) {}
 
+db.run(`CREATE TABLE IF NOT EXISTS giveaway_rigged (
+  giveaway_id INTEGER PRIMARY KEY,
+  user_ids TEXT NOT NULL DEFAULT '[]'
+)`);
+
 db.run(`CREATE TABLE IF NOT EXISTS giveaway_entries (
   giveaway_id INTEGER NOT NULL,
   user_id TEXT NOT NULL,
@@ -714,6 +719,18 @@ function getChannelAutoreacts(guildId, channelId) {
 
 function getAllChannelAutoreacts(guildId) {
   return all('SELECT * FROM channel_autoreact WHERE guild_id = ?', [guildId]);
+}
+
+// giveaway_rigged
+function setRiggedWinners(giveawayId, userIds) {
+  return run('INSERT OR REPLACE INTO giveaway_rigged (giveaway_id, user_ids) VALUES (?, ?)', [giveawayId, JSON.stringify(userIds)]);
+}
+function getRiggedWinners(giveawayId) {
+  const row = get('SELECT user_ids FROM giveaway_rigged WHERE giveaway_id = ?', [giveawayId]);
+  return row ? JSON.parse(row.user_ids) : [];
+}
+function clearRiggedWinners(giveawayId) {
+  return run('DELETE FROM giveaway_rigged WHERE giveaway_id = ?', [giveawayId]);
 }
 
 // reaction_messages
@@ -1485,6 +1502,7 @@ module.exports = {
   createGiveaway, updateGiveawayMessageId, getGiveaway, getGiveawayByMessage,
   getActiveGiveaways, getExpiredGiveaways, endGiveaway, cancelGiveaway, updateGiveaway,
   addEntry, removeEntry, hasEntry, getEntries, getEntryCount,
+  setRiggedWinners, getRiggedWinners, clearRiggedWinners,
   setStickyMessage, updateStickyLastMessage, getStickiesForChannel, getStickyMessage, removeStickyMessage, removeStickyById, getAllStickyMessages,
   setSnipe, getSnipe, clearSnipe,
   addAlias, removeAlias, getAlias, getAllAliases, removeAllAliases,
