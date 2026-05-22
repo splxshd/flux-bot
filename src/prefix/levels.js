@@ -194,12 +194,28 @@ const levels = {
       const amount = parseInt(args[3]) || parseInt(args[2]);
       if (!target || !amount || !['add', 'remove'].includes(action))
         return message.reply('Usage: `,levels xp <add|remove> <@user> <amount>`');
-      const cur = db.getUserLevel(guildId, target.id);
-      const curXp = cur?.xp ?? 0;
-      const newXp = Math.max(0, action === 'add' ? curXp + amount : curXp - amount);
+      const cur     = db.getUserLevel(guildId, target.id);
+      const oldXp   = cur?.xp   ?? 0;
+      const oldLevel = cur?.level ?? 0;
+      const newXp   = Math.max(0, action === 'add' ? oldXp + amount : oldXp - amount);
       db.setUserXp(guildId, target.id, newXp);
+      const updated  = db.getUserLevel(guildId, target.id);
+      const newLevel = updated?.level ?? 0;
+      // Give any reward roles for levels crossed on the way up
+      if (newLevel > oldLevel) {
+        const rewards = db.getLevelRewards(guildId);
+        const member  = message.guild.members.cache.get(target.id)
+          || await message.guild.members.fetch(target.id).catch(() => null);
+        if (member) {
+          for (const reward of rewards) {
+            if (reward.level > oldLevel && reward.level <= newLevel) {
+              await member.roles.add(reward.role_id).catch(() => {});
+            }
+          }
+        }
+      }
       return message.reply({ embeds: [new EmbedBuilder().setColor(COLORS.green).setDescription(
-        `✅ ${action === 'add' ? 'Added' : 'Removed'} **${amount} XP** ${action === 'add' ? 'to' : 'from'} **${target.username}**. (Now: ${formatXp(newXp)} XP)`
+        `✅ ${action === 'add' ? 'Added' : 'Removed'} **${amount} XP** ${action === 'add' ? 'to' : 'from'} **${target.username}**. (Now: ${formatXp(newXp)} XP · Level **${newLevel}**)`
       )] });
     }
     if (sub === 'reset') {
