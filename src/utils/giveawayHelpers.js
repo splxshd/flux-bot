@@ -7,7 +7,8 @@ const GOLD = '#FFD700';
 const GREY = '#2b2d31';
 const RED  = '#ED4245';
 
-function buildActiveEmbed({ prize, winners, endsAt, hostId, color, imageUrl }) {
+function buildActiveEmbed({ prize, winners, endsAt, hostId, color, imageUrl, minInvites }) {
+  const reqLine = minInvites > 0 ? `\n📨 Requires: **${minInvites} invite${minInvites !== 1 ? 's' : ''}**` : '';
   const embed = new EmbedBuilder()
     .setTitle(prize)
     .setColor(color || GOLD)
@@ -15,7 +16,8 @@ function buildActiveEmbed({ prize, winners, endsAt, hostId, color, imageUrl }) {
       `Click 🎉 button to enter!\n` +
       `Winners: ${winners}\n` +
       `Hosted by: <@${hostId}>\n` +
-      `Ends in: <t:${endsAt}:R>`
+      `Ends in: <t:${endsAt}:R>` +
+      reqLine
     )
     .setFooter({ text: 'Ends at •' })
     .setTimestamp(endsAt * 1000);

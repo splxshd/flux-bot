@@ -171,6 +171,15 @@ db.run(`CREATE TABLE IF NOT EXISTS giveaway_rigged (
   user_ids TEXT NOT NULL DEFAULT '[]'
 )`);
 
+db.run(`CREATE TABLE IF NOT EXISTS invite_tracking (
+  guild_id TEXT NOT NULL,
+  user_id  TEXT NOT NULL,
+  invites  INTEGER NOT NULL DEFAULT 0,
+  PRIMARY KEY (guild_id, user_id)
+)`);
+
+try { db.run(`ALTER TABLE giveaways ADD COLUMN min_invites INTEGER DEFAULT 0`); } catch (_) {}
+
 db.run(`CREATE TABLE IF NOT EXISTS giveaway_entries (
   giveaway_id INTEGER NOT NULL,
   user_id TEXT NOT NULL,
@@ -1480,6 +1489,25 @@ function removeLevelReward(guildId, level) {
   run('DELETE FROM level_rewards WHERE guild_id=? AND level=?', [guildId, level]);
 }
 
+// ── invite_tracking ───────────────────────────────────────────────────────────
+function incrementInvites(guildId, userId, amount = 1) {
+  run('INSERT OR IGNORE INTO invite_tracking (guild_id, user_id, invites) VALUES (?, ?, 0)', [guildId, userId]);
+  run('UPDATE invite_tracking SET invites = invites + ? WHERE guild_id = ? AND user_id = ?', [amount, guildId, userId]);
+}
+function setInvites(guildId, userId, amount) {
+  run('INSERT OR IGNORE INTO invite_tracking (guild_id, user_id, invites) VALUES (?, ?, 0)', [guildId, userId]);
+  run('UPDATE invite_tracking SET invites = ? WHERE guild_id = ? AND user_id = ?', [amount, guildId, userId]);
+}
+function getInvites(guildId, userId) {
+  return get('SELECT invites FROM invite_tracking WHERE guild_id = ? AND user_id = ?', [guildId, userId])?.invites ?? 0;
+}
+function getInviteLeaderboard(guildId, limit = 10) {
+  return all('SELECT user_id, invites FROM invite_tracking WHERE guild_id = ? ORDER BY invites DESC LIMIT ?', [guildId, limit]);
+}
+function resetInvites(guildId, userId) {
+  run('DELETE FROM invite_tracking WHERE guild_id = ? AND user_id = ?', [guildId, userId]);
+}
+
 module.exports = {
   db,
   get, all, run,
@@ -1503,6 +1531,7 @@ module.exports = {
   getActiveGiveaways, getExpiredGiveaways, endGiveaway, cancelGiveaway, updateGiveaway,
   addEntry, removeEntry, hasEntry, getEntries, getEntryCount,
   setRiggedWinners, getRiggedWinners, clearRiggedWinners,
+  incrementInvites, setInvites, getInvites, getInviteLeaderboard, resetInvites,
   setStickyMessage, updateStickyLastMessage, getStickiesForChannel, getStickyMessage, removeStickyMessage, removeStickyById, getAllStickyMessages,
   setSnipe, getSnipe, clearSnipe,
   addAlias, removeAlias, getAlias, getAllAliases, removeAllAliases,

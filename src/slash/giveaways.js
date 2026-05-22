@@ -25,7 +25,8 @@ const giveaways = {
       .addIntegerOption(o => o.setName('max_level').setDescription('Maximum level allowed'))
       .addBooleanOption(o => o.setName('stay').setDescription('Must stay in server to win'))
       .addChannelOption(o => o.setName('vc').setDescription('Must be in this voice channel'))
-      .addUserOption(o => o.setName('host').setDescription('Host of the giveaway (defaults to you)')))
+      .addUserOption(o => o.setName('host').setDescription('Host of the giveaway (defaults to you)'))
+      .addIntegerOption(o => o.setName('min_invites').setDescription('Minimum invites required to enter').setMinValue(1)))
     .addSubcommand(s => s.setName('list').setDescription('List active giveaways'))
     .addSubcommand(s => s.setName('cancel').setDescription('Cancel a giveaway')
       .addIntegerOption(o => o.setName('id').setDescription('Giveaway ID').setRequired(true)))
@@ -64,6 +65,7 @@ const giveaways = {
       const stay         = interaction.options.getBoolean('stay') || false;
       const vc           = interaction.options.getChannel('vc');
       const hostUser     = interaction.options.getUser('host') || interaction.user;
+      const minInvites   = interaction.options.getInteger('min_invites') || 0;
 
       const durationMs = parseDuration(durationStr);
       if (!durationMs) return interaction.reply({ content: '❌ Invalid duration.', ephemeral: true });
@@ -84,11 +86,12 @@ const giveaways = {
         color,
         voice_channel:  vc?.id || null,
         image_url:      imageUrl,
+        min_invites:    minInvites,
       });
 
       const giveaway = db.get('SELECT * FROM giveaways WHERE rowid = last_insert_rowid()');
 
-      const embed = buildActiveEmbed({ prize, winners, endsAt, hostId: hostUser.id, color, imageUrl });
+      const embed = buildActiveEmbed({ prize, winners, endsAt, hostId: hostUser.id, color, imageUrl, minInvites });
 
       const row = buildRow(giveaway?.id || 0, 0, false);
 
@@ -104,6 +107,7 @@ const giveaways = {
           { name: '📍 Channel', value: `${channel}`,                  inline: true },
           { name: '⏰ Duration', value: formatDuration(durationMs),   inline: true },
           { name: '🆔 ID',       value: `${giveaway?.id || '?'}`,     inline: true },
+          ...(minInvites > 0 ? [{ name: '📨 Min Invites', value: `${minInvites}`, inline: true }] : []),
         )
         .setFooter({ text: 'flux bot' })
         .setTimestamp();
@@ -249,12 +253,13 @@ const giveaways = {
           const msg = await gChannel.messages.fetch(giveaway.message_id).catch(() => null);
           if (msg) {
             const newEmbed = buildActiveEmbed({
-              prize:    updated.prize,
-              winners:  updated.winners,
-              endsAt:   updated.ends_at,
-              hostId:   updated.host_id,
-              color:    updated.color,
-              imageUrl: updated.image_url,
+              prize:      updated.prize,
+              winners:    updated.winners,
+              endsAt:     updated.ends_at,
+              hostId:     updated.host_id,
+              color:      updated.color,
+              imageUrl:   updated.image_url,
+              minInvites: updated.min_invites || 0,
             });
             await msg.edit({ embeds: [newEmbed] }).catch(() => {});
           }

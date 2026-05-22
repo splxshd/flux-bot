@@ -11,6 +11,22 @@ module.exports = (client) => {
   client.on('guildMemberAdd', async (member) => {
     const guild = member.guild;
 
+    // 0. Invite tracking — detect which invite was used and credit the inviter
+    try {
+      const newInvites = await guild.invites.fetch();
+      const cachedInvites = client.inviteCache?.get(guild.id) || new Map();
+      const usedInvite = newInvites.find(inv => {
+        const prev = cachedInvites.get(inv.code);
+        return prev !== undefined && inv.uses > prev;
+      });
+      // Refresh cache with latest counts
+      if (!client.inviteCache) client.inviteCache = new Map();
+      client.inviteCache.set(guild.id, new Map(newInvites.map(i => [i.code, i.uses])));
+      if (usedInvite?.inviter) {
+        db.incrementInvites(guild.id, usedInvite.inviter.id);
+      }
+    } catch (_) {}
+
     // 1. Autoping
     const autopings = db.getAutopings(guild.id).filter(a => a.enabled);
     for (const ap of autopings) {

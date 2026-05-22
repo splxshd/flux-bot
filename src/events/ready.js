@@ -4,9 +4,18 @@ const db = require('../database');
 const { processGiveawayEnd } = require('../utils/giveawayHelpers');
 
 module.exports = (client) => {
-  client.once('ready', () => {
+  client.once('ready', async () => {
     console.log(`[flux] Logged in as ${client.user.tag}`);
     client.user.setPresence({ activities: [{ name: '/help' }], status: 'online' });
+
+    // Seed invite cache for all guilds
+    client.inviteCache = new Map();
+    for (const [, guild] of client.guilds.cache) {
+      try {
+        const invites = await guild.invites.fetch();
+        client.inviteCache.set(guild.id, new Map(invites.map(i => [i.code, i.uses])));
+      } catch (_) {}
+    }
 
     // Check for expired giveaways every 30 seconds
     setInterval(async () => {

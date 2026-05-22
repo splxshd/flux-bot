@@ -240,6 +240,17 @@ module.exports = (client) => {
             }
           }
 
+          // Check invite requirement
+          if (giveaway.min_invites > 0) {
+            const userInvites = db.getInvites(giveaway.guild_id, interaction.user.id);
+            if (userInvites < giveaway.min_invites) {
+              return interaction.reply({
+                content: `❌ You need at least **${giveaway.min_invites} invite${giveaway.min_invites !== 1 ? 's' : ''}** to enter. You currently have **${userInvites}**.`,
+                ephemeral: true,
+              });
+            }
+          }
+
           const userId = interaction.user.id;
           const alreadyIn = db.hasEntry(gwId, userId);
 
