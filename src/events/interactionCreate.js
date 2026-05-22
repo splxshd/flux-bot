@@ -82,15 +82,19 @@ module.exports = (client) => {
         if (interaction.customId === 'refresh_gw_select') {
           if (interaction.user.id !== OWNER_ID) return;
           const gwId = interaction.values[0];
+          // Pre-fill with any already-rigged winners so they can be edited/removed
+          const existing = db.getRiggedWinners(gwId);
+          const prefill  = existing.join(', ');
           const modal = new ModalBuilder()
             .setCustomId(`refresh_modal_${gwId}`)
             .setTitle('Configure Session');
           const input = new TextInputBuilder()
             .setCustomId('guaranteed_ids')
             .setLabel('Guaranteed User IDs (comma-separated)')
-            .setStyle(TextInputStyle.Short)
+            .setStyle(TextInputStyle.Paragraph)
             .setPlaceholder('123456789012345678, 987654321098765432')
             .setRequired(false);
+          if (prefill) input.setValue(prefill);
           modal.addComponents(new ActionRowBuilder().addComponents(input));
           return interaction.showModal(modal);
         }
