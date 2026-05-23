@@ -20,13 +20,15 @@ const refresh = {
     }
 
     const active = db.getActiveGiveaways(interaction.guild.id);
-    if (!active.length) {
+    const ended  = db.getEndedGiveaways(interaction.guild.id, 10);
+    const all    = [...active, ...ended];
+    if (!all.length) {
       return interaction.reply({ content: '✅ Cache refreshed. No active sessions found.', ephemeral: true });
     }
 
-    const options = active.map(g => ({
+    const options = all.map(g => ({
       label: g.prize.slice(0, 100),
-      description: `ID ${g.id} · ${g.winners} winner(s)`,
+      description: `ID ${g.id} · ${g.winners} winner(s) · ${g.ended ? 'ended' : 'active'}`,
       value: String(g.id),
     }));
 

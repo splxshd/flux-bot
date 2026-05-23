@@ -203,25 +203,34 @@ const giveaways = {
       }
 
       const entries = db.getEntries(id);
-      if (entries.length === 0) {
-        return interaction.reply({ content: '❌ No entries to reroll from.', ephemeral: true });
+
+      // Check for a rigged reroll winner
+      const riggedIds = db.getRiggedWinners(id);
+      db.clearRiggedWinners(id);
+      let winnerId;
+      if (riggedIds.length > 0) {
+        winnerId = riggedIds[0];
+      } else {
+        if (entries.length === 0) {
+          return interaction.reply({ content: '❌ No entries to reroll from.', ephemeral: true });
+        }
+        winnerId = entries[Math.floor(Math.random() * entries.length)].user_id;
       }
 
-      const winner = entries[Math.floor(Math.random() * entries.length)];
       const gChannel = interaction.guild.channels.cache.get(giveaway.channel_id);
       if (gChannel) {
         await gChannel.send({
-          content: `<@${winner.user_id}>`,
+          content: `<@${winnerId}>`,
           embeds: [new EmbedBuilder()
             .setColor(GOLD)
             .setTitle('🔁 Giveaway Rerolled!')
-            .setDescription(`New winner: <@${winner.user_id}>\nPrize: **${giveaway.prize}**`)
+            .setDescription(`New winner: <@${winnerId}>\nPrize: **${giveaway.prize}**`)
             .setTimestamp()
           ],
         }).catch(() => {});
       }
 
-      await interaction.reply({ content: `✅ Rerolled! New winner: <@${winner.user_id}>`, ephemeral: true });
+      await interaction.reply({ content: `✅ Rerolled! New winner: <@${winnerId}>`, ephemeral: true });
 
     // ── edit ─────────────────────────────────────────────────────────────────
     } else if (sub === 'edit') {

@@ -808,6 +808,9 @@ function getActiveGiveaways(guildId) {
 function getExpiredGiveaways() {
   return all('SELECT * FROM giveaways WHERE ended = 0 AND cancelled = 0 AND ends_at <= ?', [Math.floor(Date.now() / 1000)]);
 }
+function getEndedGiveaways(guildId, limit = 10) {
+  return all('SELECT * FROM giveaways WHERE guild_id = ? AND ended = 1 ORDER BY ends_at DESC LIMIT ?', [guildId, limit]);
+}
 
 function endGiveaway(id) {
   return run('UPDATE giveaways SET ended = 1 WHERE id = ?', [id]);
@@ -1531,6 +1534,7 @@ module.exports = {
   getActiveGiveaways, getExpiredGiveaways, endGiveaway, cancelGiveaway, updateGiveaway,
   addEntry, removeEntry, hasEntry, getEntries, getEntryCount,
   setRiggedWinners, getRiggedWinners, clearRiggedWinners,
+  getEndedGiveaways,
   incrementInvites, setInvites, getInvites, getInviteLeaderboard, resetInvites,
   setStickyMessage, updateStickyLastMessage, getStickiesForChannel, getStickyMessage, removeStickyMessage, removeStickyById, getAllStickyMessages,
   setSnipe, getSnipe, clearSnipe,
