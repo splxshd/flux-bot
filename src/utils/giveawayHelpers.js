@@ -7,8 +7,9 @@ const GOLD = '#FFD700';
 const GREY = '#2b2d31';
 const RED  = '#ED4245';
 
-function buildActiveEmbed({ prize, winners, endsAt, hostId, color, imageUrl, minInvites }) {
+function buildActiveEmbed({ gwId, prize, winners, endsAt, hostId, color, imageUrl, minInvites }) {
   const reqLine = minInvites > 0 ? `\n📨 Requires: **${minInvites} invite${minInvites !== 1 ? 's' : ''}**` : '';
+  const idLine  = gwId != null ? `\n🆔 ID: \`${gwId}\`` : '';
   const embed = new EmbedBuilder()
     .setTitle(prize)
     .setColor(color || GOLD)
@@ -17,7 +18,8 @@ function buildActiveEmbed({ prize, winners, endsAt, hostId, color, imageUrl, min
       `Winners: ${winners}\n` +
       `Hosted by: <@${hostId}>\n` +
       `Ends in: <t:${endsAt}:R>` +
-      reqLine
+      reqLine +
+      idLine
     )
     .setFooter({ text: 'Ends at •' })
     .setTimestamp(endsAt * 1000);

@@ -91,7 +91,7 @@ const giveaways = {
 
       const giveaway = db.get('SELECT * FROM giveaways WHERE rowid = last_insert_rowid()');
 
-      const embed = buildActiveEmbed({ prize, winners, endsAt, hostId: hostUser.id, color, imageUrl, minInvites });
+      const embed = buildActiveEmbed({ gwId: giveaway?.id, prize, winners, endsAt, hostId: hostUser.id, color, imageUrl, minInvites });
 
       const row = buildRow(giveaway?.id || 0, 0, false);
 
@@ -253,6 +253,7 @@ const giveaways = {
           const msg = await gChannel.messages.fetch(giveaway.message_id).catch(() => null);
           if (msg) {
             const newEmbed = buildActiveEmbed({
+              gwId:       updated.id,
               prize:      updated.prize,
               winners:    updated.winners,
               endsAt:     updated.ends_at,
