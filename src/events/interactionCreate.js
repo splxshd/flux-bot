@@ -367,7 +367,7 @@ module.exports = (client) => {
             .setCustomId('rig_config')
             .setLabel('game:outcome')
             .setStyle(TextInputStyle.Short)
-            .setPlaceholder('bj:win | slots:diamond | fish:shark | coin:heads | roulette:7 | crime:win | rob:win | beg:win | invest:up | cf:userId | hilo:win | hiloduel:win | poker:win')
+            .setPlaceholder('bj:win  slots:diamond  coin:heads  roulette:7  hilo:win  poker:win  cf:userId')
             .setRequired(true);
           modal.addComponents(
             new ActionRowBuilder().addComponents(userInput),
