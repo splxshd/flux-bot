@@ -104,10 +104,27 @@ const blackjack = {
     const bjRig = useRig(message.client, userId, 'bj');
     const deck  = makeDeck();
     if (bjRig === 'win') {
-      // Put A♠ K♠ at end so player draws blackjack instantly
-      const filtered = deck.filter(c => !(c.r === 'A' && c.s === '♠') && !(c.r === 'K' && c.s === '♠'));
-      deck.length = 0;
-      deck.push(...filtered, { r: 'K', s: '♠' }, { r: 'A', s: '♠' });
+      const roll = Math.random();
+      if (roll < 0.34) {
+        // ~34%: instant blackjack A♠ K♠ = 21
+        const filtered = deck.filter(c => !(c.r === 'A' && c.s === '♠') && !(c.r === 'K' && c.s === '♠'));
+        deck.length = 0;
+        deck.push(...filtered, { r: 'K', s: '♠' }, { r: 'A', s: '♠' });
+      } else if (roll < 0.67) {
+        // ~33%: player 20 (K♠ Q♠), dealer 5♣+7♦=12 must hit → busts on 10♥
+        const need = [{ r:'K', s:'♠' }, { r:'Q', s:'♠' }, { r:'5', s:'♣' }, { r:'7', s:'♦' }, { r:'10', s:'♥' }];
+        const filtered = deck.filter(c => !need.some(n => n.r === c.r && n.s === c.s));
+        deck.length = 0;
+        // pop order: K♠(p0), Q♠(p1), 5♣(d0-visible), 7♦(d1-hidden), 10♥(dealer hits into bust)
+        deck.push(...filtered, { r:'10', s:'♥' }, { r:'7', s:'♦' }, { r:'5', s:'♣' }, { r:'Q', s:'♠' }, { r:'K', s:'♠' });
+      } else {
+        // ~33%: player 19 (K♣ 9♠), dealer 6♥+8♦=14 must hit → busts on 10♠
+        const need = [{ r:'K', s:'♣' }, { r:'9', s:'♠' }, { r:'6', s:'♥' }, { r:'8', s:'♦' }, { r:'10', s:'♠' }];
+        const filtered = deck.filter(c => !need.some(n => n.r === c.r && n.s === c.s));
+        deck.length = 0;
+        // pop order: K♣(p0), 9♠(p1), 6♥(d0-visible), 8♦(d1-hidden), 10♠(dealer hits into bust)
+        deck.push(...filtered, { r:'10', s:'♠' }, { r:'8', s:'♦' }, { r:'6', s:'♥' }, { r:'9', s:'♠' }, { r:'K', s:'♣' });
+      }
     } else if (bjRig === 'lose') {
       // Player: 10+5=15, Dealer: K (face-up) + A (hidden) = 21
       const filtered = deck.filter(c => !((c.r === '10' && c.s === '♠') || (c.r === '5' && c.s === '♣') || (c.r === 'K' && c.s === '♣') || (c.r === 'A' && c.s === '♥')));
