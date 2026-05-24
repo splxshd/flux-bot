@@ -5,6 +5,7 @@ const {
   ModalBuilder, TextInputBuilder, TextInputStyle,
 } = require('discord.js');
 const db = require('../database');
+const { buildBetEmbed, buildBetRow, refreshBetMessage, fmtCoins } = require('../utils/betHelpers');
 
 const OWNER_ID = '1467527738091896986';
 
@@ -376,6 +377,54 @@ module.exports = (client) => {
           return interaction.showModal(modal);
         }
 
+        // ── Bet: place button → modal ──────────────────────────────────────────
+        if (id.startsWith('bet_place_')) {
+          const [, , betId, optIdx] = id.split('_');
+          const bet = db.getBet(parseInt(betId));
+          if (!bet || bet.status !== 'open')
+            return interaction.reply({ content: '❌ This bet is no longer open.', ephemeral: true });
+
+          const options   = JSON.parse(bet.options_json);
+          const existing  = db.getUserBetEntry(parseInt(betId), interaction.user.id);
+          const optName   = options[parseInt(optIdx)];
+          const s         = db.getEcoSettings(bet.guild_id);
+          const eco       = db.getEco(bet.guild_id, interaction.user.id);
+
+          const modal = new ModalBuilder()
+            .setCustomId(`bet_modal_${betId}_${optIdx}`)
+            .setTitle(`Bet on: ${optName.slice(0, 40)}`);
+          const amtInput = new TextInputBuilder()
+            .setCustomId('bet_amount')
+            .setLabel(`Amount (you have ${fmtCoins(eco.wallet)} ${s.currency_emoji})`)
+            .setStyle(TextInputStyle.Short)
+            .setPlaceholder('e.g. 500')
+            .setRequired(true);
+          if (existing) amtInput.setValue(String(existing.amount));
+          modal.addComponents(new ActionRowBuilder().addComponents(amtInput));
+          return interaction.showModal(modal);
+        }
+
+        // ── Bet: remove entry ──────────────────────────────────────────────────
+        if (id.startsWith('bet_remove_')) {
+          const betId  = parseInt(id.replace('bet_remove_', ''));
+          const bet    = db.getBet(betId);
+          if (!bet || bet.status !== 'open')
+            return interaction.reply({ content: '❌ Bets can only be removed while the bet is open.', ephemeral: true });
+
+          const entry = db.getUserBetEntry(betId, interaction.user.id);
+          if (!entry)
+            return interaction.reply({ content: "❌ You don't have a bet on this.", ephemeral: true });
+
+          const s = db.getEcoSettings(bet.guild_id);
+          db.addWallet(bet.guild_id, interaction.user.id, entry.amount);
+          db.removeBetEntry(betId, interaction.user.id);
+          await refreshBetMessage(interaction.client, db.getBet(betId), s);
+          return interaction.reply({
+            content: `✅ Bet removed — **${fmtCoins(entry.amount)} ${s.currency_emoji}** refunded to your wallet.`,
+            ephemeral: true,
+          });
+        }
+
         if (id === 'nuke_cancel') {
           await interaction.update({ embeds: [new EmbedBuilder().setColor('#FEE75C').setDescription('❌ Nuke cancelled.')], components: [] });
           return;
@@ -399,6 +448,50 @@ module.exports = (client) => {
             embeds: [new EmbedBuilder()
               .setColor('#57F287')
               .setDescription(`✅ Rig set for <@${userId}>: \`${game}:${outcome}\`\nConsumed on next use.`)],
+            ephemeral: true,
+          });
+        }
+
+        // Bet modal submit — place / replace bet
+        if (interaction.customId.startsWith('bet_modal_')) {
+          const parts   = interaction.customId.split('_'); // ['bet','modal', betId, optIdx]
+          const betId   = parseInt(parts[2]);
+          const optIdx  = parseInt(parts[3]);
+          const bet     = db.getBet(betId);
+
+          if (!bet || bet.status !== 'open')
+            return interaction.reply({ content: '❌ This bet is no longer accepting entries.', ephemeral: true });
+
+          const raw = interaction.fields.getTextInputValue('bet_amount').trim().replace(/,/g, '');
+          const amt = parseInt(raw);
+          if (isNaN(amt) || amt < 1)
+            return interaction.reply({ content: '❌ Enter a valid amount (minimum 1).', ephemeral: true });
+
+          const s   = db.getEcoSettings(bet.guild_id);
+          const eco = db.getEco(bet.guild_id, interaction.user.id);
+
+          // Refund existing bet first (if changing)
+          const existing = db.getUserBetEntry(betId, interaction.user.id);
+          const refund   = existing ? existing.amount : 0;
+          const needed   = amt - refund;
+
+          if (eco.wallet < needed)
+            return interaction.reply({
+              content: `❌ Not enough ${s.currency_emoji}. You need **${fmtCoins(needed)}** more (have **${fmtCoins(eco.wallet)}**).`,
+              ephemeral: true,
+            });
+
+          // Deduct new bet (net of any refund)
+          if (needed > 0) db.addWallet(bet.guild_id, interaction.user.id, -needed);
+          else if (needed < 0) db.addWallet(bet.guild_id, interaction.user.id, -needed); // refund difference
+
+          db.addBetEntry(betId, interaction.user.id, optIdx, amt);
+
+          const options = JSON.parse(bet.options_json);
+          await refreshBetMessage(interaction.client, db.getBet(betId), s);
+          return interaction.reply({
+            content: `✅ Bet placed — **${fmtCoins(amt)} ${s.currency_emoji}** on **${options[optIdx]}**!` +
+              (existing && existing.option_index !== optIdx ? ` (changed from **${options[existing.option_index]}**)` : ''),
             ephemeral: true,
           });
         }

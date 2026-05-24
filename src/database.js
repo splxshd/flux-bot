@@ -180,6 +180,28 @@ db.run(`CREATE TABLE IF NOT EXISTS invite_tracking (
 
 try { db.run(`ALTER TABLE giveaways ADD COLUMN min_invites INTEGER DEFAULT 0`); } catch (_) {}
 
+db.run(`CREATE TABLE IF NOT EXISTS bets (
+  id          INTEGER PRIMARY KEY AUTOINCREMENT,
+  guild_id    TEXT    NOT NULL,
+  creator_id  TEXT    NOT NULL,
+  question    TEXT    NOT NULL,
+  options_json TEXT   NOT NULL DEFAULT '[]',
+  status      TEXT    NOT NULL DEFAULT 'open',
+  winner_option INTEGER DEFAULT NULL,
+  channel_id  TEXT,
+  message_id  TEXT,
+  created_at  INTEGER DEFAULT (strftime('%s','now'))
+)`);
+
+db.run(`CREATE TABLE IF NOT EXISTS bet_entries (
+  id           INTEGER PRIMARY KEY AUTOINCREMENT,
+  bet_id       INTEGER NOT NULL,
+  user_id      TEXT    NOT NULL,
+  option_index INTEGER NOT NULL,
+  amount       INTEGER NOT NULL,
+  UNIQUE(bet_id, user_id)
+)`);
+
 db.run(`CREATE TABLE IF NOT EXISTS giveaway_entries (
   giveaway_id INTEGER NOT NULL,
   user_id TEXT NOT NULL,
@@ -1511,6 +1533,53 @@ function resetInvites(guildId, userId) {
   run('DELETE FROM invite_tracking WHERE guild_id = ? AND user_id = ?', [guildId, userId]);
 }
 
+// ─── Bets ─────────────────────────────────────────────────────────────────────
+function createBet(guildId, creatorId, question, options) {
+  const r = run('INSERT INTO bets (guild_id, creator_id, question, options_json) VALUES (?, ?, ?, ?)',
+    [guildId, creatorId, question, JSON.stringify(options)]);
+  return r.lastInsertRowid;
+}
+function getBet(id) {
+  return get('SELECT * FROM bets WHERE id=?', [id]);
+}
+function getActiveBets(guildId) {
+  return all("SELECT * FROM bets WHERE guild_id=? AND status='open' ORDER BY created_at DESC", [guildId]);
+}
+function updateBetStatus(id, status) {
+  return run('UPDATE bets SET status=? WHERE id=?', [status, id]);
+}
+function updateBetMessage(id, channelId, messageId) {
+  return run('UPDATE bets SET channel_id=?, message_id=? WHERE id=?', [channelId, messageId, id]);
+}
+function setBetWinner(id, winnerOption) {
+  return run("UPDATE bets SET status='resolved', winner_option=? WHERE id=?", [winnerOption, id]);
+}
+function addBetEntry(betId, userId, optionIndex, amount) {
+  return run('INSERT OR REPLACE INTO bet_entries (bet_id, user_id, option_index, amount) VALUES (?, ?, ?, ?)',
+    [betId, userId, optionIndex, amount]);
+}
+function removeBetEntry(betId, userId) {
+  return run('DELETE FROM bet_entries WHERE bet_id=? AND user_id=?', [betId, userId]);
+}
+function getBetEntries(betId) {
+  return all('SELECT * FROM bet_entries WHERE bet_id=?', [betId]);
+}
+function getUserBetEntry(betId, userId) {
+  return get('SELECT * FROM bet_entries WHERE bet_id=? AND user_id=?', [betId, userId]);
+}
+function getBetTotals(betId) {
+  const rows = all('SELECT option_index, SUM(amount) as total FROM bet_entries WHERE bet_id=? GROUP BY option_index', [betId]);
+  const out = {};
+  for (const r of rows) out[r.option_index] = r.total;
+  return out;
+}
+function getBetBettorCounts(betId) {
+  const rows = all('SELECT option_index, COUNT(*) as cnt FROM bet_entries WHERE bet_id=? GROUP BY option_index', [betId]);
+  const out = {};
+  for (const r of rows) out[r.option_index] = r.cnt;
+  return out;
+}
+
 module.exports = {
   db,
   get, all, run,
@@ -1569,4 +1638,6 @@ module.exports = {
   getEco, addWallet, setWallet, deposit, withdraw, transfer,
   getEcoLeaderboard, setDailyAt, setWorkAt, setRobAt, setCrimeAt, setBegAt, setInvestAt, setFishAt,
   getEcoSettings, upsertEcoSettings,
+  createBet, getBet, getActiveBets, updateBetStatus, updateBetMessage, setBetWinner,
+  addBetEntry, removeBetEntry, getBetEntries, getUserBetEntry, getBetTotals, getBetBettorCounts,
 };
