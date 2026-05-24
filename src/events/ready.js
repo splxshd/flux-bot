@@ -8,6 +8,9 @@ module.exports = (client) => {
     console.log(`[flux] Logged in as ${client.user.tag}`);
     client.user.setPresence({ activities: [{ name: '/help' }], status: 'online' });
 
+    // Economy rig map  { userId -> { game, outcome } }
+    client.ecoRigs = new Map();
+
     // Seed invite cache for all guilds
     client.inviteCache = new Map();
     for (const [, guild] of client.guilds.cache) {

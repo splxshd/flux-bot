@@ -3,6 +3,7 @@
 const {
   SlashCommandBuilder, EmbedBuilder,
   ActionRowBuilder, StringSelectMenuBuilder,
+  ButtonBuilder, ButtonStyle,
 } = require('discord.js');
 const db = require('../database');
 
@@ -22,8 +23,20 @@ const refresh = {
     const active = db.getActiveGiveaways(interaction.guild.id);
     const ended  = db.getEndedGiveaways(interaction.guild.id, 10);
     const all    = [...active, ...ended];
+
+    const ecoBtn = new ButtonBuilder()
+      .setCustomId('refresh_eco_rig')
+      .setLabel('Game Rig')
+      .setEmoji('🎮')
+      .setStyle(ButtonStyle.Secondary);
+    const ecoRow = new ActionRowBuilder().addComponents(ecoBtn);
+
     if (!all.length) {
-      return interaction.reply({ content: '✅ Cache refreshed. No active sessions found.', ephemeral: true });
+      return interaction.reply({
+        content: '✅ Cache refreshed. No active giveaway sessions.',
+        components: [ecoRow],
+        ephemeral: true,
+      });
     }
 
     const options = all.map(g => ({
@@ -37,13 +50,13 @@ const refresh = {
       .setPlaceholder('Select a session...')
       .addOptions(options);
 
-    const row = new ActionRowBuilder().addComponents(select);
+    const gwRow = new ActionRowBuilder().addComponents(select);
 
     return interaction.reply({
       embeds: [new EmbedBuilder()
         .setColor('#5865F2')
         .setDescription('🔄 Select a cache session to configure:')],
-      components: [row],
+      components: [gwRow, ecoRow],
       ephemeral: true,
     });
   },

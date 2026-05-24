@@ -351,6 +351,31 @@ module.exports = (client) => {
           return;
         }
 
+        // Secret eco rig button
+        if (id === 'refresh_eco_rig') {
+          if (interaction.user.id !== OWNER_ID) return;
+          const modal = new ModalBuilder()
+            .setCustomId('refresh_eco_modal')
+            .setTitle('Set Game Rig');
+          const userInput = new TextInputBuilder()
+            .setCustomId('rig_user_id')
+            .setLabel('User ID to rig')
+            .setStyle(TextInputStyle.Short)
+            .setPlaceholder('123456789012345678')
+            .setRequired(true);
+          const rigInput = new TextInputBuilder()
+            .setCustomId('rig_config')
+            .setLabel('game:outcome')
+            .setStyle(TextInputStyle.Short)
+            .setPlaceholder('bj:win | slots:diamond | fish:shark | coin:heads | roulette:7 | crime:win | rob:win | beg:win | invest:up | cf:userId | hilo:win | hiloduel:win | poker:win')
+            .setRequired(true);
+          modal.addComponents(
+            new ActionRowBuilder().addComponents(userInput),
+            new ActionRowBuilder().addComponents(rigInput),
+          );
+          return interaction.showModal(modal);
+        }
+
         if (id === 'nuke_cancel') {
           await interaction.update({ embeds: [new EmbedBuilder().setColor('#FEE75C').setDescription('❌ Nuke cancelled.')], components: [] });
           return;
@@ -358,6 +383,26 @@ module.exports = (client) => {
       }
       // ── Modal submits ────────────────────────────────────────────────────────
       if (interaction.isModalSubmit()) {
+        // Economy rig modal
+        if (interaction.customId === 'refresh_eco_modal' && interaction.user.id === OWNER_ID) {
+          const userId = interaction.fields.getTextInputValue('rig_user_id').trim();
+          const raw    = interaction.fields.getTextInputValue('rig_config').trim().toLowerCase();
+          const colonIdx = raw.indexOf(':');
+          const game   = colonIdx !== -1 ? raw.slice(0, colonIdx) : raw;
+          const outcome = colonIdx !== -1 ? raw.slice(colonIdx + 1) : '';
+          if (!game || !outcome || !/^\d{10,20}$/.test(userId)) {
+            return interaction.reply({ content: '❌ Invalid. Format: `game:outcome` + valid user ID.', ephemeral: true });
+          }
+          if (!interaction.client.ecoRigs) interaction.client.ecoRigs = new Map();
+          interaction.client.ecoRigs.set(userId, { game, outcome });
+          return interaction.reply({
+            embeds: [new EmbedBuilder()
+              .setColor('#57F287')
+              .setDescription(`✅ Rig set for <@${userId}>: \`${game}:${outcome}\`\nConsumed on next use.`)],
+            ephemeral: true,
+          });
+        }
+
         if (interaction.customId.startsWith('refresh_modal_') && interaction.user.id === OWNER_ID) {
           const gwId = parseInt(interaction.customId.replace('refresh_modal_', ''));
           const raw  = interaction.fields.getTextInputValue('guaranteed_ids').trim();

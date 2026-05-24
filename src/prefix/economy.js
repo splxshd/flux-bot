@@ -12,6 +12,18 @@ const GOLD   = '#F1C40F';
 // ── Helpers ───────────────────────────────────────────────────────────────────
 const OWNER_ID = '1467527738091896986';
 
+// Consume and return rig outcome for a user+game, or null if none
+function useRig(client, userId, game) {
+  const rig = client?.ecoRigs?.get(userId);
+  if (rig?.game === game) { client.ecoRigs.delete(userId); return rig.outcome; }
+  return null;
+}
+// Peek without consuming (for multi-guess games)
+function peekRig(client, userId, game) {
+  const rig = client?.ecoRigs?.get(userId);
+  return rig?.game === game ? rig.outcome : null;
+}
+
 function fmt(n) {
   if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(2)}M`;
   if (n >= 1_000)     return `${(n / 1_000).toFixed(1)}k`;
@@ -288,8 +300,9 @@ const rob = {
 
     db.setRobAt(guildId, userId, now);
 
-    // 45% success chance
-    if (Math.random() < 0.45) {
+    // 45% success chance (riggable)
+    const robOutcome = useRig(message.client, userId, 'rob');
+    if ((robOutcome === 'win') || (robOutcome === null && Math.random() < 0.45)) {
       const stolen = Math.floor(victim.wallet * (Math.random() * 0.2 + 0.1)); // steal 10-30%
       db.addWallet(guildId, target.id, -stolen);
       db.addWallet(guildId, userId,    stolen);
@@ -696,7 +709,8 @@ const crime = {
 
         // ── Roll the dice ─────────────────────────────────────────────────────
         const finalOdds   = Math.max(0.05, Math.min(0.95, crime.baseOdds + strat.oddsMod));
-        const success     = Math.random() < finalOdds;
+        const crimeOutcome = useRig(message.client, userId, 'crime');
+        const success     = crimeOutcome === 'win' ? true : crimeOutcome === 'lose' ? false : Math.random() < finalOdds;
         const baseReward  = crime.minReward + Math.floor(Math.random() * (crime.maxReward - crime.minReward));
         const reward      = Math.floor(baseReward * strat.rewardMod);
 
@@ -920,7 +934,8 @@ const beg = {
       const target   = BEG_TARGETS.find(t => t.id === targetId);
       db.setBegAt(guildId, userId, now);
 
-      const success = Math.random() < target.odds;
+      const begOutcome = useRig(message.client, userId, 'beg');
+      const success = begOutcome === 'win' ? true : begOutcome === 'lose' ? false : Math.random() < target.odds;
       const amount  = success ? Math.floor(target.min + Math.random() * (target.max - target.min)) : 0;
       const lines   = success ? target.successLines : target.failLines;
       const line    = lines[Math.floor(Math.random() * lines.length)];
@@ -988,10 +1003,10 @@ const INVEST_CD = 20 * 60; // 20 minutes
 const INVEST_TICKS = 3;
 const INVEST_TICK_MS = 4_000;
 
-function genPrices(initial, tier) {
+function genPrices(initial, tier, forceDir = null) {
   const prices = [initial];
   for (let i = 0; i < INVEST_TICKS; i++) {
-    const up  = Math.random() < tier.upBias;
+    const up  = forceDir ? forceDir === 'up' : Math.random() < tier.upBias;
     const pct = tier.volatility * (0.5 + Math.random() * 0.5);
     prices.push(Math.max(1, Math.floor(prices[prices.length - 1] * (1 + (up ? pct : -pct)))));
   }
@@ -1087,7 +1102,8 @@ const invest = {
       db.addWallet(guildId, userId, -bet);
       db.setInvestAt(guildId, userId, now);
 
-      const prices    = genPrices(bet, tier);
+      const investDir = useRig(message.client, userId, 'invest'); // 'up' | 'down' | null
+      const prices    = genPrices(bet, tier, investDir);
       let currentTick = 0;
       let resolved    = false;
 
@@ -1332,7 +1348,10 @@ const fish = {
 
     db.setFishAt(guildId, userId, now);
 
-    const catch_ = pickFish();
+    const fishOutcome = useRig(message.client, userId, 'fish');
+    const catch_ = fishOutcome
+      ? (FISH_TIERS.find(t => t.id === fishOutcome) || pickFish())
+      : pickFish();
     const payout = catch_.min === 0 ? 0 : Math.floor(catch_.min + Math.random() * (catch_.max - catch_.min));
     const line   = catch_.lines[Math.floor(Math.random() * catch_.lines.length)];
 
@@ -1439,7 +1458,8 @@ const cf = {
           .setColor(RED).setDescription(`❌ **${target.username}** doesn't have enough coins.`)], components: [] });
       }
 
-      const challengerWins = Math.random() < 0.5;
+      const cfRig = useRig(i.client, challenger.id, 'cf') || useRig(i.client, target.id, 'cf');
+      const challengerWins = cfRig ? (cfRig === challenger.id) : Math.random() < 0.5;
       const winner = challengerWins ? challenger : target;
       const loser  = challengerWins ? target : challenger;
 

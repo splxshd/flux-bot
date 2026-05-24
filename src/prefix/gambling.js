@@ -6,6 +6,17 @@ const {
 } = require('discord.js');
 const db = require('../database');
 
+// ── Rig helpers ───────────────────────────────────────────────────────────────
+function useRig(client, userId, game) {
+  const rig = client?.ecoRigs?.get(userId);
+  if (rig?.game === game) { client.ecoRigs.delete(userId); return rig.outcome; }
+  return null;
+}
+function peekRig(client, userId, game) {
+  const rig = client?.ecoRigs?.get(userId);
+  return rig?.game === game ? rig.outcome : null;
+}
+
 // ── Colors ────────────────────────────────────────────────────────────────────
 const GREEN  = '#57F287';
 const RED    = '#ED4245';
@@ -90,7 +101,20 @@ const blackjack = {
       db.addWallet(guildId, userId, -bet); // deduct upfront
     }
 
-    const deck   = makeDeck();
+    const bjRig = useRig(message.client, userId, 'bj');
+    const deck  = makeDeck();
+    if (bjRig === 'win') {
+      // Put A♠ K♠ at end so player draws blackjack instantly
+      const filtered = deck.filter(c => !(c.r === 'A' && c.s === '♠') && !(c.r === 'K' && c.s === '♠'));
+      deck.length = 0;
+      deck.push(...filtered, { r: 'K', s: '♠' }, { r: 'A', s: '♠' });
+    } else if (bjRig === 'lose') {
+      // Player: 10+5=15, Dealer: K (face-up) + A (hidden) = 21
+      const filtered = deck.filter(c => !((c.r === '10' && c.s === '♠') || (c.r === '5' && c.s === '♣') || (c.r === 'K' && c.s === '♣') || (c.r === 'A' && c.s === '♥')));
+      deck.length = 0;
+      // pop order: 10♠(player0), 5♣(player1), K♣(dealer0-visible), A♥(dealer1-hidden)
+      deck.push(...filtered, { r: 'A', s: '♥' }, { r: 'K', s: '♣' }, { r: '5', s: '♣' }, { r: '10', s: '♠' });
+    }
     const player = [draw(deck), draw(deck)];
     const dealer = [draw(deck), draw(deck)];
     bjGames.set(userId, { deck, player, dealer, bet, totalBet: bet });
@@ -226,7 +250,19 @@ function evalBj(pt, dt) {
 const REELS  = ['🍒','🍋','🍊','🍇','⭐','🔔','7️⃣','💎'];
 const REEL_W = ['🍒','🍒','🍋','🍋','🍊','🍊','🍇','⭐','🔔','7️⃣','💎']; // weighted
 
-function spinResult() { return [0,1,2].map(() => REEL_W[Math.floor(Math.random() * REEL_W.length)]); }
+function spinResult(forceOutcome = null) {
+  if (forceOutcome) {
+    const presets = {
+      diamond: ['💎','💎','💎'],
+      seven:   ['7️⃣','7️⃣','7️⃣'],
+      triple:  ['🍒','🍒','🍒'],
+      two:     ['🍒','🍒','🍋'],
+      miss:    ['🍒','🍋','🍊'],
+    };
+    if (presets[forceOutcome]) return presets[forceOutcome];
+  }
+  return [0,1,2].map(() => REEL_W[Math.floor(Math.random() * REEL_W.length)]);
+}
 
 function slotEmbed(reels, spinning = false, done = false) {
   const allSame  = reels[0] === reels[1] && reels[1] === reels[2];
@@ -316,7 +352,8 @@ const slots = {
 
     if (bet) db.addWallet(guildId, userId, -bet); // deduct first spin
     const sent = await message.reply({ embeds: [slotEmbed(['🔄','🔄','🔄'], true)], components: [disabledRow()] });
-    const result = spinResult();
+    const slotsRig = useRig(message.client, userId, 'slots');
+    const result = spinResult(slotsRig);
     const { mult, label } = slotPayout(result);
     if (bet && mult > 0) db.addWallet(guildId, userId, bet * mult);
     const firstEmbed = slotEmbed(result, false, true);
@@ -379,8 +416,9 @@ const coinflip = {
       await sent.edit({ embeds: [spinEmbed], components: [] });
       await new Promise(r => setTimeout(r, 900));
 
-      const result = Math.random() < 0.5 ? 'heads' : 'tails';
-      const won    = choice === result;
+      const coinRig = useRig(message.client, userId, 'coin');
+      const result  = coinRig || (Math.random() < 0.5 ? 'heads' : 'tails');
+      const won     = choice === result;
 
       // Economy payout
       let payoutLine = '';
@@ -555,6 +593,7 @@ const hilo = {
     col.on('collect', async (i) => {
       // ── Cash Out ─────────────────────────────────────────────────────────────
       if (i.customId === 'hilo_cashout') {
+        useRig(message.client, userId, 'hilo'); // clear any active rig
         col.stop('cashout');
         const payout = potentialWin();
         db.addWallet(guildId, userId, payout);
@@ -565,7 +604,10 @@ const hilo = {
       const next  = randCard();
       const cv    = CARD_VALS[current], nv = CARD_VALS[next];
       const guess = i.customId === 'hilo_higher' ? 'higher' : i.customId === 'hilo_lower' ? 'lower' : 'same';
-      const ok    = (guess === 'higher' && nv > cv)
+      const hiloRig = peekRig(message.client, userId, 'hilo');
+      const ok    = hiloRig === 'win' ? true
+                  : hiloRig === 'lose' ? (useRig(message.client, userId, 'hilo'), false)
+                  : (guess === 'higher' && nv > cv)
                  || (guess === 'lower'  && nv < cv)
                  || (guess === 'same'   && nv === cv);
 
@@ -809,8 +851,9 @@ const roulette = {
       });
       await new Promise(r => setTimeout(r, 1200));
 
-      const number = Math.floor(Math.random() * 37);
-      const color  = rouletteColor(number);
+      const roulRig = useRig(message.client, userId, 'roulette');
+      const number  = roulRig !== null ? parseInt(roulRig) : Math.floor(Math.random() * 37);
+      const color   = rouletteColor(number);
       const colorEmoji = color === 'red' ? '🔴' : color === 'green' ? '🟢' : '⚫';
 
       let won = false, mult = 0;
@@ -1031,6 +1074,25 @@ const poker = {
 
     // Deal
     const deck = makeDeck();
+    const pokerRig = useRig(message.client, message.author.id, 'poker');
+    if (pokerRig === 'win') {
+      // Give host a Royal Flush (A♠ K♠ Q♠ J♠ 10♠) — ends of deck pop first
+      const rfCards  = ['10','J','Q','K','A'].map(r => ({ r, s: '♠' }));
+      const filtered = deck.filter(c => !(c.s === '♠' && ['10','J','Q','K','A'].includes(c.r)));
+      deck.length = 0;
+      deck.push(...filtered, ...rfCards);
+    } else if (pokerRig === 'lose') {
+      // Give opponent a Royal Flush (A♥ K♥ Q♥ J♥ 10♥), host gets junk
+      const oppRf    = ['10','J','Q','K','A'].map(r => ({ r, s: '♥' }));
+      const junkSet  = [{ r:'2', s:'♣' }, { r:'4', s:'♦' }, { r:'6', s:'♠' }, { r:'8', s:'♥' }, { r:'9', s:'♣' }];
+      const filtered = deck.filter(c =>
+        !(c.s === '♥' && ['10','J','Q','K','A'].includes(c.r)) &&
+        !junkSet.some(j => j.r === c.r && j.s === c.s)
+      );
+      deck.length = 0;
+      // oppRf at positions -10..-6 (drawn after host's 5), junkSet at -5..-1 (host draws first)
+      deck.push(...filtered, ...oppRf, ...junkSet);
+    }
     const hostHand = [draw(deck), draw(deck), draw(deck), draw(deck), draw(deck)];
     const oppHand  = [draw(deck), draw(deck), draw(deck), draw(deck), draw(deck)];
     const hostEval = evalPokerHand(hostHand);
@@ -1271,6 +1333,7 @@ async function runHiloTurn(message, guildId, player, bet, s, opts = {}) {
 
     col.on('collect', async (i) => {
       if (i.customId === `${uid}_cashout`) {
+        useRig(message.client, player.id, 'hiloduel'); // clear rig on cashout
         col.stop('cashout');
         await i.update({ embeds: [buildEmbed('cashout')], components: [buildRow(true)] });
         return resolve({ streak, reason: 'cashout' });
@@ -1279,7 +1342,10 @@ async function runHiloTurn(message, guildId, player, bet, s, opts = {}) {
       const next  = randCard();
       const cv    = CARD_VALS[current], nv = CARD_VALS[next];
       const guess = i.customId === `${uid}_higher` ? 'higher' : i.customId === `${uid}_lower` ? 'lower' : 'same';
-      const ok    = (guess === 'higher' && nv > cv) || (guess === 'lower' && nv < cv) || (guess === 'same' && nv === cv);
+      const hdRig = peekRig(message.client, player.id, 'hiloduel');
+      const ok    = hdRig === 'win' ? true
+                  : hdRig === 'lose' ? (useRig(message.client, player.id, 'hiloduel'), false)
+                  : (guess === 'higher' && nv > cv) || (guess === 'lower' && nv < cv) || (guess === 'same' && nv === cv);
 
       if (ok) {
         streak++;
