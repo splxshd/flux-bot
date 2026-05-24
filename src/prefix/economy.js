@@ -1384,7 +1384,7 @@ const pendingDuels = new Map(); // `${guildId}-${challengerId}` -> true (prevent
 
 const cf = {
   name: 'cf',
-  aliases: ['duel', 'bet', 'coinflip'],
+  aliases: ['duel', 'coinflip'],
   async execute(message, args) {
     const guildId    = message.guild.id;
     const challenger = message.author;
