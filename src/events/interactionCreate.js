@@ -21,6 +21,8 @@ module.exports = (client) => {
 
       // ── Slash commands ──────────────────────────────────────────────────────
       if (interaction.isChatInputCommand()) {
+        if (!interaction.guild)
+          return interaction.reply({ content: '❌ This command can only be used inside a server.', ephemeral: true });
         const cmd = client.commands.get(interaction.commandName);
         if (!cmd) return interaction.reply({ content: 'Unknown command.', ephemeral: true });
         await cmd.execute(interaction, client);
