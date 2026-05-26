@@ -40,20 +40,44 @@ app.get('/api/guild/:guildId/stats', auth, async (req, res) => {
       [guildId, 'open']
     )[0]?.c ?? 0;
     const activeGiveaways = db.all(
-      'SELECT COUNT(*) as c FROM giveaways WHERE guild_id=? AND active=1',
+      'SELECT COUNT(*) as c FROM giveaways WHERE guild_id=? AND ended=0 AND cancelled=0',
       [guildId]
     )[0]?.c ?? 0;
-    const recentActivity = db.all(
-      'SELECT action as description, created_at as timestamp FROM mod_history WHERE guild_id=? ORDER BY created_at DESC LIMIT 10',
+    const vouchesTotal = db.all(
+      'SELECT COUNT(*) as c FROM vouch_settings WHERE target_user_id IS NOT NULL'
+    )[0]?.c ?? 0;
+    const serverCount = client?.guilds?.cache?.size ?? 0;
+
+    const recentCasesRaw = db.all(
+      'SELECT id, action, user_id, mod_id, reason, created_at FROM mod_history WHERE guild_id=? ORDER BY created_at DESC LIMIT 5',
       [guildId]
-    ).map(r => ({ description: r.description, timestamp: new Date(r.timestamp * 1000).toISOString() }));
+    );
+    const recentCases = recentCasesRaw.map(c => ({
+      id: c.id,
+      type: c.action,
+      targetTag: c.user_id,
+      moderatorTag: c.mod_id,
+      reason: c.reason,
+      createdAt: new Date(c.created_at * 1000).toISOString(),
+    }));
+
+    const recentActivity = db.all(
+      'SELECT action, user_id, created_at FROM mod_history WHERE guild_id=? ORDER BY created_at DESC LIMIT 10',
+      [guildId]
+    ).map(r => ({
+      type: r.action,
+      description: `${r.action} issued on ${r.user_id}`,
+      timestamp: new Date(r.created_at * 1000).toISOString(),
+    }));
 
     res.json({
       memberCount,
       casesToday,
       openTickets,
       activeGiveaways,
-      uptime: '99.9%',
+      vouchesWeek: vouchesTotal,
+      serverCount,
+      recentCases,
       recentActivity,
     });
   } catch (e) {
@@ -149,47 +173,132 @@ app.delete('/api/guild/:guildId/cases/:caseId', auth, (req, res) => {
 // ─── Giveaways ────────────────────────────────────────────────────────────────
 app.get('/api/guild/:guildId/giveaways', auth, (req, res) => {
   const { guildId } = req.params;
+  const status = req.query.status; // 'active' | 'ended' | undefined (all)
   try {
-    const rows = db.all('SELECT * FROM giveaways WHERE guild_id=? ORDER BY created_at DESC', [guildId]);
+    let sql = 'SELECT * FROM giveaways WHERE guild_id=?';
+    if (status === 'active') sql += ' AND ended=0 AND cancelled=0';
+    else if (status === 'ended') sql += ' AND ended=1';
+    sql += ' ORDER BY ends_at DESC';
+
+    const rows = db.all(sql, [guildId]);
     res.json(rows.map(g => ({
       id: String(g.id),
       prize: g.prize,
       channel_id: g.channel_id,
+      message_id: g.message_id || null,
       end_time: new Date(g.ends_at * 1000).toISOString(),
       winner_count: g.winners,
-      entry_count: 0,
-      required_role: g.required_roles || null,
-      active: g.active === 1,
+      entry_count: db.getEntryCount(g.id),
+      required_role: g.required_roles && g.required_roles !== '[]' ? g.required_roles : null,
+      active: g.ended === 0 && g.cancelled === 0,
     })));
   } catch (e) {
     res.status(500).json({ error: e.message });
   }
 });
 
-app.post('/api/guild/:guildId/giveaways', auth, (req, res) => {
+app.post('/api/guild/:guildId/giveaways', auth, async (req, res) => {
   const { guildId } = req.params;
-  const { prize, channel_id, duration_ms, winner_count, required_role } = req.body;
+  const { prize, channel_id, duration_ms, winner_count, required_role, host_id } = req.body;
+  if (!prize || !channel_id || !duration_ms) return res.status(400).json({ error: 'prize, channel_id, duration_ms required' });
   try {
     const endsAt = Math.floor(Date.now() / 1000) + Math.floor(duration_ms / 1000);
-    db.createGiveaway(guildId, channel_id, null, prize, winner_count, endsAt, required_role || null, null, 0, 0, 0, null, null);
-    res.json({ ok: true });
+    const result = db.createGiveaway({
+      guild_id: guildId,
+      channel_id,
+      host_id: host_id || 'dashboard',
+      prize,
+      winners: winner_count || 1,
+      ends_at: endsAt,
+      required_roles: required_role ? JSON.stringify([required_role]) : '[]',
+    });
+    const newId = result?.lastInsertRowid ?? result;
+
+    // Post embed to Discord
+    try {
+      const client = req.app.locals.client;
+      const { EmbedBuilder } = require('discord.js');
+      const guild = await client.guilds.fetch(guildId);
+      const channel = guild.channels.cache.get(channel_id) || await guild.channels.fetch(channel_id);
+      if (channel) {
+        const endsDate = new Date(endsAt * 1000);
+        const emb = new EmbedBuilder()
+          .setTitle('🎉 ' + prize)
+          .setDescription(`React with 🎉 to enter!\n\nEnds: <t:${endsAt}:R>\nWinners: **${winner_count || 1}**`)
+          .setColor('#FFD700')
+          .setFooter({ text: `${winner_count || 1} winner(s) • Ends` })
+          .setTimestamp(endsDate);
+        const msg = await channel.send({ embeds: [emb] });
+        await msg.react('🎉').catch(() => {});
+        if (newId) db.updateGiveawayMessageId(newId, msg.id);
+      }
+    } catch {}
+
+    res.json({ ok: true, id: newId ? String(newId) : undefined });
   } catch (e) {
     res.status(500).json({ error: e.message });
   }
 });
 
-app.post('/api/guild/:guildId/giveaways/:id/end', auth, (req, res) => {
+app.post('/api/guild/:guildId/giveaways/:id/end', auth, async (req, res) => {
   const { guildId, id } = req.params;
   try {
+    const giveaway = db.getGiveaway(parseInt(id));
+    if (!giveaway) return res.status(404).json({ error: 'Giveaway not found' });
+
+    const entries = db.getEntries(parseInt(id));
     db.endGiveaway(parseInt(id));
-    res.json({ ok: true });
+
+    // Pick winners and announce
+    const winnerCount = giveaway.winners || 1;
+    const winners = [];
+    if (entries.length > 0) {
+      const shuffled = [...entries].sort(() => Math.random() - 0.5);
+      for (let i = 0; i < Math.min(winnerCount, shuffled.length); i++) {
+        winners.push(shuffled[i].user_id);
+      }
+    }
+
+    try {
+      const client = req.app.locals.client;
+      const guild = await client.guilds.fetch(guildId);
+      const channel = guild.channels.cache.get(giveaway.channel_id) || await guild.channels.fetch(giveaway.channel_id);
+      if (channel) {
+        const winnersText = winners.length ? winners.map(w => `<@${w}>`).join(', ') : 'No valid entries';
+        await channel.send({ content: `🎉 **${giveaway.prize}** ended! Winners: ${winnersText}` });
+      }
+    } catch {}
+
+    res.json({ ok: true, winners });
   } catch (e) {
     res.status(500).json({ error: e.message });
   }
 });
 
-app.post('/api/guild/:guildId/giveaways/:id/reroll', auth, (req, res) => {
-  res.json({ ok: true, message: 'Reroll triggered' });
+app.post('/api/guild/:guildId/giveaways/:id/reroll', auth, async (req, res) => {
+  const { guildId, id } = req.params;
+  try {
+    const giveaway = db.getGiveaway(parseInt(id));
+    if (!giveaway) return res.status(404).json({ error: 'Giveaway not found' });
+
+    const entries = db.getEntries(parseInt(id));
+    if (entries.length === 0) return res.status(400).json({ error: 'No entries to reroll' });
+
+    const winner = entries[Math.floor(Math.random() * entries.length)].user_id;
+
+    try {
+      const client = req.app.locals.client;
+      const guild = await client.guilds.fetch(guildId);
+      const channel = guild.channels.cache.get(giveaway.channel_id) || await guild.channels.fetch(giveaway.channel_id);
+      if (channel) {
+        await channel.send({ content: `🎉 **${giveaway.prize}** rerolled! New winner: <@${winner}>` });
+      }
+    } catch {}
+
+    res.json({ ok: true, winner });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
 });
 
 // ─── Vouches ──────────────────────────────────────────────────────────────────
@@ -482,6 +591,87 @@ app.post('/api/guild/:guildId/panel/send', auth, async (req, res) => {
   }
 });
 
+// ─── Wallet stats (global — wallets have no guild_id) ─────────────────────────
+app.get('/api/wallet/stats', auth, (req, res) => {
+  try {
+    const activeWallets = db.all('SELECT COUNT(*) as c FROM wallets')[0]?.c ?? 0;
+    const totalDeposited = db.all(
+      "SELECT COALESCE(SUM(amount),0) as s FROM wallet_transactions WHERE type='deposit' AND status='confirmed'"
+    )[0]?.s ?? 0;
+    const totalWithdrawn = db.all(
+      "SELECT COALESCE(SUM(amount),0) as s FROM wallet_transactions WHERE type='withdrawal' AND status='confirmed'"
+    )[0]?.s ?? 0;
+    const pendingCount = db.all(
+      "SELECT COUNT(*) as c FROM wallet_transactions WHERE status='pending'"
+    )[0]?.c ?? 0;
+    res.json({ activeWallets, totalDeposited, totalWithdrawn, pendingCount });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+app.get('/api/wallet/transactions', auth, (req, res) => {
+  const page  = Math.max(1, parseInt(req.query.page) || 1);
+  const limit = 20;
+  const offset = (page - 1) * limit;
+  const coin   = req.query.coin   || null;
+  const type   = req.query.type   || null;
+  const status = req.query.status || null;
+  try {
+    let where = 'WHERE 1=1';
+    const params = [];
+    if (coin)   { where += ' AND address LIKE ?'; params.push(`%${coin.toLowerCase()}%`); }
+    if (type)   { where += ' AND type=?';   params.push(type); }
+    if (status) { where += ' AND status=?'; params.push(status); }
+
+    const rows = db.all(
+      `SELECT * FROM wallet_transactions ${where} ORDER BY created_at DESC LIMIT ? OFFSET ?`,
+      [...params, limit, offset]
+    );
+    const total = db.all(`SELECT COUNT(*) as c FROM wallet_transactions ${where}`, params)[0]?.c ?? 0;
+    res.json({
+      transactions: rows.map(t => ({
+        id: t.id,
+        user_id: t.user_id,
+        type: t.type,
+        amount: t.amount,
+        address: t.address,
+        txid: t.txid || null,
+        status: t.status,
+        created_at: new Date(t.created_at * 1000).toISOString(),
+      })),
+      total,
+    });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// ─── Wallet guild config (per-guild coin settings) ────────────────────────────
+app.get('/api/guild/:guildId/wallet/config', auth, (req, res) => {
+  try {
+    const row = db.all(
+      'SELECT config FROM dashboard_wallet_config WHERE guild_id=?',
+      [req.params.guildId]
+    )[0];
+    res.json(row ? JSON.parse(row.config) : {});
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+app.patch('/api/guild/:guildId/wallet/config', auth, (req, res) => {
+  try {
+    db.run(
+      'INSERT INTO dashboard_wallet_config (guild_id, config) VALUES (?,?) ON CONFLICT(guild_id) DO UPDATE SET config=excluded.config',
+      [req.params.guildId, JSON.stringify(req.body)]
+    );
+    res.json({ ok: true });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
 // ─── Health check ─────────────────────────────────────────────────────────────
 app.get('/health', (_, res) => res.json({ status: 'ok', uptime: process.uptime() }));
 
@@ -497,6 +687,12 @@ function startApi(client) {
     channel_id TEXT NOT NULL,
     role_id TEXT NOT NULL,
     keyword TEXT NOT NULL
+  )`);
+
+  // Per-guild wallet coin config for dashboard
+  db.run(`CREATE TABLE IF NOT EXISTS dashboard_wallet_config (
+    guild_id TEXT PRIMARY KEY,
+    config TEXT NOT NULL DEFAULT '{}'
   )`);
 
   // Patch stats endpoint to use real member count from Discord client
