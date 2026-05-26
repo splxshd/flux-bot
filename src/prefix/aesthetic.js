@@ -188,6 +188,24 @@ const unrolepersist = {
   }
 };
 
+// ── ,rolerestore ──────────────────────────────────────────────────────────────
+const db = require('../database');
+const rolerestore = {
+  name: 'rolerestore',
+  aliases: ['rrestore', 'restoreroles'],
+  async execute(message, args) {
+    if (!message.member.permissions.has(PermissionFlagsBits.ManageRoles))
+      return message.reply({ embeds: [new EmbedBuilder().setColor(RED).setDescription('❌ You need **Manage Roles** permission.')] });
+    const member = message.mentions.members.first();
+    if (!member) return message.reply('Usage: `,rolerestore <@user>`');
+    const saved = db.getSavedRoles(message.guild.id, member.id);
+    if (!saved) return message.reply({ embeds: [new EmbedBuilder().setColor(RED).setDescription('❌ No saved roles found for that member.')] });
+    const roleIds = JSON.parse(saved.roles || '[]');
+    for (const id of roleIds) await member.roles.add(id).catch(() => {});
+    return message.reply({ embeds: [new EmbedBuilder().setColor(GREEN).setDescription(`✅ Restored **${roleIds.length}** role(s) to **${member.user.username}**.`).setTimestamp()] });
+  }
+};
+
 // ── ,silence ─────────────────────────────────────────────────────────────────
 const silence = {
   name: 'silence',
@@ -248,4 +266,4 @@ const thread = {
   }
 };
 
-module.exports = [reactionsnipe, reactionhistory, steal, icon, quote, setcolor, rolepersist, unrolepersist, silence, unsilence, thread];
+module.exports = [reactionsnipe, reactionhistory, steal, icon, quote, setcolor, rolepersist, unrolepersist, rolerestore, silence, unsilence, thread];
