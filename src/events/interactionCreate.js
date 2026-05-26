@@ -458,14 +458,20 @@ module.exports = (client) => {
         if (interaction.customId.startsWith('boostrole_modal_')) {
           const targetUserId = interaction.customId.replace('boostrole_modal_', '');
 
-          const name     = interaction.fields.getTextInputValue('br_name').trim();
-          const colorRaw = interaction.fields.getTextInputValue('br_color').trim().replace('#', '');
-          const iconStr  = interaction.fields.getTextInputValue('br_icon').trim();
+          const name      = interaction.fields.getTextInputValue('br_name').trim();
+          const colorRaw  = interaction.fields.getTextInputValue('br_color').trim().replace('#', '');
+          const color2Raw = interaction.fields.getTextInputValue('br_color2').trim().replace('#', '');
+          const iconStr   = interaction.fields.getTextInputValue('br_icon').trim();
 
           if (!/^[0-9A-Fa-f]{6}$/.test(colorRaw))
-            return interaction.reply({ content: '❌ Invalid color — use a hex code like `#FF5733`.', ephemeral: true });
+            return interaction.reply({ content: '❌ Invalid primary color — use a hex code like `#FF5733`.', ephemeral: true });
+          if (color2Raw && !/^[0-9A-Fa-f]{6}$/.test(color2Raw))
+            return interaction.reply({ content: '❌ Invalid secondary color — use a hex like `#5865F2`, or leave it blank for solid.', ephemeral: true });
 
-          const color = parseInt(colorRaw, 16);
+          const primaryColor   = parseInt(colorRaw, 16);
+          const secondaryColor = color2Raw ? parseInt(color2Raw, 16) : null;
+          const colors         = secondaryColor ? { primaryColor, secondaryColor } : { primaryColor };
+
           await interaction.deferReply({ ephemeral: true });
 
           const guild      = interaction.guild;
@@ -474,12 +480,12 @@ module.exports = (client) => {
           const targetMember = await guild.members.fetch(targetUserId).catch(() => null);
 
           if (role) {
-            await role.edit({ name, color, permissions: 0n }).catch(() => { role = null; });
+            await role.edit({ name, colors, permissions: 0n }).catch(() => { role = null; });
           }
 
           if (!role) {
             role = await guild.roles.create({
-              name, color, permissions: 0n, hoist: false, mentionable: false,
+              name, colors, permissions: 0n, hoist: false, mentionable: false,
               reason: `Custom boost role for ${targetMember?.user?.tag ?? targetUserId}`,
             });
             db.setBoostRole(guild.id, targetUserId, role.id);
@@ -506,15 +512,17 @@ module.exports = (client) => {
             if (topRole) await role.setPosition(topRole.position + 1).catch(() => {});
           }
 
-          const hex      = '#' + color.toString(16).padStart(6, '0').toUpperCase();
+          const hexPrimary   = '#' + primaryColor.toString(16).padStart(6, '0').toUpperCase();
+          const hexSecondary = secondaryColor ? '#' + secondaryColor.toString(16).padStart(6, '0').toUpperCase() : null;
+          const colorField   = hexSecondary ? `${hexPrimary} → ${hexSecondary}` : hexPrimary;
           const isSelf   = targetUserId === interaction.user.id;
           const forWho   = isSelf ? 'your' : `**${targetMember?.user?.username ?? targetUserId}**'s`;
           return interaction.editReply({
             embeds: [new EmbedBuilder()
-              .setColor(color)
+              .setColor(primaryColor)
               .setTitle(`✨ ${role.name}`)
               .setDescription(`${existing ? 'Updated' : 'Created'} ${forWho} custom boost role! ${role}`)
-              .addFields({ name: '🎨 Color', value: hex, inline: true })
+              .addFields({ name: hexSecondary ? '🌈 Gradient' : '🎨 Color', value: colorField, inline: true })
               .setFooter({ text: 'flux • boost perks' })],
           });
         }

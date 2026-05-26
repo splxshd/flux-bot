@@ -75,13 +75,19 @@ const boostrole = {
         return interaction.reply({ content: "❌ That role was deleted.", ephemeral: true });
       }
 
-      const hex = role.color ? '#' + role.color.toString(16).padStart(6, '0').toUpperCase() : 'None';
+      const primary   = role.colors?.primaryColor   ?? role.color ?? 0;
+      const secondary = role.colors?.secondaryColor ?? null;
+      const hexPrimary   = primary   ? '#' + primary.toString(16).padStart(6, '0').toUpperCase()   : 'None';
+      const hexSecondary = secondary ? '#' + secondary.toString(16).padStart(6, '0').toUpperCase() : null;
+      const colorField   = hexSecondary
+        ? `${hexPrimary} → ${hexSecondary} (gradient)`
+        : hexPrimary;
       return interaction.reply({
         embeds: [new EmbedBuilder()
-          .setColor(role.color || 0x9B59B6)
+          .setColor(primary || 0x9B59B6)
           .setTitle(`✨ ${role.name}`)
           .setDescription(`${target}'s custom boost role: ${role}`)
-          .addFields({ name: '🎨 Color', value: hex, inline: true })
+          .addFields({ name: '🎨 Color', value: colorField, inline: true })
           .setFooter({ text: 'flux • boost perks' })],
         ephemeral: true,
       });
@@ -105,11 +111,20 @@ async function showBoostModal(interaction, targetUserId) {
   if (existingRole) nameInput.setValue(existingRole.name);
 
   const colorInput = new TextInputBuilder()
-    .setCustomId('br_color').setLabel('Color (hex code, e.g. #FF5733)')
+    .setCustomId('br_color').setLabel('Primary Color (hex, e.g. #FF5733)')
     .setStyle(TextInputStyle.Short).setPlaceholder('#FF5733')
     .setMaxLength(7).setRequired(true);
-  if (existingRole?.color)
+  if (existingRole?.colors?.primaryColor)
+    colorInput.setValue('#' + existingRole.colors.primaryColor.toString(16).padStart(6, '0').toUpperCase());
+  else if (existingRole?.color)
     colorInput.setValue('#' + existingRole.color.toString(16).padStart(6, '0').toUpperCase());
+
+  const color2Input = new TextInputBuilder()
+    .setCustomId('br_color2').setLabel('Secondary Color for gradient (optional)')
+    .setStyle(TextInputStyle.Short).setPlaceholder('#5865F2  ← leave blank for solid color')
+    .setMaxLength(7).setRequired(false);
+  if (existingRole?.colors?.secondaryColor)
+    color2Input.setValue('#' + existingRole.colors.secondaryColor.toString(16).padStart(6, '0').toUpperCase());
 
   const iconInput = new TextInputBuilder()
     .setCustomId('br_icon').setLabel('Role Icon — emoji OR image URL (optional)')
@@ -120,6 +135,7 @@ async function showBoostModal(interaction, targetUserId) {
   modal.addComponents(
     new ActionRowBuilder().addComponents(nameInput),
     new ActionRowBuilder().addComponents(colorInput),
+    new ActionRowBuilder().addComponents(color2Input),
     new ActionRowBuilder().addComponents(iconInput),
   );
   return interaction.showModal(modal);
