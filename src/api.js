@@ -672,6 +672,17 @@ app.patch('/api/guild/:guildId/wallet/config', auth, (req, res) => {
   }
 });
 
+// ─── Guild list (which guilds the bot is in) ──────────────────────────────────
+app.get('/api/guilds', auth, (req, res) => {
+  try {
+    const client = req.app.locals.client;
+    const ids = client?.guilds?.cache?.map(g => g.id) ?? [];
+    res.json(ids);
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
 // ─── Health check ─────────────────────────────────────────────────────────────
 app.get('/health', (_, res) => res.json({ status: 'ok', uptime: process.uptime() }));
 
