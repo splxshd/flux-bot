@@ -454,6 +454,69 @@ module.exports = (client) => {
           });
         }
 
+        // Boost role modal submit
+        if (interaction.customId === 'boostrole_modal') {
+          const member = interaction.member;
+          if (!member.premiumSince)
+            return interaction.reply({ content: '❌ You need to be a booster to use this.', ephemeral: true });
+
+          const name     = interaction.fields.getTextInputValue('br_name').trim();
+          const colorRaw = interaction.fields.getTextInputValue('br_color').trim().replace('#', '');
+          const iconStr  = interaction.fields.getTextInputValue('br_icon').trim();
+
+          if (!/^[0-9A-Fa-f]{6}$/.test(colorRaw))
+            return interaction.reply({ content: '❌ Invalid color — use a hex code like `#FF5733`.', ephemeral: true });
+
+          const color = parseInt(colorRaw, 16);
+          await interaction.deferReply({ ephemeral: true });
+
+          const guild    = interaction.guild;
+          const existing = db.getBoostRole(guild.id, interaction.user.id);
+          let role       = existing ? guild.roles.cache.get(existing.role_id) : null;
+
+          if (role) {
+            // Update existing role
+            await role.edit({ name, color, permissions: 0n }).catch(() => { role = null; });
+          }
+
+          if (!role) {
+            // Create brand-new role
+            role = await guild.roles.create({
+              name, color, permissions: 0n, hoist: false, mentionable: false,
+              reason: `Custom boost role for ${interaction.user.tag}`,
+            });
+            db.setBoostRole(guild.id, interaction.user.id, role.id);
+            await member.roles.add(role).catch(() => {});
+          }
+
+          // Role icon — unicode emoji (requires server Level 2 / ROLE_ICONS feature)
+          if (iconStr) {
+            if (guild.features.includes('ROLE_ICONS')) {
+              await role.edit({ unicodeEmoji: iconStr }).catch(() => {});
+            }
+          }
+
+          // Position the boost role just above the member's highest non-managed role
+          const botTopPos = guild.members.me?.roles?.highest?.position ?? 999;
+          const topMemberRole = member.roles.cache
+            .filter(r => r.id !== guild.id && r.id !== role.id && !r.managed && r.position < botTopPos)
+            .sort((a, b) => b.position - a.position)
+            .first();
+          if (topMemberRole) {
+            await role.setPosition(topMemberRole.position + 1).catch(() => {});
+          }
+
+          const hex = '#' + color.toString(16).padStart(6, '0').toUpperCase();
+          return interaction.editReply({
+            embeds: [new EmbedBuilder()
+              .setColor(color)
+              .setTitle(`✨ ${role.name}`)
+              .setDescription(`${existing ? 'Updated' : 'Created'} your custom boost role! ${role}`)
+              .addFields({ name: '🎨 Color', value: hex, inline: true })
+              .setFooter({ text: 'flux • boost perks' })],
+          });
+        }
+
         // Bet modal submit — place / replace bet
         if (interaction.customId.startsWith('bet_modal_')) {
           const parts   = interaction.customId.split('_'); // ['bet','modal', betId, optIdx]

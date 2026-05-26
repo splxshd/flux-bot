@@ -155,6 +155,32 @@ module.exports = (client) => {
   });
 
   client.on('guildMemberUpdate', async (oldMember, newMember) => {
+    // ── Boost role: new boost ─────────────────────────────────────────────────
+    if (!oldMember.premiumSince && newMember.premiumSince) {
+      newMember.send({
+        embeds: [new EmbedBuilder()
+          .setColor('#FF73FA')
+          .setTitle('💎 Thanks for boosting!')
+          .setDescription(
+            `You boosted **${newMember.guild.name}**!\n\n` +
+            `As a thank you, you can create a custom role with your own name, color, and icon.\n\n` +
+            `Use \`/boostrole setup\` in the server to get started! 🎨`
+          )
+          .setFooter({ text: 'flux • boost perks' }),
+        ],
+      }).catch(() => {});
+    }
+
+    // ── Boost role: lost boost → remove custom role ───────────────────────────
+    if (oldMember.premiumSince && !newMember.premiumSince) {
+      const existing = db.getBoostRole(newMember.guild.id, newMember.id);
+      if (existing) {
+        const role = newMember.guild.roles.cache.get(existing.role_id);
+        if (role) await role.delete('Boost expired').catch(() => {});
+        db.removeBoostRole(newMember.guild.id, newMember.id);
+      }
+    }
+
     // Enforce forced nicknames
     const fn = db.getForcedNickname(newMember.guild.id, newMember.id);
     if (fn && newMember.nickname !== fn.nickname) {

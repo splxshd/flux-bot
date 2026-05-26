@@ -180,6 +180,13 @@ db.run(`CREATE TABLE IF NOT EXISTS invite_tracking (
 
 try { db.run(`ALTER TABLE giveaways ADD COLUMN min_invites INTEGER DEFAULT 0`); } catch (_) {}
 
+db.run(`CREATE TABLE IF NOT EXISTS boost_roles (
+  guild_id TEXT NOT NULL,
+  user_id  TEXT NOT NULL,
+  role_id  TEXT NOT NULL,
+  PRIMARY KEY (guild_id, user_id)
+)`);
+
 db.run(`CREATE TABLE IF NOT EXISTS bets (
   id          INTEGER PRIMARY KEY AUTOINCREMENT,
   guild_id    TEXT    NOT NULL,
@@ -1533,6 +1540,20 @@ function resetInvites(guildId, userId) {
   run('DELETE FROM invite_tracking WHERE guild_id = ? AND user_id = ?', [guildId, userId]);
 }
 
+// ─── Boost Roles ─────────────────────────────────────────────────────────────
+function setBoostRole(guildId, userId, roleId) {
+  return run('INSERT OR REPLACE INTO boost_roles (guild_id, user_id, role_id) VALUES (?, ?, ?)', [guildId, userId, roleId]);
+}
+function getBoostRole(guildId, userId) {
+  return get('SELECT * FROM boost_roles WHERE guild_id=? AND user_id=?', [guildId, userId]);
+}
+function removeBoostRole(guildId, userId) {
+  return run('DELETE FROM boost_roles WHERE guild_id=? AND user_id=?', [guildId, userId]);
+}
+function getAllBoostRoles(guildId) {
+  return all('SELECT * FROM boost_roles WHERE guild_id=?', [guildId]);
+}
+
 // ─── Bets ─────────────────────────────────────────────────────────────────────
 function createBet(guildId, creatorId, question, options) {
   const r = run('INSERT INTO bets (guild_id, creator_id, question, options_json) VALUES (?, ?, ?, ?)',
@@ -1638,6 +1659,7 @@ module.exports = {
   getEco, addWallet, setWallet, deposit, withdraw, transfer,
   getEcoLeaderboard, setDailyAt, setWorkAt, setRobAt, setCrimeAt, setBegAt, setInvestAt, setFishAt,
   getEcoSettings, upsertEcoSettings,
+  setBoostRole, getBoostRole, removeBoostRole, getAllBoostRoles,
   createBet, getBet, getActiveBets, updateBetStatus, updateBetMessage, setBetWinner,
   addBetEntry, removeBetEntry, getBetEntries, getUserBetEntry, getBetTotals, getBetBettorCounts,
 };
