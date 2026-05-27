@@ -1493,4 +1493,284 @@ const cf = {
   },
 };
 
-module.exports = [balance, daily, work, depositCmd, withdrawCmd, pay, donate, rob, richlist, give, take, setbal, reseteco, ecoset, crime, beg, invest, fish, cf];
+// ── ,hunt ─────────────────────────────────────────────────────────────────────
+const HUNT_TIERS = [
+  { id: 'miss',    emoji: '💨', label: 'Missed',      weight: 15, min: 0,    max: 0,    lines: ["You aimed but the animal vanished into the trees.", "Clean miss. You sat down and rethought your life.", "Nothing. Just wind and embarrassment."] },
+  { id: 'rabbit',  emoji: '🐇', label: 'Rabbit',      weight: 35, min: 30,   max: 100,  lines: ["A rabbit darted out and you got lucky.", "Small rabbit. Still counts.", "The rabbit didn't stand a chance."] },
+  { id: 'fox',     emoji: '🦊', label: 'Fox',         weight: 25, min: 100,  max: 250,  lines: ["A fox slipped out of the bushes. Quick shot.", "You tracked a fox for twenty minutes — worth it.", "Clever animal, but not clever enough."] },
+  { id: 'deer',    emoji: '🦌', label: 'Deer',        weight: 15, min: 250,  max: 550,  lines: ["A deer stepped into the clearing. Perfect shot.", "12-point buck. Local hunters will be jealous.", "The deer froze. You didn't waste the moment."] },
+  { id: 'wolf',    emoji: '🐺', label: 'Wolf',        weight: 6,  min: 500,  max: 900,  lines: ["A wolf crept up behind you. You turned just in time.", "Tracking a wolf solo is insane. You pulled it off.", "The wolf pack scattered. One wasn't fast enough."] },
+  { id: 'bear',    emoji: '🐻', label: 'Grizzly',     weight: 3,  min: 900,  max: 2000, lines: ["A grizzly charged. Somehow you came out on top.", "You stared down a grizzly. Somehow. You won.", "The forest went silent. Then you heard it. Grizzly. Big payday."] },
+  { id: 'dragon',  emoji: '🐉', label: 'Dragon',      weight: 1,  min: 3000, max: 6000, lines: ["A DRAGON. You hunted a dragon. No one will believe you.", "Scales, fire, and a massive payout. Legendary hunt.", "The dragon swooped low. One shot. They'll write songs about this."] },
+];
+const HUNT_TOTAL_WEIGHT = HUNT_TIERS.reduce((s, t) => s + t.weight, 0);
+const HUNT_CD = 10 * 60;
+
+const hunt = {
+  name: 'hunt',
+  aliases: ['hunting', 'shoot'],
+  async execute(message) {
+    const guildId = message.guild.id;
+    const userId  = message.author.id;
+    const eco     = db.getEco(guildId, userId);
+    const s       = db.getEcoSettings(guildId);
+    const now     = Math.floor(Date.now() / 1000);
+
+    if (eco.hunt_at && now - eco.hunt_at < HUNT_CD) {
+      const left = (eco.hunt_at + HUNT_CD - now) * 1000;
+      return message.reply({ embeds: [new EmbedBuilder().setColor(RED)
+        .setTitle('🏹 Not Yet')
+        .setDescription(`The animals need time to return. Try again in **${fmtTime(left)}**.`)
+        .setFooter({ text: 'flux economy' })] });
+    }
+
+    const going = await message.reply({ embeds: [new EmbedBuilder().setColor(BLUE)
+      .setTitle('🏹 Hunting...')
+      .setDescription('You head into the forest with your rifle...')
+      .setFooter({ text: 'flux economy' })] });
+
+    await new Promise(r => setTimeout(r, 2000 + Math.random() * 1500));
+    db.setHuntAt(guildId, userId, now);
+
+    let roll = Math.random() * HUNT_TOTAL_WEIGHT;
+    let prey = HUNT_TIERS[HUNT_TIERS.length - 1];
+    for (const t of HUNT_TIERS) { roll -= t.weight; if (roll <= 0) { prey = t; break; } }
+
+    const payout = prey.min === 0 ? 0 : Math.floor(prey.min + Math.random() * (prey.max - prey.min));
+    const line   = prey.lines[Math.floor(Math.random() * prey.lines.length)];
+    if (payout > 0) db.addWallet(guildId, userId, payout);
+    const newEco = db.getEco(guildId, userId);
+
+    const colors = { miss: '#71368A', rabbit: '#57F287', fox: '#F0A500', deer: '#1abc9c', wolf: '#99AAB5', bear: '#ED4245', dragon: '#F1C40F' };
+    await going.edit({ embeds: [new EmbedBuilder()
+      .setColor(colors[prey.id] || BLUE)
+      .setTitle(`${prey.emoji}  You caught a ${prey.label}!`)
+      .setDescription(`*${line}*`)
+      .addFields(
+        payout > 0
+          ? { name: '💰 Sold for', value: `**+${fmt(payout)} ${s.currency_emoji}**`, inline: true }
+          : { name: '🎯 Result',   value: '`Nothing caught`',                         inline: true },
+        { name: '👛 Wallet', value: `${fmt(newEco.wallet)} ${s.currency_emoji}`,      inline: true },
+      )
+      .setFooter({ text: 'Cooldown: 10 min • flux economy' })
+      .setTimestamp()] });
+  },
+};
+
+// ── ,mine ─────────────────────────────────────────────────────────────────────
+const MINE_TIERS = [
+  { id: 'dirt',    emoji: '🪨', label: 'Dirt',         weight: 20, min: 0,    max: 0,    lines: ["Just dirt. You mined dirt.", "You filled a whole cart with nothing.", "Rocks and mud. The life of a miner."] },
+  { id: 'coal',    emoji: '⬛', label: 'Coal',          weight: 30, min: 20,   max: 80,   lines: ["A solid vein of coal. The power plants pay well.", "Coal, still useful.", "Basic but honest. Coal secured."] },
+  { id: 'iron',    emoji: '🔩', label: 'Iron Ore',     weight: 22, min: 80,   max: 200,  lines: ["Iron ore, solid chunk.", "Iron veins are paying today.", "Big iron haul. Smiths will pay good money."] },
+  { id: 'gold',    emoji: '🟡', label: 'Gold Nugget',  weight: 13, min: 200,  max: 500,  lines: ["Gold! You actually found gold.", "A pocket of gold ore — beautiful.", "Glittering gold vein. Today was a good day."] },
+  { id: 'diamond', emoji: '💎', label: 'Diamond',      weight: 8,  min: 500,  max: 1200, lines: ["A diamond! These are worth a fortune.", "Deep in the earth, a diamond waited for you.", "Flawless diamond. The jewellers will fight over this."] },
+  { id: 'emerald', emoji: '💚', label: 'Emerald',      weight: 5,  min: 1200, max: 2500, lines: ["Emerald — rarer than diamonds down here.", "A deep green emerald. Traders will pay top price.", "Perfect emerald. You're rich."] },
+  { id: 'ancient', emoji: '✨', label: 'Ancient Debris',weight: 2, min: 3000, max: 7000, lines: ["ANCIENT DEBRIS. The rarest material known. Legendary find.", "Deep in bedrock — ancient debris. Worth a fortune.", "You mined past bedrock and found ancient debris. Unreal."] },
+];
+const MINE_TOTAL_WEIGHT = MINE_TIERS.reduce((s, t) => s + t.weight, 0);
+const MINE_CD = 8 * 60;
+
+const mine = {
+  name: 'mine',
+  aliases: ['mining', 'dig'],
+  async execute(message) {
+    const guildId = message.guild.id;
+    const userId  = message.author.id;
+    const eco     = db.getEco(guildId, userId);
+    const s       = db.getEcoSettings(guildId);
+    const now     = Math.floor(Date.now() / 1000);
+
+    if (eco.mine_at && now - eco.mine_at < MINE_CD) {
+      const left = (eco.mine_at + MINE_CD - now) * 1000;
+      return message.reply({ embeds: [new EmbedBuilder().setColor(RED)
+        .setTitle('⛏️ Tunnel Unstable')
+        .setDescription(`You need to wait for the tunnel to be safe again. Back in **${fmtTime(left)}**.`)
+        .setFooter({ text: 'flux economy' })] });
+    }
+
+    const going = await message.reply({ embeds: [new EmbedBuilder().setColor(BLUE)
+      .setTitle('⛏️ Mining...')
+      .setDescription('You descend into the mine shaft with your pickaxe...')
+      .setFooter({ text: 'flux economy' })] });
+
+    await new Promise(r => setTimeout(r, 2000 + Math.random() * 1500));
+    db.setMineAt(guildId, userId, now);
+
+    let roll = Math.random() * MINE_TOTAL_WEIGHT;
+    let ore = MINE_TIERS[MINE_TIERS.length - 1];
+    for (const t of MINE_TIERS) { roll -= t.weight; if (roll <= 0) { ore = t; break; } }
+
+    const payout = ore.min === 0 ? 0 : Math.floor(ore.min + Math.random() * (ore.max - ore.min));
+    const line   = ore.lines[Math.floor(Math.random() * ore.lines.length)];
+    if (payout > 0) db.addWallet(guildId, userId, payout);
+    const newEco = db.getEco(guildId, userId);
+
+    const colors = { dirt: '#71368A', coal: '#2C3E50', iron: '#95A5A6', gold: '#F1C40F', diamond: '#5DADE2', emerald: '#57F287', ancient: '#F0A500' };
+    await going.edit({ embeds: [new EmbedBuilder()
+      .setColor(colors[ore.id] || BLUE)
+      .setTitle(`${ore.emoji}  You found ${ore.label}!`)
+      .setDescription(`*${line}*`)
+      .addFields(
+        payout > 0
+          ? { name: '💰 Sold for', value: `**+${fmt(payout)} ${s.currency_emoji}**`, inline: true }
+          : { name: '⛏️ Result',   value: '`Nothing valuable`',                      inline: true },
+        { name: '👛 Wallet', value: `${fmt(newEco.wallet)} ${s.currency_emoji}`,     inline: true },
+      )
+      .setFooter({ text: 'Cooldown: 8 min • flux economy' })
+      .setTimestamp()] });
+  },
+};
+
+// ── ,scratch ──────────────────────────────────────────────────────────────────
+const SCRATCH_SYMBOLS = [
+  { emoji: '🍒', label: 'Cherry',  weight: 40, mult: 2  },
+  { emoji: '🍋', label: 'Lemon',   weight: 25, mult: 3  },
+  { emoji: '💎', label: 'Diamond', weight: 15, mult: 5  },
+  { emoji: '7️⃣', label: 'Seven',  weight: 10, mult: 10 },
+  { emoji: '⭐', label: 'Star',    weight: 7,  mult: 20 },
+  { emoji: '💰', label: 'Bag',     weight: 3,  mult: 50 },
+];
+const SCRATCH_TOTAL_W = SCRATCH_SYMBOLS.reduce((s, t) => s + t.weight, 0);
+const SCRATCH_CD = 15 * 60;
+
+function pickScratchSymbol() {
+  let r = Math.random() * SCRATCH_TOTAL_W;
+  for (const s of SCRATCH_SYMBOLS) { r -= s.weight; if (r <= 0) return s; }
+  return SCRATCH_SYMBOLS[0];
+}
+
+const scratch = {
+  name: 'scratch',
+  aliases: ['scratchcard', 'sc'],
+  async execute(message, args) {
+    const guildId = message.guild.id;
+    const userId  = message.author.id;
+    const eco     = db.getEco(guildId, userId);
+    const s       = db.getEcoSettings(guildId);
+    const now     = Math.floor(Date.now() / 1000);
+
+    if (eco.scratch_at && now - eco.scratch_at < SCRATCH_CD) {
+      const left = (eco.scratch_at + SCRATCH_CD - now) * 1000;
+      return message.reply({ embeds: [new EmbedBuilder().setColor(RED)
+        .setTitle('🎟️ No Cards Left')
+        .setDescription(`New scratch cards come in **${fmtTime(left)}**.`)
+        .setFooter({ text: 'flux economy' })] });
+    }
+
+    const cost = 500;
+    if (eco.wallet < cost)
+      return message.reply({ embeds: [new EmbedBuilder().setColor(RED)
+        .setDescription(`❌ You need **${fmt(cost)} ${s.currency_emoji}** to buy a scratch card.`)] });
+
+    db.addWallet(guildId, userId, -cost);
+    db.setScratchAt(guildId, userId, now);
+
+    const reels = [pickScratchSymbol(), pickScratchSymbol(), pickScratchSymbol()];
+    const counts = {};
+    for (const r of reels) counts[r.emoji] = (counts[r.emoji] || 0) + 1;
+    const maxMatch = Math.max(...Object.values(counts));
+    const topSymbol = reels.find(r => counts[r.emoji] === maxMatch);
+
+    let payout = 0;
+    let resultLabel = '';
+    if (maxMatch === 3) {
+      payout = cost * topSymbol.mult;
+      resultLabel = `🎉 **JACKPOT!** 3x ${topSymbol.emoji} — **×${topSymbol.mult}**`;
+    } else if (maxMatch === 2) {
+      payout = Math.floor(cost * (topSymbol.mult * 0.4));
+      resultLabel = `✨ **Pair!** 2x ${topSymbol.emoji} — **×${(topSymbol.mult * 0.4).toFixed(1)}**`;
+    } else {
+      resultLabel = `💸 No match — better luck next time`;
+    }
+
+    if (payout > 0) db.addWallet(guildId, userId, payout);
+    const newEco = db.getEco(guildId, userId);
+    const net    = payout - cost;
+    const netStr = net >= 0 ? `+${fmt(net)}` : `-${fmt(Math.abs(net))}`;
+
+    await message.reply({ embeds: [new EmbedBuilder()
+      .setColor(payout > cost ? GOLD : payout > 0 ? YELLOW : RED)
+      .setTitle('🎟️ Scratch Card')
+      .setDescription(`${reels.map(r => r.emoji).join('  |  ')}\n\n${resultLabel}`)
+      .addFields(
+        { name: '🎫 Cost',      value: `${fmt(cost)} ${s.currency_emoji}`,             inline: true },
+        { name: '💰 Won',       value: payout > 0 ? `${fmt(payout)} ${s.currency_emoji}` : '`Nothing`', inline: true },
+        { name: `${net >= 0 ? '📈' : '📉'} Net`, value: `**${netStr} ${s.currency_emoji}**`, inline: true },
+        { name: '👛 Wallet',    value: `${fmt(newEco.wallet)} ${s.currency_emoji}`,    inline: true },
+      )
+      .setFooter({ text: 'Cooldown: 15 min • flux economy' })
+      .setTimestamp()] });
+  },
+};
+
+// ── ,ecohelp ──────────────────────────────────────────────────────────────────
+const ecohelp = {
+  name: 'ecohelp',
+  aliases: ['econhelp', 'economyhelp', 'ecolist'],
+  async execute(message) {
+    const s = db.getEcoSettings(message.guild.id);
+    const e = s.currency_emoji;
+    await message.reply({ embeds: [new EmbedBuilder()
+      .setColor(GOLD)
+      .setTitle(`${e} Economy Commands`)
+      .setThumbnail(message.guild.iconURL({ dynamic: true }) || undefined)
+      .addFields(
+        {
+          name: '💰 Earn Coins',
+          value: [
+            '`,daily` — claim your daily reward (24h)',
+            '`,work` — work a job for coins (1h)',
+            '`,fish` — go fishing (5 min)',
+            '`,hunt` — go hunting (10 min)',
+            '`,mine` — mine for ores (8 min)',
+            '`,beg` — beg from strangers (12 min)',
+          ].join('\n'),
+          inline: false,
+        },
+        {
+          name: '🎲 Gamble & Risk',
+          value: [
+            '`,scratch` — buy a scratch card for 500 (15 min)',
+            '`,invest <amount>` — pick a market and watch it move (20 min)',
+            '`,crime` — choose a crime: pickpocket → bank heist (45 min)',
+            '`,rob @user` — steal from someone\'s wallet (30 min)',
+            '`,cf @user <amount>` — coinflip duel',
+          ].join('\n'),
+          inline: false,
+        },
+        {
+          name: '🏦 Banking',
+          value: [
+            '`,bal [@user]` — check balance',
+            '`,deposit <amount|all>` — move wallet → bank',
+            '`,withdraw <amount|all>` — move bank → wallet',
+            '`,richlist` — top 10 richest members',
+          ].join('\n'),
+          inline: false,
+        },
+        {
+          name: '🤝 Social',
+          value: [
+            '`,pay @user <amount>` — send coins',
+            '`,donate @user <amount>` — gift coins',
+          ].join('\n'),
+          inline: false,
+        },
+        {
+          name: '⚙️ Admin Only',
+          value: [
+            '`,give @user <amount>` — add coins',
+            '`,take @user <amount>` — remove coins',
+            '`,setbal @user <amount>` — set balance',
+            '`,reseteco @user` — wipe a user\'s economy',
+            '`,ecoset` — configure currency name/emoji/daily amount',
+          ].join('\n'),
+          inline: false,
+        },
+      )
+      .setFooter({ text: `${s.currency_name} economy • flux` })
+      .setTimestamp()] });
+  },
+};
+
+module.exports = [balance, daily, work, depositCmd, withdrawCmd, pay, donate, rob, richlist, give, take, setbal, reseteco, ecoset, crime, beg, invest, fish, hunt, mine, scratch, ecohelp, cf];
