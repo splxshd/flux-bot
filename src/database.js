@@ -187,6 +187,15 @@ db.run(`CREATE TABLE IF NOT EXISTS boost_roles (
   PRIMARY KEY (guild_id, user_id)
 )`);
 
+db.run(`CREATE TABLE IF NOT EXISTS honeypot_channels (
+  guild_id   TEXT NOT NULL,
+  channel_id TEXT NOT NULL,
+  action     TEXT NOT NULL DEFAULT 'kick',
+  message_id TEXT,
+  count      INTEGER NOT NULL DEFAULT 0,
+  PRIMARY KEY (guild_id, channel_id)
+)`);
+
 db.run(`CREATE TABLE IF NOT EXISTS bets (
   id          INTEGER PRIMARY KEY AUTOINCREMENT,
   guild_id    TEXT    NOT NULL,
@@ -1554,6 +1563,25 @@ function getAllBoostRoles(guildId) {
   return all('SELECT * FROM boost_roles WHERE guild_id=?', [guildId]);
 }
 
+// ─── Honeypot ─────────────────────────────────────────────────────────────────
+function setHoneypot(guildId, channelId, action, messageId) {
+  const existing = get('SELECT count FROM honeypot_channels WHERE guild_id=? AND channel_id=?', [guildId, channelId]);
+  return run('INSERT OR REPLACE INTO honeypot_channels (guild_id, channel_id, action, message_id, count) VALUES (?, ?, ?, ?, ?)',
+    [guildId, channelId, action, messageId, existing?.count ?? 0]);
+}
+function getHoneypot(guildId, channelId) {
+  return get('SELECT * FROM honeypot_channels WHERE guild_id=? AND channel_id=?', [guildId, channelId]);
+}
+function removeHoneypot(guildId, channelId) {
+  return run('DELETE FROM honeypot_channels WHERE guild_id=? AND channel_id=?', [guildId, channelId]);
+}
+function incrementHoneypotCount(guildId, channelId) {
+  return run('UPDATE honeypot_channels SET count = count + 1 WHERE guild_id=? AND channel_id=?', [guildId, channelId]);
+}
+function getAllHoneypots(guildId) {
+  return all('SELECT * FROM honeypot_channels WHERE guild_id=?', [guildId]);
+}
+
 // ─── Bets ─────────────────────────────────────────────────────────────────────
 function createBet(guildId, creatorId, question, options) {
   const r = run('INSERT INTO bets (guild_id, creator_id, question, options_json) VALUES (?, ?, ?, ?)',
@@ -1662,4 +1690,5 @@ module.exports = {
   setBoostRole, getBoostRole, removeBoostRole, getAllBoostRoles,
   createBet, getBet, getActiveBets, updateBetStatus, updateBetMessage, setBetWinner,
   addBetEntry, removeBetEntry, getBetEntries, getUserBetEntry, getBetTotals, getBetBettorCounts,
+  setHoneypot, getHoneypot, removeHoneypot, incrementHoneypotCount, getAllHoneypots,
 };

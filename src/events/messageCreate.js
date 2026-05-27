@@ -29,6 +29,19 @@ const PERM_FLAGS = {
 const YELLOW = '#FEE75C';
 const GREEN  = '#57F287';
 
+function buildHoneypotEmbed(actionWord, count) {
+  return new EmbedBuilder()
+    .setColor('#ED4245')
+    .setTitle('⚠️ RESTRICTED SECURITY CHANNEL')
+    .setDescription(
+      '**DO NOT** `SEND` **ANY** `MESSAGES` **HERE**\n\n' +
+      'This channel is a trap designed to catch `spam bots` and `compromised accounts`.\n' +
+      `Any message sent here will automatically result in **a ${actionWord.toLowerCase().replace(/s$/, '')}**.`
+    )
+    .addFields({ name: `🍯 ${actionWord}`, value: `**${count}**`, inline: true })
+    .setTimestamp();
+}
+
 // Anti-raid mention tracker
 const mentionTracker = new Map(); // userId -> count (reset per guild, simple per-message check)
 
@@ -45,6 +58,53 @@ module.exports = (client) => {
 
 async function handleMessage(client, message) {
     if (!message.guild || message.author.bot) return;
+
+    // ── Honeypot channel ────────────────────────────────────────────────────────
+    const honeypot = db.getHoneypot(message.guild.id, message.channel.id);
+    if (honeypot) {
+      // Admins/mods can still type without getting caught
+      if (!message.member?.permissions?.has(PermissionFlagsBits.ManageGuild)) {
+        await message.delete().catch(() => {});
+
+        const action = honeypot.action || 'kick';
+        const member = message.member || await message.guild.members.fetch(message.author.id).catch(() => null);
+        if (member) {
+          try {
+            if (action === 'ban') {
+              await member.ban({ reason: 'Honeypot channel — auto-ban', deleteMessageDays: 1 });
+            } else if (action === 'softban') {
+              await member.ban({ reason: 'Honeypot channel — softban', deleteMessageDays: 1 });
+              await message.guild.bans.remove(member.id, 'Softban complete').catch(() => {});
+            } else {
+              await member.kick('Honeypot channel — auto-kick');
+            }
+          } catch (_) {}
+
+          // DM the user
+          const actionPast = action === 'ban' ? 'banned' : action === 'softban' ? 'softbanned' : 'kicked';
+          message.author.send({
+            embeds: [new EmbedBuilder()
+              .setColor('#ED4245')
+              .setTitle('⚠️ You triggered a honeypot')
+              .setDescription(`You sent a message in a restricted channel in **${message.guild.name}** and were automatically **${actionPast}**.\nIf you believe this was a mistake, contact the server staff.`)
+              .setTimestamp()],
+          }).catch(() => {});
+        }
+
+        // Increment counter and update the warning embed
+        db.incrementHoneypotCount(message.guild.id, message.channel.id);
+        const updated = db.getHoneypot(message.guild.id, message.channel.id);
+        if (updated?.message_id) {
+          const ch = message.channel;
+          const pinned = await ch.messages.fetch(updated.message_id).catch(() => null);
+          if (pinned?.author?.id === client.user.id) {
+            const actionWord = action === 'ban' ? 'Bans' : action === 'softban' ? 'Softbans' : 'Kicks';
+            await pinned.edit({ embeds: [buildHoneypotEmbed(actionWord, updated.count)] }).catch(() => {});
+          }
+        }
+      }
+      return; // Never process honeypot messages as commands
+    }
 
     db.trackMessage(message.guild.id, message.author.id, message.channel.id, message.channel.name);
 
