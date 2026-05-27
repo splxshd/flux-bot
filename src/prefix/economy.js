@@ -1493,6 +1493,109 @@ const cf = {
   },
 };
 
+// ── ,roulette ─────────────────────────────────────────────────────────────────
+const RED_NUMBERS = new Set([1,3,5,7,9,12,14,16,18,19,21,23,25,27,30,32,34,36]);
+
+function getColor(n) {
+  if (n === 0) return 'green';
+  return RED_NUMBERS.has(n) ? 'red' : 'black';
+}
+
+const ROULETTE_CD = 10 * 60; // 10 min — shared via scratch_at, give it own col
+// We reuse mine_at naming pattern — but roulette gets its own key below
+
+const ROULETTE_BETS = ['red','black','odd','even','green','1-12','13-24','25-36','1st','2nd','3rd'];
+
+const roulette = {
+  name: 'roulette',
+  aliases: ['rl', 'spin'],
+  async execute(message, args) {
+    const guildId = message.guild.id;
+    const userId  = message.author.id;
+    const eco     = db.getEco(guildId, userId);
+    const s       = db.getEcoSettings(guildId);
+
+    if (!args[0] || !args[1]) {
+      return message.reply({ embeds: [new EmbedBuilder().setColor(BLUE)
+        .setTitle('🎡 Roulette — Usage')
+        .setDescription(
+          '`,roulette <bet> <amount>`\n\n' +
+          '**Bet types:**\n' +
+          '`red` / `black` — color (1:1)\n' +
+          '`odd` / `even` — parity (1:1)\n' +
+          '`green` / `0` — green pocket (17:1)\n' +
+          '`1-12` / `13-24` / `25-36` — dozens (2:1)\n' +
+          '`0`–`36` — exact number (35:1)\n\n' +
+          '**Example:** `,roulette red 500` or `,roulette 7 1000`'
+        )
+        .setFooter({ text: 'flux economy' })] });
+    }
+
+    const betType = args[0].toLowerCase();
+    const amt     = parseBet(args[1], eco.wallet);
+
+    if (!amt || amt < 1)
+      return message.reply({ embeds: [new EmbedBuilder().setColor(RED).setDescription('❌ Invalid amount.')] });
+    if (amt > eco.wallet)
+      return message.reply({ embeds: [new EmbedBuilder().setColor(RED)
+        .setDescription(`❌ You only have **${fmt(eco.wallet)} ${s.currency_emoji}** in your wallet.`)] });
+
+    // Validate bet
+    const isNumber   = /^\d+$/.test(betType) && parseInt(betType) >= 0 && parseInt(betType) <= 36;
+    const validTypes = ['red','black','odd','even','green','1-12','13-24','25-36'];
+    if (!isNumber && !validTypes.includes(betType))
+      return message.reply({ embeds: [new EmbedBuilder().setColor(RED)
+        .setDescription('❌ Invalid bet type. Use `red`, `black`, `odd`, `even`, `green`, `1-12`, `13-24`, `25-36`, or a number `0`–`36`.`')] });
+
+    // Spin
+    const result = Math.floor(Math.random() * 37); // 0–36
+    const color  = getColor(result);
+    const colorEmoji = color === 'red' ? '🔴' : color === 'black' ? '⚫' : '🟢';
+
+    // Determine win/payout
+    let won = false;
+    let multiplier = 0;
+
+    if (isNumber) {
+      const num = parseInt(betType);
+      won = result === num;
+      multiplier = 35;
+    } else if (betType === 'red')   { won = color === 'red';                        multiplier = 1; }
+    else if (betType === 'black')   { won = color === 'black';                      multiplier = 1; }
+    else if (betType === 'odd')     { won = result !== 0 && result % 2 === 1;       multiplier = 1; }
+    else if (betType === 'even')    { won = result !== 0 && result % 2 === 0;       multiplier = 1; }
+    else if (betType === 'green')   { won = result === 0;                           multiplier = 17; }
+    else if (betType === '1-12')    { won = result >= 1 && result <= 12;            multiplier = 2; }
+    else if (betType === '13-24')   { won = result >= 13 && result <= 24;           multiplier = 2; }
+    else if (betType === '25-36')   { won = result >= 25 && result <= 36;           multiplier = 2; }
+
+    const payout = won ? amt * multiplier : 0;
+    const net    = won ? payout : -amt;
+
+    db.addWallet(guildId, userId, net);
+    const newEco = db.getEco(guildId, userId);
+
+    const betLabel = isNumber ? `Number **${betType}**` : `**${betType.toUpperCase()}**`;
+    const netStr   = net >= 0 ? `+${fmt(net)}` : `-${fmt(Math.abs(net))}`;
+
+    await message.reply({ embeds: [new EmbedBuilder()
+      .setColor(won ? (color === 'red' ? '#ED4245' : color === 'green' ? '#57F287' : '#2C3E50') : RED)
+      .setTitle(`🎡 Roulette — ${colorEmoji} **${result}**`)
+      .setDescription(won
+        ? `The ball landed on **${result}** (${color})!\nYou bet on ${betLabel} and **won**! 🎉`
+        : `The ball landed on **${result}** (${color}).\nYou bet on ${betLabel} and **lost**.`)
+      .addFields(
+        { name: '🎫 Bet',       value: `${fmt(amt)} ${s.currency_emoji}`,                      inline: true },
+        { name: '💰 Payout',    value: won ? `+${fmt(payout)} ${s.currency_emoji}` : '`None`', inline: true },
+        { name: `${net >= 0 ? '📈' : '📉'} Net`, value: `**${netStr} ${s.currency_emoji}**`,  inline: true },
+        { name: '👛 Wallet',    value: `${fmt(newEco.wallet)} ${s.currency_emoji}`,            inline: true },
+        { name: '🎯 Multiplier', value: won ? `×${multiplier + 1}` : '—',                     inline: true },
+      )
+      .setFooter({ text: 'flux economy' })
+      .setTimestamp()] });
+  },
+};
+
 // ── ,hunt ─────────────────────────────────────────────────────────────────────
 const HUNT_TIERS = [
   { id: 'miss',    emoji: '💨', label: 'Missed',      weight: 15, min: 0,    max: 0,    lines: ["You aimed but the animal vanished into the trees.", "Clean miss. You sat down and rethought your life.", "Nothing. Just wind and embarrassment."] },
@@ -1730,6 +1833,7 @@ const ecohelp = {
         {
           name: '🎲 Gamble & Risk',
           value: [
+            '`,roulette <bet> <amount>` — spin the wheel (red/black/number/etc)',
             '`,scratch` — buy a scratch card for 500 (15 min)',
             '`,invest <amount>` — pick a market and watch it move (20 min)',
             '`,crime` — choose a crime: pickpocket → bank heist (45 min)',
@@ -1773,4 +1877,4 @@ const ecohelp = {
   },
 };
 
-module.exports = [balance, daily, work, depositCmd, withdrawCmd, pay, donate, rob, richlist, give, take, setbal, reseteco, ecoset, crime, beg, invest, fish, hunt, mine, scratch, ecohelp, cf];
+module.exports = [balance, daily, work, depositCmd, withdrawCmd, pay, donate, rob, richlist, give, take, setbal, reseteco, ecoset, crime, beg, invest, fish, hunt, mine, scratch, roulette, ecohelp, cf];
