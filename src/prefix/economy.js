@@ -1,6 +1,6 @@
 'use strict';
 
-const { EmbedBuilder, PermissionFlagsBits, ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
+const { EmbedBuilder, PermissionFlagsBits, ActionRowBuilder, ButtonBuilder, ButtonStyle, StringSelectMenuBuilder } = require('discord.js');
 const db = require('../database');
 
 const GREEN  = '#57F287';
@@ -1807,81 +1807,128 @@ const scratch = {
 };
 
 // ── ,ecohelp ──────────────────────────────────────────────────────────────────
+const ECO_CATEGORIES = {
+  earn: {
+    label: '💰 Earn Coins', emoji: '💰',
+    description: 'Ways to earn coins without betting',
+    color: GREEN,
+    lines: [
+      '`,daily` — claim your daily reward **(24h)**',
+      '`,work` — work a job for coins **(1h)**',
+      '`,fish` — go fishing **(5 min)**',
+      '`,hunt` — go hunting **(10 min)**',
+      '`,mine` — mine for ores **(8 min)**',
+      '`,beg` — beg from strangers **(12 min)**',
+    ],
+  },
+  gamble: {
+    label: '🎲 Gamble', emoji: '🎲',
+    description: 'Gambling & risk commands',
+    color: GOLD,
+    lines: [
+      '`,roulette <bet> <amount>` — spin the wheel',
+      '`,scratch` — scratch card for 500 coins **(15 min)**',
+      '`,blackjack <amount>` — beat the dealer to 21',
+      '`,slots <amount>` — pull the slot machine',
+      '`,hilo <amount>` — guess higher or lower',
+      '`,hiloduel @user <amount>` — hilo 1v1',
+      '`,poker @user <amount>` — 1v1 poker hand',
+      '`,roll <amount>` — high roll wins',
+      '`,coin <amount>` — heads or tails',
+      '`,guess <amount>` — guess 1–10',
+    ],
+  },
+  risk: {
+    label: '🦹 Risk & Crime', emoji: '🦹',
+    description: 'High risk, high reward activities',
+    color: RED,
+    lines: [
+      '`,invest <amount>` — pick a market, watch ticks **(20 min)**',
+      '`,crime` — pickpocket → carjack → smuggle → bank heist **(45 min)**',
+      '`,rob @user` — steal from someone\'s wallet **(30 min)**',
+      '`,cf @user <amount>` — coinflip duel',
+    ],
+  },
+  bank: {
+    label: '🏦 Banking', emoji: '🏦',
+    description: 'Manage your balance and bank',
+    color: BLUE,
+    lines: [
+      '`,bal [@user]` — check balance',
+      '`,deposit <amount|all>` — wallet → bank',
+      '`,withdraw <amount|all>` — bank → wallet',
+      '`,richlist` — top 10 richest members',
+      '`,pay @user <amount>` — send coins',
+      '`,donate @user <amount>` — gift coins',
+    ],
+  },
+  admin: {
+    label: '⚙️ Admin', emoji: '⚙️',
+    description: 'Admin-only economy controls',
+    color: YELLOW,
+    lines: [
+      '`,give @user <amount>` — add coins to wallet',
+      '`,take @user <amount>` — remove coins from wallet',
+      '`,setbal @user <amount>` — set wallet balance',
+      '`,reseteco @user` — wipe a user\'s economy data',
+      '`,ecoset` — configure currency name / emoji / daily',
+    ],
+  },
+};
+
 const ecohelp = {
   name: 'ecohelp',
   aliases: ['econhelp', 'economyhelp', 'ecolist'],
   async execute(message) {
     const s = db.getEcoSettings(message.guild.id);
     const e = s.currency_emoji;
-    await message.reply({ embeds: [new EmbedBuilder()
+
+    const menu = new StringSelectMenuBuilder()
+      .setCustomId(`ecohelp_${message.author.id}`)
+      .setPlaceholder('Select a category...')
+      .addOptions(Object.entries(ECO_CATEGORIES).map(([key, cat]) => ({
+        label: cat.label,
+        value: key,
+        description: cat.description,
+        emoji: cat.emoji,
+      })));
+
+    const row = new ActionRowBuilder().addComponents(menu);
+
+    const homeEmbed = new EmbedBuilder()
       .setColor(GOLD)
-      .setTitle(`${e} Economy Commands`)
-      .setThumbnail(message.guild.iconURL({ dynamic: true }) || undefined)
-      .addFields(
-        {
-          name: '💰 Earn Coins',
-          value: [
-            '`,daily` — claim your daily reward (24h)',
-            '`,work` — work a job for coins (1h)',
-            '`,fish` — go fishing (5 min)',
-            '`,hunt` — go hunting (10 min)',
-            '`,mine` — mine for ores (8 min)',
-            '`,beg` — beg from strangers (12 min)',
-          ].join('\n'),
-          inline: false,
-        },
-        {
-          name: '🎲 Gamble & Risk',
-          value: [
-            '`,roulette <bet> <amount>` — spin the wheel (red/black/number/etc)',
-            '`,scratch` — buy a scratch card for 500 (15 min)',
-            '`,blackjack <amount>` — beat the dealer to 21',
-            '`,slots <amount>` — pull the slot machine',
-            '`,hilo <amount>` — guess higher or lower',
-            '`,hiloduel @user <amount>` — hilo 1v1',
-            '`,poker @user <amount>` — 1v1 poker hand',
-            '`,roll <amount>` — high roll wins',
-            '`,coin <amount>` — heads or tails',
-            '`,guess <amount>` — guess 1–10',
-            '`,invest <amount>` — pick a market and watch it move (20 min)',
-            '`,crime` — pickpocket → bank heist (45 min)',
-            '`,rob @user` — steal from someone\'s wallet (30 min)',
-            '`,cf @user <amount>` — coinflip duel',
-          ].join('\n'),
-          inline: false,
-        },
-        {
-          name: '🏦 Banking',
-          value: [
-            '`,bal [@user]` — check balance',
-            '`,deposit <amount|all>` — move wallet → bank',
-            '`,withdraw <amount|all>` — move bank → wallet',
-            '`,richlist` — top 10 richest members',
-          ].join('\n'),
-          inline: false,
-        },
-        {
-          name: '🤝 Social',
-          value: [
-            '`,pay @user <amount>` — send coins',
-            '`,donate @user <amount>` — gift coins',
-          ].join('\n'),
-          inline: false,
-        },
-        {
-          name: '⚙️ Admin Only',
-          value: [
-            '`,give @user <amount>` — add coins',
-            '`,take @user <amount>` — remove coins',
-            '`,setbal @user <amount>` — set balance',
-            '`,reseteco @user` — wipe a user\'s economy',
-            '`,ecoset` — configure currency name/emoji/daily amount',
-          ].join('\n'),
-          inline: false,
-        },
-      )
+      .setTitle(`${e} Economy Help`)
+      .setDescription('Select a category below to see the commands.')
+      .addFields(Object.values(ECO_CATEGORIES).map(cat => ({
+        name: cat.label,
+        value: cat.description,
+        inline: true,
+      })))
       .setFooter({ text: `${s.currency_name} economy • flux` })
-      .setTimestamp()] });
+      .setTimestamp();
+
+    const msg = await message.reply({ embeds: [homeEmbed], components: [row] });
+
+    const col = msg.createMessageComponentCollector({
+      filter: i => i.customId === `ecohelp_${message.author.id}`,
+      time: 60_000,
+    });
+
+    col.on('collect', async (i) => {
+      const key = i.values[0];
+      const cat = ECO_CATEGORIES[key];
+      const embed = new EmbedBuilder()
+        .setColor(cat.color)
+        .setTitle(cat.label)
+        .setDescription(cat.lines.join('\n'))
+        .setFooter({ text: `${s.currency_name} economy • flux` })
+        .setTimestamp();
+      await i.update({ embeds: [embed], components: [row] });
+    });
+
+    col.on('end', () => {
+      msg.edit({ components: [] }).catch(() => {});
+    });
   },
 };
 
