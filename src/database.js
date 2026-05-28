@@ -20,38 +20,74 @@ let db;
 // (WAL) overwrite them with 0x01 (DELETE/rollback mode) before we ever call
 // new Database(). Also delete any leftover -wal/-shm files. This runs once,
 // synchronously, at module-load time.
-function _convertFromWAL() {
-  if (!fs.existsSync(dbPath)) return; // new install — nothing to convert
+function _convertFromWAL(targetPath) {
+  if (!fs.existsSync(targetPath)) return;
   let fd;
   try {
-    const stat = fs.statSync(dbPath);
-    if (stat.size < 100) return; // not a valid SQLite file
-
-    fd = fs.openSync(dbPath, 'r+');
+    const stat = fs.statSync(targetPath);
+    if (stat.size < 100) return;
+    fd = fs.openSync(targetPath, 'r+');
     const hdr = Buffer.alloc(100);
     if (fs.readSync(fd, hdr, 0, 100, 0) < 100) return;
-
     if (hdr.slice(0, 15).toString('ascii') !== 'SQLite format 3') return;
-
     const wv = hdr[18], rv = hdr[19];
     if (wv === 2 || rv === 2) {
-      console.warn(`[DB] WAL-mode DB detected (hdr bytes 18/19=${wv}/${rv}) — converting to DELETE mode`);
+      console.warn(`[DB] WAL-mode detected in ${path.basename(targetPath)} — converting to DELETE mode`);
       for (const suf of ['-wal', '-shm']) {
-        try { fs.unlinkSync(dbPath + suf); console.warn(`[DB] Deleted ${suf}`); } catch (_) {}
+        try { fs.unlinkSync(targetPath + suf); } catch (_) {}
       }
       hdr[18] = 1; hdr[19] = 1;
       fs.writeSync(fd, hdr, 0, 100, 0);
-      console.warn('[DB] Header patched — DELETE mode active');
-    } else {
-      console.log(`[DB] Database already in DELETE mode (bytes 18/19=${wv}/${rv})`);
     }
   } catch (e) {
-    console.warn('[DB] WAL→DELETE conversion error:', e.message);
+    console.warn('[DB] WAL conversion error:', e.message);
   } finally {
     if (fd !== undefined) try { fs.closeSync(fd); } catch (_) {}
   }
 }
-_convertFromWAL(); // runs synchronously before any Database() call
+
+// Convert both the old and new db files before opening anything
+const oldDbPath = path.join(dataDir, 'nights.db');
+_convertFromWAL(oldDbPath);
+_convertFromWAL(dbPath);
+
+// ─── One-time data migration from nights.db → nights2.db ─────────────────────
+function _migrateFromOldDb() {
+  // Find the old database (nights.db or a timestamped backup of it)
+  let src = null;
+  if (fs.existsSync(oldDbPath) && fs.statSync(oldDbPath).size > 4096) {
+    src = oldDbPath;
+  } else {
+    // Check for backup files created by the retry-30 failsafe
+    const bak = fs.readdirSync(dataDir)
+      .filter(f => f.startsWith('nights.db.bak.'))
+      .sort().reverse()[0];
+    if (bak) src = path.join(dataDir, bak);
+  }
+  if (!src) return;
+
+  // Only migrate if nights2.db is essentially empty (fresh install)
+  try {
+    const existing = db.get('SELECT COUNT(*) as c FROM guild_settings')?.c ?? 0;
+    if (existing > 0) return; // already has data, skip
+  } catch (_) {}
+
+  console.log(`[DB] Migrating data from ${path.basename(src)} → nights2.db ...`);
+  try {
+    db.run(`ATTACH DATABASE '${src}' AS old`);
+    const tables = db.all("SELECT name FROM old.sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'");
+    let copied = 0;
+    for (const { name } of tables) {
+      try { db.run(`INSERT OR IGNORE INTO main.${name} SELECT * FROM old.${name}`); copied++; }
+      catch (_) {}
+    }
+    db.run('DETACH DATABASE old');
+    console.log(`[DB] Migration complete — copied ${copied} tables from old database.`);
+  } catch (e) {
+    console.warn('[DB] Migration error:', e.message);
+    try { db.run('DETACH DATABASE old'); } catch (_) {}
+  }
+}
 
 // ─── Non-blocking async DB init ───────────────────────────────────────────────
 function _tryOpenDb(resolve, reject, attempt) {
@@ -93,6 +129,7 @@ function _tryOpenDb(resolve, reject, attempt) {
 
 const _dbReady = new Promise((resolve, reject) => _tryOpenDb(resolve, reject, 0))
   .then(() => {
+    _migrateFromOldDb();
     setInterval(pruneOldData, 86400 * 1000);
     pruneOldData();
   })
