@@ -10,17 +10,18 @@ const { Database } = require('node-sqlite3-wasm');
 const dbPath = path.join(dataDir, 'nights.db');
 let db;
 for (let i = 0; i < 30; i++) {
-  try { db = new Database(dbPath); break; } catch (e) {
+  try {
+    db = new Database(dbPath);
+    db.run('PRAGMA busy_timeout = 10000');
+    db.run('PRAGMA journal_mode = WAL');
+    db.run('PRAGMA foreign_keys = ON');
+    break;
+  } catch (e) {
+    if (db) { try { db.close(); } catch (_) {} db = null; }
     if (i === 29) throw e;
     Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 1000);
   }
 }
-
-// Set busy_timeout first — makes every subsequent db.run() wait up to 10s
-// instead of throwing immediately if the old Railway container still holds the lock
-db.run('PRAGMA busy_timeout = 10000');
-db.run('PRAGMA journal_mode = WAL');
-db.run('PRAGMA foreign_keys = ON');
 
 // ─── Schema ───────────────────────────────────────────────────────────────────
 db.run(`CREATE TABLE IF NOT EXISTS guild_settings (
