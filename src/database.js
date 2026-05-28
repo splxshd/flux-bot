@@ -7,7 +7,14 @@ const dataDir = path.join(__dirname, '..', 'data');
 if (!fs.existsSync(dataDir)) fs.mkdirSync(dataDir, { recursive: true });
 
 const { Database } = require('node-sqlite3-wasm');
-const db = new Database(path.join(dataDir, 'nights.db'));
+const dbPath = path.join(dataDir, 'nights.db');
+let db;
+for (let i = 0; i < 30; i++) {
+  try { db = new Database(dbPath); break; } catch (e) {
+    if (i === 29) throw e;
+    Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 1000);
+  }
+}
 
 db.run('PRAGMA journal_mode = WAL');
 db.run('PRAGMA foreign_keys = ON');
