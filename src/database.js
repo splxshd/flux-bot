@@ -7,7 +7,7 @@ const dataDir = path.join(__dirname, '..', 'data');
 if (!fs.existsSync(dataDir)) fs.mkdirSync(dataDir, { recursive: true });
 
 const { Database } = require('node-sqlite3-wasm');
-const dbPath = path.join(dataDir, 'nights.db');
+const dbPath = path.join(dataDir, 'nights2.db');
 let db;
 
 // ─── WAL → DELETE mode conversion ────────────────────────────────────────────
