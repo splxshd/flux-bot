@@ -4,7 +4,7 @@ const crypto = require('crypto');
 const {
   SlashCommandBuilder, EmbedBuilder, PermissionFlagsBits,
   ActionRowBuilder, ButtonBuilder, ButtonStyle,
-  ChannelType, StringSelectMenuBuilder,
+  ChannelType,
 } = require('discord.js');
 const db = require('../database');
 
@@ -33,23 +33,27 @@ function getSupportRoleIds(settings) {
   return ids;
 }
 
-function buildCategoryMenu(categories) {
-  const select = new StringSelectMenuBuilder()
-    .setCustomId('ticket_panel_select')
-    .setPlaceholder('Choose a category to open a ticket…')
-    .addOptions(categories.slice(0, 25).map(c => {
-      const opt = {
-        label: c.name.slice(0, 100),
-        value: c.name.slice(0, 100),
-        description: (c.description || 'Open a support ticket').slice(0, 100),
-      };
-      if (c.emoji) {
-        const isCustomId = /^\d{17,20}$/.test(c.emoji.trim());
-        opt.emoji = isCustomId ? { id: c.emoji.trim() } : { name: c.emoji.trim() };
-      }
-      return opt;
-    }));
-  return new ActionRowBuilder().addComponents(select);
+// Returns an array of ActionRows (up to 5), each with up to 5 category buttons
+function buildCategoryButtons(categories) {
+  const rows = [];
+  for (let i = 0; i < Math.min(categories.length, 25); i += 5) {
+    const slice = categories.slice(i, i + 5);
+    const row = new ActionRowBuilder().addComponents(
+      slice.map(c => {
+        const btn = new ButtonBuilder()
+          .setCustomId(`ticket_open:${c.name.slice(0, 88)}`)
+          .setLabel(c.name.slice(0, 80))
+          .setStyle(ButtonStyle.Primary);
+        if (c.emoji) {
+          const isCustomId = /^\d{17,20}$/.test(c.emoji.trim());
+          btn.setEmoji(isCustomId ? { id: c.emoji.trim() } : { name: c.emoji.trim() });
+        }
+        return btn;
+      })
+    );
+    rows.push(row);
+  }
+  return rows;
 }
 
 // ─── Core: open a ticket ──────────────────────────────────────────────────────
@@ -320,8 +324,8 @@ const ticket = {
     const categories = db.getTicketCategories(interaction.guildId);
     if (categories.length > 0) {
       return interaction.reply({
-        content: '**Select a category to open a ticket:**',
-        components: [buildCategoryMenu(categories)],
+        content: '**Select a category below to open a ticket:**',
+        components: buildCategoryButtons(categories),
         ephemeral: true,
       });
     }
@@ -457,7 +461,7 @@ const ticketsetup = {
       const image     = interaction.options.getString('image');
       const title     = interaction.options.getString('title')       || 'Support Tickets';
       const desc      = interaction.options.getString('description') ||
-        'Need help? Select a category below to open a support ticket.\nA staff member will assist you as soon as possible.';
+        'Need help? Click a button below to open a support ticket.\nA staff member will assist you as soon as possible.';
       const thumbnail = interaction.options.getString('thumbnail');
 
       const categories = db.getTicketCategories(interaction.guild.id);
@@ -471,17 +475,9 @@ const ticketsetup = {
         .setTimestamp();
       if (image) embed.setImage(image);
 
-      // Show category fields so users know what each option opens
-      if (categories.length > 0) {
-        embed.addFields(categories.map(c => ({
-          name: `${c.emoji ? c.emoji + ' ' : ''}${c.name}`,
-          value: c.description || 'Open a support ticket',
-          inline: true,
-        })));
-      }
-
+      // Buttons: one per category, or a single Open Ticket button if none configured
       const components = categories.length > 0
-        ? [buildCategoryMenu(categories)]
+        ? buildCategoryButtons(categories)
         : [new ActionRowBuilder().addComponents(
             new ButtonBuilder().setCustomId('open_ticket').setLabel('Open Ticket').setStyle(ButtonStyle.Primary).setEmoji('🎫')
           )];
@@ -615,9 +611,9 @@ const ticketsetup = {
 
 // ─── Standalone ticket channel commands ───────────────────────────────────────
 
-const tclose = {
+const closeTicketCmd = {
   data: new SlashCommandBuilder()
-    .setName('tclose')
+    .setName('close')
     .setDescription('Close this ticket')
     .addStringOption(o => o.setName('reason').setDescription('Reason for closing')),
   async execute(interaction, client) {
@@ -630,9 +626,9 @@ const tclose = {
   },
 };
 
-const talert = {
+const alert = {
   data: new SlashCommandBuilder()
-    .setName('talert')
+    .setName('alert')
     .setDescription('Ping the ticket creator to remind them to respond')
     .addStringOption(o => o.setName('message').setDescription('Custom alert message')),
   async execute(interaction) {
@@ -649,18 +645,18 @@ const talert = {
   },
 };
 
-const tclaim = {
+const claim = {
   data: new SlashCommandBuilder()
-    .setName('tclaim')
+    .setName('claim')
     .setDescription('Claim or unclaim this ticket'),
   async execute(interaction, client) {
     return executeClaim(interaction, client);
   },
 };
 
-const tmove = {
+const move = {
   data: new SlashCommandBuilder()
-    .setName('tmove')
+    .setName('move')
     .setDescription('Move this ticket to a different category')
     .addStringOption(o => o.setName('category').setDescription('Category name to move to').setRequired(true)),
   async execute(interaction) {
@@ -699,9 +695,9 @@ const tmove = {
   },
 };
 
-const tadd = {
+const add = {
   data: new SlashCommandBuilder()
-    .setName('tadd')
+    .setName('add')
     .setDescription('Add a user to this ticket')
     .addUserOption(o => o.setName('user').setDescription('User to add').setRequired(true)),
   async execute(interaction) {
@@ -716,9 +712,9 @@ const tadd = {
   },
 };
 
-const tremove = {
+const remove = {
   data: new SlashCommandBuilder()
-    .setName('tremove')
+    .setName('remove')
     .setDescription('Remove a user from this ticket')
     .addUserOption(o => o.setName('user').setDescription('User to remove').setRequired(true)),
   async execute(interaction) {
@@ -731,9 +727,9 @@ const tremove = {
   },
 };
 
-const trename = {
+const rename = {
   data: new SlashCommandBuilder()
-    .setName('trename')
+    .setName('rename')
     .setDescription('Rename this ticket channel')
     .addStringOption(o => o.setName('name').setDescription('New channel name').setRequired(true)),
   async execute(interaction) {
@@ -747,9 +743,9 @@ const trename = {
   },
 };
 
-const tinfo = {
+const info = {
   data: new SlashCommandBuilder()
-    .setName('tinfo')
+    .setName('info')
     .setDescription('Show info about this ticket'),
   async execute(interaction, client) {
     const t = db.getTicketByChannel(interaction.channel.id);
@@ -779,4 +775,4 @@ const tinfo = {
   },
 };
 
-module.exports = [ticket, ticketsetup, tclose, talert, tclaim, tmove, tadd, tremove, trename, tinfo];
+module.exports = [ticket, ticketsetup, closeTicketCmd, alert, claim, move, add, remove, rename, info];

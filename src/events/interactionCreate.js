@@ -3,7 +3,6 @@
 const {
   EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle,
   ModalBuilder, TextInputBuilder, TextInputStyle,
-  StringSelectMenuBuilder,
 } = require('discord.js');
 const db = require('../database');
 const { buildBetEmbed, buildBetRow, refreshBetMessage, fmtCoins } = require('../utils/betHelpers');
@@ -36,17 +35,6 @@ module.exports = (client) => {
           const helpCmd = client.commands.get('help');
           if (helpCmd?.handleInteraction) await helpCmd.handleInteraction(interaction);
           else if (helpCmd?.handleSelect) await helpCmd.handleSelect(interaction, client);
-          return;
-        }
-
-        // Ticket category panel
-        if (interaction.customId === 'ticket_panel_select') {
-          const categoryName = interaction.values[0];
-          await interaction.deferReply({ ephemeral: true });
-          const ticketCmd = client.commands.get('ticket');
-          if (ticketCmd?.openTicket) {
-            await ticketCmd.openTicket(interaction, client, categoryName);
-          }
           return;
         }
 
@@ -147,6 +135,17 @@ module.exports = (client) => {
         if (id === 'open_ticket') {
           const ticketCmd = client.commands.get('ticket');
           if (ticketCmd) await ticketCmd.execute(interaction, client);
+          return;
+        }
+
+        // Category panel button (ticket_open:CategoryName)
+        if (id.startsWith('ticket_open:')) {
+          const categoryName = id.slice(12);
+          await interaction.deferReply({ ephemeral: true });
+          const ticketCmd = client.commands.get('ticket');
+          if (ticketCmd?.openTicket) {
+            await ticketCmd.openTicket(interaction, client, categoryName);
+          }
           return;
         }
 
