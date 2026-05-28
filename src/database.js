@@ -49,34 +49,40 @@ function _convertFromWAL(targetPath) {
 const oldDbPath = path.join(dataDir, 'nights.db');
 
 // ─── Pre-open restore: raw file copy before ANY SQLite connection opens ───────
-// Avoids ATTACH DATABASE (which fails on Railway WAL volumes). Instead we find
-// the backup file with real data, convert its header from WAL→DELETE, then
-// fs.copyFileSync it over nights2.db before we ever call new Database().
+// Uses a marker file so this runs exactly once even if nights2.db already has
+// schema tables (which makes it >8KB even when empty of real user data).
 (function _restoreIfEmpty() {
-  try {
-    const cur = fs.existsSync(dbPath) ? fs.statSync(dbPath).size : 0;
-    if (cur > 8192) return; // nights2.db already has data — nothing to do
+  const marker = path.join(dataDir, '.restored');
+  if (fs.existsSync(marker)) return; // already ran once, skip
 
+  try {
     // Find the best source: .bak files first (retry-30 renamed nights.db there)
     let src = null;
-    const all = fs.readdirSync(dataDir);
-    const baks = all.filter(f => f.startsWith('nights.db.bak.')).sort().reverse();
-    for (const b of baks) {
-      const p = path.join(dataDir, b);
-      if (fs.statSync(p).size > 8192) { src = p; break; }
+    try {
+      const baks = fs.readdirSync(dataDir)
+        .filter(f => f.startsWith('nights.db.bak.')).sort().reverse();
+      for (const b of baks) {
+        const p = path.join(dataDir, b);
+        if (fs.statSync(p).size > 8192) { src = p; break; }
+      }
+    } catch (_) {}
+    if (!src) {
+      try {
+        if (fs.existsSync(oldDbPath) && fs.statSync(oldDbPath).size > 8192) src = oldDbPath;
+      } catch (_) {}
     }
-    if (!src && fs.existsSync(oldDbPath) && fs.statSync(oldDbPath).size > 8192) {
-      src = oldDbPath;
-    }
-    if (!src) { console.log('[DB] No backup found — starting fresh.'); return; }
 
-    // Patch source header WAL→DELETE so the copy opens cleanly
+    if (!src) {
+      console.log('[DB] No old database found — starting fresh.');
+      fs.writeFileSync(marker, '1'); // mark so we don't check again
+      return;
+    }
+
     _convertFromWAL(src);
-
-    // Raw copy: no SQLite involved, always works
     fs.copyFileSync(src, dbPath);
-    _convertFromWAL(dbPath); // patch copy too just in case
-    console.log(`[DB] Restored data from ${path.basename(src)} → nights2.db (${fs.statSync(dbPath).size} bytes)`);
+    _convertFromWAL(dbPath);
+    fs.writeFileSync(marker, '1'); // mark as done
+    console.log(`[DB] Restored data from ${path.basename(src)} → nights2.db`);
   } catch (e) {
     console.warn('[DB] Restore error:', e.message);
   }
