@@ -16,6 +16,9 @@ for (let i = 0; i < 30; i++) {
   }
 }
 
+// Set busy_timeout first — makes every subsequent db.run() wait up to 10s
+// instead of throwing immediately if the old Railway container still holds the lock
+db.run('PRAGMA busy_timeout = 10000');
 db.run('PRAGMA journal_mode = WAL');
 db.run('PRAGMA foreign_keys = ON');
 
