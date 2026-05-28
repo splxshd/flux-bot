@@ -525,7 +525,294 @@ const shopconfig = {
   },
 };
 
+// ── ,myrole ───────────────────────────────────────────────────────────────────
+// ,myrole                        → show your roles / help
+// ,myrole create <name> <#hex>   → pay credits and create a custom role
+// ,myrole color [slot] <#hex>    → update color of a role slot
+// ,myrole rename [slot] <name>   → rename a role slot
+// ,myrole delete [slot]          → delete a role slot (no refund)
+const myrole = {
+  name: 'myrole',
+  aliases: ['customrole', 'mycolor', 'rolecolor'],
+  async execute(message, args) {
+    const guildId = message.guild.id;
+    const userId  = message.author.id;
+    const s       = db.getCreditSettings(guildId);
+    const sub     = args[0]?.toLowerCase();
+
+    // ── View / help ──────────────────────────────────────────────────────────
+    if (!sub || sub === 'view' || sub === 'list') {
+      const roles = db.getUserCustomRoles(guildId, userId);
+      const cr    = db.getCredits(guildId, userId);
+
+      if (!roles.length) {
+        return message.reply({ embeds: [new EmbedBuilder()
+          .setColor(BLUE)
+          .setTitle('🎨 Custom Roles')
+          .setDescription(
+            `You don't have any custom roles yet!\n\n` +
+            `**Create one:**\n\`\`,myrole create <name> <#hex>\`\`\n\n` +
+            `**Cost:** ${fmt(s.custom_role_cost)} credits\n` +
+            `**Your balance:** ${fmt(cr.amount)} credits\n` +
+            `**Max slots:** ${s.max_custom_roles}`,
+          )
+          .setFooter({ text: 'flux credits' })] });
+      }
+
+      const lines = roles.map(r => {
+        const role = message.guild.roles.cache.get(r.role_id);
+        return `**Slot ${r.slot}** — ${role ? role.toString() : `~~${r.name}~~ *(deleted)*`} \`${r.color}\``;
+      });
+
+      const embed = new EmbedBuilder()
+        .setColor(GOLD)
+        .setTitle('🎨 Your Custom Roles')
+        .setDescription(lines.join('\n'))
+        .addFields(
+          { name: '💳 Balance',    value: `${fmt(cr.amount)} credits`,     inline: true },
+          { name: '📝 Update cost', value: `${fmt(s.custom_role_update_cost || 0)} credits`, inline: true },
+          { name: '🔧 Slots used', value: `${roles.length}/${s.max_custom_roles}`, inline: true },
+        )
+        .setFooter({ text: 'flux credits' })
+        .setTimestamp();
+      return message.reply({ embeds: [embed] });
+    }
+
+    // ── Create ───────────────────────────────────────────────────────────────
+    if (sub === 'create' || sub === 'make' || sub === 'new') {
+      const hexArg  = args.find(a => /^#[0-9A-Fa-f]{6}$/.test(a));
+      const nameArg = args.slice(1).filter(a => !/^#[0-9A-Fa-f]{6}$/.test(a)).join(' ').trim();
+
+      if (!hexArg || !nameArg) {
+        return message.reply({ embeds: [new EmbedBuilder().setColor(RED)
+          .setDescription('❌ Usage: `,myrole create <name> <#HEX>`\nExample: `,myrole create Crimson #FF0000`')] });
+      }
+      if (nameArg.length > 32) return message.reply('❌ Role name must be 32 characters or less.');
+
+      const existingRoles = db.getUserCustomRoles(guildId, userId);
+      if (existingRoles.length >= s.max_custom_roles) {
+        return message.reply({ embeds: [new EmbedBuilder().setColor(RED)
+          .setDescription(`❌ You've used all **${s.max_custom_roles}** custom role slot${s.max_custom_roles !== 1 ? 's' : ''}.`)] });
+      }
+
+      const cost = s.custom_role_cost || 0;
+      const cr   = db.getCredits(guildId, userId);
+      if (cr.amount < cost) {
+        return message.reply({ embeds: [new EmbedBuilder().setColor(RED)
+          .setDescription(`❌ Creating a custom role costs **${fmt(cost)} credits**.\nYou have **${fmt(cr.amount)}** — need **${fmt(cost - cr.amount)}** more.`)] });
+      }
+
+      // Find next free slot
+      const usedSlots = new Set(existingRoles.map(r => r.slot));
+      let slot = 1;
+      while (usedSlots.has(slot)) slot++;
+
+      const color = '#' + hexArg.slice(1).toUpperCase();
+      if (cost > 0) db.spendCredits(guildId, userId, cost);
+
+      try {
+        const role = await message.guild.roles.create({
+          name: nameArg,
+          color: parseInt(color.slice(1), 16),
+          permissions: 0n,
+          hoist: false,
+          mentionable: false,
+          reason: `Custom role for ${message.author.tag}`,
+        });
+
+        // Position below bot's highest role so bot can always manage it
+        const botTopPos = message.guild.members.me?.roles?.highest?.position ?? 999;
+        await role.setPosition(Math.max(1, botTopPos - 1)).catch(() => {});
+
+        db.addUserCustomRole(guildId, userId, role.id, nameArg, color, slot);
+        await message.member.roles.add(role).catch(() => {});
+
+        await message.reply({ embeds: [new EmbedBuilder()
+          .setColor(parseInt(color.slice(1), 16))
+          .setTitle('🎨 Custom Role Created!')
+          .setDescription(`Your custom role ${role} has been created and applied!`)
+          .addFields(
+            { name: '🏷️ Name',  value: nameArg,                inline: true },
+            { name: '🎨 Color', value: color,                  inline: true },
+            { name: '🔢 Slot',  value: `${slot}`,              inline: true },
+            ...(cost > 0 ? [{ name: '💳 Spent', value: `${fmt(cost)} credits`, inline: true }] : []),
+          )
+          .setFooter({ text: 'flux credits' })
+          .setTimestamp()] });
+
+      } catch (e) {
+        if (cost > 0) db.refundCredits(guildId, userId, cost);
+        await message.reply({ embeds: [new EmbedBuilder().setColor(RED)
+          .setDescription(`❌ Failed to create role: ${e.message}. Refunded.`)] });
+      }
+      return;
+    }
+
+    // ── Update color ──────────────────────────────────────────────────────────
+    if (sub === 'color' || sub === 'colour') {
+      const hexArg = args.find(a => /^#[0-9A-Fa-f]{6}$/.test(a));
+      if (!hexArg) return message.reply('❌ Usage: `,myrole color <#HEX>` or `,myrole color <slot> <#HEX>`');
+
+      const slotArg = parseInt(args[1]);
+      const slot    = !isNaN(slotArg) && slotArg >= 1 ? slotArg : 1;
+      const row     = db.getUserCustomRole(guildId, userId, slot);
+
+      if (!row) return message.reply(`❌ You don't have a custom role in slot ${slot}.`);
+
+      const cost = s.custom_role_update_cost || 0;
+      const cr   = db.getCredits(guildId, userId);
+      if (cr.amount < cost) {
+        return message.reply({ embeds: [new EmbedBuilder().setColor(RED)
+          .setDescription(`❌ Updating costs **${fmt(cost)} credits** — you have **${fmt(cr.amount)}**.`)] });
+      }
+
+      const color = '#' + hexArg.slice(1).toUpperCase();
+      if (cost > 0) db.spendCredits(guildId, userId, cost);
+
+      const role = message.guild.roles.cache.get(row.role_id);
+      if (role) {
+        await role.setColor(parseInt(color.slice(1), 16)).catch(() => {});
+      }
+      db.updateUserCustomRole(guildId, userId, slot, { color });
+
+      await message.reply({ embeds: [new EmbedBuilder()
+        .setColor(parseInt(color.slice(1), 16))
+        .setDescription(`✅ Slot **${slot}** color updated to \`${color}\`!${cost > 0 ? ` (${fmt(cost)} credits spent)` : ''}`)] });
+      return;
+    }
+
+    // ── Rename ────────────────────────────────────────────────────────────────
+    if (sub === 'rename' || sub === 'name') {
+      const slotArg = parseInt(args[1]);
+      let slot      = 1;
+      let nameStart = 1;
+      if (!isNaN(slotArg) && slotArg >= 1) { slot = slotArg; nameStart = 2; }
+
+      const newName = args.slice(nameStart).join(' ').trim();
+      if (!newName) return message.reply('❌ Usage: `,myrole rename <name>` or `,myrole rename <slot> <name>`');
+      if (newName.length > 32) return message.reply('❌ Role name must be 32 characters or less.');
+
+      const row = db.getUserCustomRole(guildId, userId, slot);
+      if (!row) return message.reply(`❌ You don't have a custom role in slot ${slot}.`);
+
+      const cost = s.custom_role_update_cost || 0;
+      const cr   = db.getCredits(guildId, userId);
+      if (cr.amount < cost) {
+        return message.reply({ embeds: [new EmbedBuilder().setColor(RED)
+          .setDescription(`❌ Renaming costs **${fmt(cost)} credits** — you have **${fmt(cr.amount)}**.`)] });
+      }
+
+      if (cost > 0) db.spendCredits(guildId, userId, cost);
+
+      const role = message.guild.roles.cache.get(row.role_id);
+      if (role) await role.setName(newName).catch(() => {});
+      db.updateUserCustomRole(guildId, userId, slot, { name: newName });
+
+      await message.reply({ embeds: [new EmbedBuilder()
+        .setColor(GREEN)
+        .setDescription(`✅ Slot **${slot}** renamed to **${newName}**!${cost > 0 ? ` (${fmt(cost)} credits spent)` : ''}`)] });
+      return;
+    }
+
+    // ── Delete ────────────────────────────────────────────────────────────────
+    if (sub === 'delete' || sub === 'remove' || sub === 'del') {
+      const slotArg = parseInt(args[1]);
+      const slot    = !isNaN(slotArg) && slotArg >= 1 ? slotArg : 1;
+      const row     = db.getUserCustomRole(guildId, userId, slot);
+
+      if (!row) return message.reply(`❌ You don't have a custom role in slot ${slot}.`);
+
+      const role = message.guild.roles.cache.get(row.role_id);
+      if (role) await role.delete(`Custom role deleted by ${message.author.tag}`).catch(() => {});
+      db.deleteUserCustomRole(guildId, userId, slot);
+
+      await message.reply({ embeds: [new EmbedBuilder()
+        .setColor(YELLOW)
+        .setDescription(`🗑️ Custom role in slot **${slot}** has been deleted.`)] });
+      return;
+    }
+
+    await message.reply({ embeds: [new EmbedBuilder()
+      .setColor(BLUE)
+      .setTitle('🎨 ,myrole Help')
+      .addFields(
+        { name: 'Create', value: '`,myrole create <name> <#hex>`', inline: false },
+        { name: 'Update Color', value: '`,myrole color [slot] <#hex>`', inline: false },
+        { name: 'Rename', value: '`,myrole rename [slot] <name>`', inline: false },
+        { name: 'Delete', value: '`,myrole delete [slot]`', inline: false },
+        { name: 'View', value: '`,myrole`', inline: false },
+      )
+      .setFooter({ text: 'flux credits' })] });
+  },
+};
+
+// ── ,creditsetup ──────────────────────────────────────────────────────────────
+const creditsetup = {
+  name: 'creditsetup',
+  aliases: ['crsetup', 'setupcredits', 'earnsetup'],
+  async execute(message, args) {
+    if (!isAdmin(message)) {
+      return message.reply({ embeds: [new EmbedBuilder().setColor(RED).setDescription('❌ Admin only.')] });
+    }
+
+    const guildId = message.guild.id;
+    const s       = db.getCreditSettings(guildId);
+    const sub     = args[0]?.toLowerCase();
+
+    const SETTINGS = {
+      messages:   { key: 'credits_per_msg',        label: 'Credits per message',        emoji: '💬', default: 1   },
+      cooldown:   { key: 'cooldown_sec',            label: 'Message cooldown (seconds)', emoji: '⏱️', default: 30  },
+      invites:    { key: 'invite_credits',          label: 'Credits per invite',         emoji: '📨', default: 0   },
+      voice:      { key: 'voice_credits',           label: 'Credits per VC minute',      emoji: '🎙️', default: 0   },
+      rolecost:   { key: 'custom_role_cost',        label: 'Custom role creation cost',  emoji: '🎨', default: 500 },
+      updatecost: { key: 'custom_role_update_cost', label: 'Custom role update cost',    emoji: '✏️', default: 0   },
+      slots:      { key: 'max_custom_roles',        label: 'Max custom role slots',      emoji: '🔢', default: 1   },
+    };
+
+    if (sub && SETTINGS[sub]) {
+      const n = parseInt(args[1]);
+      if (isNaN(n) || n < 0) return message.reply(`Usage: \`,creditsetup ${sub} <number>\``);
+      db.upsertCreditSettings(guildId, { [SETTINGS[sub].key]: n });
+      return message.reply({ embeds: [new EmbedBuilder().setColor(GREEN)
+        .setDescription(`✅ **${SETTINGS[sub].label}** set to **${n}**.`)] });
+    }
+
+    if (sub === 'enable' || sub === 'on') {
+      db.upsertCreditSettings(guildId, { enabled: 1 });
+      return message.reply({ embeds: [new EmbedBuilder().setColor(GREEN).setDescription('✅ Credit earning **enabled**.')] });
+    }
+    if (sub === 'disable' || sub === 'off') {
+      db.upsertCreditSettings(guildId, { enabled: 0 });
+      return message.reply({ embeds: [new EmbedBuilder().setColor(YELLOW).setDescription('⚠️ Credit earning **disabled**.')] });
+    }
+
+    // Show full setup panel
+    const fields = Object.entries(SETTINGS).map(([subKey, cfg]) => ({
+      name:   `${cfg.emoji} ${cfg.label}`,
+      value:  `**${s[cfg.key] ?? cfg.default}**\n\`\`,creditsetup ${subKey} <n>\`\``,
+      inline: true,
+    }));
+    fields.push({
+      name:  '✅ Enabled',
+      value: `**${s.enabled !== 0 ? 'Yes' : 'No'}**\n\`\`,creditsetup enable/disable\`\``,
+      inline: true,
+    });
+
+    await message.reply({ embeds: [new EmbedBuilder()
+      .setColor(GOLD)
+      .setTitle('⚙️ Credit Earn Setup')
+      .setDescription(
+        '**Credits** are earned automatically. Configure how much each activity awards.\n' +
+        'Set any value to **0** to disable that earn method.',
+      )
+      .addFields(fields)
+      .setFooter({ text: 'flux credits' })
+      .setTimestamp()] });
+  },
+};
+
 module.exports = [
   credits, shop, buy, inventory, creditlead,
   additem, removeitem, givecr, takecr, setcr, shopconfig,
+  myrole, creditsetup,
 ];

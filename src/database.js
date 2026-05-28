@@ -1800,6 +1800,42 @@ function _runSchema() {
   bought_at INTEGER DEFAULT (strftime('%s','now')),
   PRIMARY KEY (guild_id, user_id, item_id)
 )`);
+
+  db.run(`CREATE TABLE IF NOT EXISTS user_custom_roles (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  guild_id TEXT NOT NULL,
+  user_id TEXT NOT NULL,
+  role_id TEXT NOT NULL,
+  name TEXT NOT NULL,
+  color TEXT NOT NULL,
+  slot INTEGER DEFAULT 1,
+  created_at INTEGER DEFAULT (strftime('%s','now'))
+)`);
+
+  // Migrate: add new columns to credit_settings if they don't exist yet
+  try { db.run('ALTER TABLE credit_settings ADD COLUMN invite_credits INTEGER DEFAULT 0');        } catch (_) {}
+  try { db.run('ALTER TABLE credit_settings ADD COLUMN voice_credits INTEGER DEFAULT 0');          } catch (_) {}
+  try { db.run('ALTER TABLE credit_settings ADD COLUMN custom_role_cost INTEGER DEFAULT 500');     } catch (_) {}
+  try { db.run('ALTER TABLE credit_settings ADD COLUMN custom_role_update_cost INTEGER DEFAULT 0'); } catch (_) {}
+  try { db.run('ALTER TABLE credit_settings ADD COLUMN max_custom_roles INTEGER DEFAULT 1');       } catch (_) {}
+}
+
+// ── User Custom Roles ─────────────────────────────────────────────────────────
+function getUserCustomRoles(guildId, userId) {
+  return db.all('SELECT * FROM user_custom_roles WHERE guild_id=? AND user_id=? ORDER BY slot ASC', [guildId, userId]);
+}
+function getUserCustomRole(guildId, userId, slot) {
+  return db.get('SELECT * FROM user_custom_roles WHERE guild_id=? AND user_id=? AND slot=?', [guildId, userId, slot]);
+}
+function addUserCustomRole(guildId, userId, roleId, name, color, slot) {
+  db.run('INSERT INTO user_custom_roles (guild_id, user_id, role_id, name, color, slot) VALUES (?, ?, ?, ?, ?, ?)', [guildId, userId, roleId, name, color, slot]);
+}
+function updateUserCustomRole(guildId, userId, slot, fields) {
+  const sets = Object.keys(fields).map(k => `${k}=?`).join(', ');
+  db.run(`UPDATE user_custom_roles SET ${sets} WHERE guild_id=? AND user_id=? AND slot=?`, [...Object.values(fields), guildId, userId, slot]);
+}
+function deleteUserCustomRole(guildId, userId, slot) {
+  db.run('DELETE FROM user_custom_roles WHERE guild_id=? AND user_id=? AND slot=?', [guildId, userId, slot]);
 }
 
 // ── Credits ───────────────────────────────────────────────────────────────────
@@ -1947,6 +1983,7 @@ module.exports = {
   createBet, getBet, getActiveBets, updateBetStatus, updateBetMessage, setBetWinner,
   addBetEntry, removeBetEntry, getBetEntries, getUserBetEntry, getBetTotals, getBetBettorCounts,
   setHoneypot, getHoneypot, removeHoneypot, incrementHoneypotCount, getAllHoneypots,
+  getUserCustomRoles, getUserCustomRole, addUserCustomRole, updateUserCustomRole, deleteUserCustomRole,
   getCredits, addCredits, spendCredits, refundCredits, setCreditsAmount, getCreditLeaderboard,
   getShopItems, getShopItem, getShopItemByName, addShopItem, removeShopItem, setShopItemRoleId, incrementItemSold,
   getCreditSettings, upsertCreditSettings,

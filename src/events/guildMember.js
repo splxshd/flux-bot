@@ -24,6 +24,13 @@ module.exports = (client) => {
       client.inviteCache.set(guild.id, new Map(newInvites.map(i => [i.code, i.uses])));
       if (usedInvite?.inviter) {
         db.incrementInvites(guild.id, usedInvite.inviter.id);
+        // Award invite credits
+        try {
+          const cs = db.getCreditSettings(guild.id);
+          if (cs.invite_credits > 0) {
+            db.addCredits(guild.id, usedInvite.inviter.id, cs.invite_credits);
+          }
+        } catch (_) {}
       }
     } catch (_) {}
 
