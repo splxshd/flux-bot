@@ -46,60 +46,44 @@ function _convertFromWAL(targetPath) {
   }
 }
 
-// Convert both the old and new db files before opening anything
 const oldDbPath = path.join(dataDir, 'nights.db');
-_convertFromWAL(oldDbPath);
-_convertFromWAL(dbPath);
 
-// ─── One-time data migration from nights.db → nights2.db ─────────────────────
-function _migrateFromOldDb() {
-  // The retry-30 failsafe renamed nights.db → nights.db.bak.TIMESTAMP
-  // so the real data is in the .bak file. Check that first, then fall back.
-  let src = null;
-
+// ─── Pre-open restore: raw file copy before ANY SQLite connection opens ───────
+// Avoids ATTACH DATABASE (which fails on Railway WAL volumes). Instead we find
+// the backup file with real data, convert its header from WAL→DELETE, then
+// fs.copyFileSync it over nights2.db before we ever call new Database().
+(function _restoreIfEmpty() {
   try {
-    const baks = fs.readdirSync(dataDir)
-      .filter(f => f.startsWith('nights.db.bak.'))
-      .sort().reverse();
-    for (const bak of baks) {
-      const p = path.join(dataDir, bak);
+    const cur = fs.existsSync(dbPath) ? fs.statSync(dbPath).size : 0;
+    if (cur > 8192) return; // nights2.db already has data — nothing to do
+
+    // Find the best source: .bak files first (retry-30 renamed nights.db there)
+    let src = null;
+    const all = fs.readdirSync(dataDir);
+    const baks = all.filter(f => f.startsWith('nights.db.bak.')).sort().reverse();
+    for (const b of baks) {
+      const p = path.join(dataDir, b);
       if (fs.statSync(p).size > 8192) { src = p; break; }
     }
-  } catch (_) {}
-
-  if (!src) {
-    try {
-      if (fs.existsSync(oldDbPath) && fs.statSync(oldDbPath).size > 8192) src = oldDbPath;
-    } catch (_) {}
-  }
-
-  if (!src) { console.log('[DB] No old database found to migrate.'); return; }
-
-  try {
-    const existing = db.get('SELECT COUNT(*) as c FROM guild_settings')?.c ?? 0;
-    if (existing > 0) { console.log('[DB] Already has data — skipping migration.'); return; }
-  } catch (_) {}
-
-  console.log(`[DB] Migrating from ${path.basename(src)} → nights2.db ...`);
-
-  // Must convert source from WAL mode first or ATTACH will fail on Railway volumes
-  _convertFromWAL(src);
-
-  try {
-    db.run(`ATTACH DATABASE '${src}' AS old`);
-    const tables = db.all("SELECT name FROM old.sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'");
-    let copied = 0;
-    for (const { name } of tables) {
-      try { db.run(`INSERT OR IGNORE INTO main.${name} SELECT * FROM old.${name}`); copied++; }
-      catch (e) { console.warn(`[DB] Could not migrate table ${name}:`, e.message); }
+    if (!src && fs.existsSync(oldDbPath) && fs.statSync(oldDbPath).size > 8192) {
+      src = oldDbPath;
     }
-    db.run('DETACH DATABASE old');
-    console.log(`[DB] Migration complete — restored ${copied} tables.`);
+    if (!src) { console.log('[DB] No backup found — starting fresh.'); return; }
+
+    // Patch source header WAL→DELETE so the copy opens cleanly
+    _convertFromWAL(src);
+
+    // Raw copy: no SQLite involved, always works
+    fs.copyFileSync(src, dbPath);
+    _convertFromWAL(dbPath); // patch copy too just in case
+    console.log(`[DB] Restored data from ${path.basename(src)} → nights2.db (${fs.statSync(dbPath).size} bytes)`);
   } catch (e) {
-    console.warn('[DB] Migration error:', e.message);
-    try { db.run('DETACH DATABASE old'); } catch (_) {}
+    console.warn('[DB] Restore error:', e.message);
   }
-}
+})();
+
+// Convert nights2.db from WAL if needed (in case restore wasn't needed but file is WAL)
+_convertFromWAL(dbPath);
 
 // ─── Non-blocking async DB init ───────────────────────────────────────────────
 function _tryOpenDb(resolve, reject, attempt) {
@@ -141,7 +125,6 @@ function _tryOpenDb(resolve, reject, attempt) {
 
 const _dbReady = new Promise((resolve, reject) => _tryOpenDb(resolve, reject, 0))
   .then(() => {
-    _migrateFromOldDb();
     setInterval(pruneOldData, 86400 * 1000);
     pruneOldData();
   })
