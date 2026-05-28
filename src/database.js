@@ -11,35 +11,57 @@ const dbPath = path.join(dataDir, 'nights.db');
 let db;
 
 // ─── Non-blocking async DB init ───────────────────────────────────────────────
-// Uses setTimeout instead of Atomics.wait() so the Node.js event loop stays
-// free to respond to Railway health checks during a rolling-deploy lock window.
-// busy_timeout=0 makes each attempt fail immediately if locked, then we wait
-// 2 s via setTimeout (non-blocking) before the next attempt.
+// Uses setTimeout (non-blocking) so the event loop stays free for Railway
+// health checks during a rolling-deploy lock window.
+//
+// WAL mode is intentionally NOT used: PRAGMA journal_mode=WAL acquires an
+// exclusive lock to set up the WAL header, which always fails with SQLITE_BUSY
+// when another container already has the file open. Default DELETE journal mode
+// allows new Database() to succeed without any exclusive lock.
+//
+// On first attempt we also delete any stale .db-wal/.db-shm files left by a
+// previous WAL-mode run (safe to do — if a live process held the lock we would
+// already have gotten a busy error on new Database() and bailed out).
+
 function _tryOpenDb(resolve, reject, attempt) {
+  // On first attempt, delete any stale WAL/SHM files from previous runs.
+  if (attempt === 0) {
+    for (const suffix of ['-wal', '-shm']) {
+      const f = dbPath + suffix;
+      try { if (fs.existsSync(f)) { fs.unlinkSync(f); console.warn(`[DB] Removed stale ${suffix} file`); } } catch (_) {}
+    }
+  }
+
   let conn;
   try {
     conn = new Database(dbPath);
-    conn.run('PRAGMA busy_timeout = 0');   // fail fast; retry handled below
-    conn.run('PRAGMA journal_mode = WAL');
+    // busy_timeout=0 → fail immediately if locked; our setTimeout loop handles retries.
+    conn.run('PRAGMA busy_timeout = 0');
+    // No WAL pragma — use SQLite default (DELETE journal mode).
     conn.run('PRAGMA foreign_keys = ON');
     db = conn;
+    // Run schema while holding the open connection.
+    // Allow up to 10 s of internal SQLite wait for each DDL statement in case
+    // the old container is mid-write (this blocks briefly but Express is already up).
+    db.run('PRAGMA busy_timeout = 10000');
+    _runSchema();
+    db.run('PRAGMA busy_timeout = 0');   // restore fast-fail for runtime queries
     resolve();
   } catch (e) {
-    if (conn) { try { conn.close(); } catch (_) {} }
-    if (attempt >= 60) { reject(e); return; }
-    console.warn(`[DB] Locked, retry ${attempt + 1}/60 in 2s...`);
+    if (conn) { try { conn.close(); } catch (_) {} db = null; }
+    if (attempt >= 150) { reject(e); return; }
+    console.warn(`[DB] Locked, retry ${attempt + 1}/150 in 2s...`);
     setTimeout(() => _tryOpenDb(resolve, reject, attempt + 1), 2000);
   }
 }
 
 const _dbReady = new Promise((resolve, reject) => _tryOpenDb(resolve, reject, 0))
   .then(() => {
-    _runSchema();
     setInterval(pruneOldData, 86400 * 1000);
     pruneOldData();
   })
   .catch(err => {
-    console.error('[DB] Fatal: could not open database after 60 retries:', err.message);
+    console.error('[DB] Fatal: could not open database after 150 retries:', err.message);
     process.exit(1);
   });
 
