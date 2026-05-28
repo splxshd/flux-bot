@@ -1703,6 +1703,58 @@ const scratch = {
   },
 };
 
+// ── ,cd ───────────────────────────────────────────────────────────────────────
+const cd = {
+  name: 'cd',
+  aliases: ['cooldowns', 'cooldown'],
+  async execute(message) {
+    const target  = message.mentions.users.first() || message.author;
+    const guildId = message.guild.id;
+    const eco     = db.getEco(guildId, target.id);
+    const now     = Math.floor(Date.now() / 1000);
+
+    const CMDS = [
+      { name: ',daily',   emoji: '📅',  cdSec: 86400, at: eco.daily_at   },
+      { name: ',work',    emoji: '💼',  cdSec: 3600,  at: eco.work_at    },
+      { name: ',fish',    emoji: '🎣',  cdSec: 300,   at: eco.fish_at    },
+      { name: ',hunt',    emoji: '🏹',  cdSec: 600,   at: eco.hunt_at    },
+      { name: ',mine',    emoji: '⛏️', cdSec: 480,   at: eco.mine_at    },
+      { name: ',beg',     emoji: '🙏',  cdSec: 720,   at: eco.beg_at     },
+      { name: ',scratch', emoji: '🎟️', cdSec: 900,   at: eco.scratch_at },
+      { name: ',rob',     emoji: '🦹',  cdSec: 1800,  at: eco.rob_at     },
+      { name: ',crime',   emoji: '🚗',  cdSec: 2700,  at: eco.crime_at   },
+      { name: ',invest',  emoji: '📊',  cdSec: 1200,  at: eco.invest_at  },
+    ];
+
+    const ready = [];
+    const onCd  = [];
+
+    for (const cmd of CMDS) {
+      if (!cmd.at || now - cmd.at >= cmd.cdSec) {
+        ready.push(`${cmd.emoji} \`${cmd.name}\``);
+      } else {
+        const left = (cmd.at + cmd.cdSec - now) * 1000;
+        onCd.push(`${cmd.emoji} \`${cmd.name}\` — **${fmtTime(left)}**`);
+      }
+    }
+
+    const embed = new EmbedBuilder()
+      .setColor(BLUE)
+      .setAuthor({ name: `🕐 ${target.username}'s Cooldowns`, iconURL: target.displayAvatarURL({ size: 64 }) })
+      .setFooter({ text: 'flux economy' })
+      .setTimestamp();
+
+    if (ready.length) {
+      embed.addFields({ name: `✅ Ready (${ready.length})`, value: ready.join('\n'), inline: false });
+    }
+    if (onCd.length) {
+      embed.addFields({ name: `⏰ On Cooldown (${onCd.length})`, value: onCd.join('\n'), inline: false });
+    }
+
+    await message.reply({ embeds: [embed] });
+  },
+};
+
 // ── ,ecohelp ──────────────────────────────────────────────────────────────────
 const ECO_CATEGORIES = {
   earn: {
@@ -1829,4 +1881,4 @@ const ecohelp = {
   },
 };
 
-module.exports = [balance, daily, work, depositCmd, withdrawCmd, pay, donate, rob, richlist, give, take, setbal, reseteco, ecoset, crime, beg, invest, fish, hunt, mine, scratch, ecohelp, cf];
+module.exports = [balance, daily, work, depositCmd, withdrawCmd, pay, donate, rob, richlist, give, take, setbal, reseteco, ecoset, crime, beg, invest, fish, hunt, mine, scratch, ecohelp, cf, cd];
