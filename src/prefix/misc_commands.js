@@ -388,4 +388,67 @@ const autoreact = {
   }
 };
 
-module.exports = [lvl, botinfo, whois, nick, timeout_cmd, channelinfo, roleinfo, emoteinfo, permissions_cmd, stats, support, ttt, blacktea, autoreact];
+// ── ,emojisteal ───────────────────────────────────────────────────────────────
+const emojisteal = {
+  name: 'emojisteal',
+  aliases: ['stealemoji', 'emotesteal', 'cloneemoji'],
+  async execute(message) {
+    if (!message.member.permissions.has(PermissionFlagsBits.ManageGuildExpressions) &&
+        !message.member.permissions.has(PermissionFlagsBits.ManageEmojisAndStickers)) {
+      return message.reply({ embeds: [new EmbedBuilder().setColor(RED)
+        .setDescription('❌ You need **Manage Emojis** permission.')] });
+    }
+
+    // Parse custom emojis: <:name:id> or <a:name:id>
+    const emojiRegex = /<(a?):(\w{2,32}):(\d{17,20})>/g;
+    const matches    = [...message.content.matchAll(emojiRegex)];
+
+    if (!matches.length) {
+      return message.reply({ embeds: [new EmbedBuilder()
+        .setColor(BLUE)
+        .setTitle('🎨 emojisteal')
+        .setDescription(
+          '**Usage:** `,emojisteal <emoji1> [emoji2] ... [emoji10]`\n\n' +
+          'Paste up to **10** custom emojis from any server and they\'ll be cloned into this one.\n\n' +
+          '**Example:** `,emojisteal :coolEmoji: :anotherOne: :thirdOne:`',
+        )
+        .setFooter({ text: 'flux • requires Manage Emojis' })] });
+    }
+
+    const toAdd  = matches.slice(0, 10);
+    const added  = [];
+    const failed = [];
+
+    const processing = await message.reply({ embeds: [new EmbedBuilder()
+      .setColor(BLUE)
+      .setDescription(`⏳ Stealing ${toAdd.length} emoji${toAdd.length !== 1 ? 's' : ''}...`)] });
+
+    for (const match of toAdd) {
+      const animated = match[1] === 'a';
+      const name     = match[2];
+      const id       = match[3];
+      const url      = `https://cdn.discordapp.com/emojis/${id}.${animated ? 'gif' : 'png'}`;
+
+      try {
+        const emoji = await message.guild.emojis.create({ attachment: url, name });
+        added.push(`${emoji} \`:${name}:\``);
+      } catch (e) {
+        const reason = e.code === 30008 ? 'server is full' : e.code === 50035 ? 'invalid emoji' : e.message;
+        failed.push(`\`:${name}:\` — ${reason}`);
+      }
+    }
+
+    const embed = new EmbedBuilder()
+      .setColor(added.length > 0 ? GREEN : RED)
+      .setTitle(`🎨 Emoji Steal — ${added.length}/${toAdd.length} added`)
+      .setFooter({ text: 'flux' })
+      .setTimestamp();
+
+    if (added.length)  embed.addFields({ name: `✅ Added (${added.length})`,  value: added.join('\n'),  inline: false });
+    if (failed.length) embed.addFields({ name: `❌ Failed (${failed.length})`, value: failed.join('\n'), inline: false });
+
+    await processing.edit({ embeds: [embed] });
+  },
+};
+
+module.exports = [lvl, botinfo, whois, nick, timeout_cmd, channelinfo, roleinfo, emoteinfo, permissions_cmd, stats, support, ttt, blacktea, autoreact, emojisteal];

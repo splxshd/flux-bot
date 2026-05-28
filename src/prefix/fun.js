@@ -662,8 +662,8 @@ module.exports = [
     }
   },
 
-  // Steal
-  { name: 'steal', aliases: [], description: 'Steal from someone',
+  // Steal (fun version — renamed to avoid conflict with economy ,rob alias)
+  { name: 'funsteal', aliases: [], description: 'Steal from someone',
     async execute(message) {
       const t = message.mentions.users.first();
       if (!t) return message.reply('❌ Mention someone to steal from!');
