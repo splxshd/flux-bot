@@ -55,13 +55,31 @@ _convertFromWAL(); // runs synchronously before any Database() call
 
 // ─── Non-blocking async DB init ───────────────────────────────────────────────
 function _tryOpenDb(resolve, reject, attempt) {
+  // After 30 retries (60 seconds) of persistent lock: back up the stuck database
+  // and start fresh. Guarantees the bot comes online within ~1 minute regardless
+  // of what other process is holding the lock.
+  if (attempt === 30) {
+    console.warn('[DB] Persistent lock after 30 retries — backing up database and starting fresh...');
+    for (const suf of ['', '-wal', '-shm', '-journal']) {
+      const f = dbPath + suf;
+      try {
+        if (fs.existsSync(f)) {
+          fs.renameSync(f, f + '.bak.' + Date.now());
+          console.warn(`[DB] Backed up: ${f}`);
+        }
+      } catch (_) {
+        try { fs.unlinkSync(f); } catch (_) {}
+      }
+    }
+  }
+
   let conn;
   try {
     conn = new Database(dbPath);
     conn.run('PRAGMA busy_timeout = 0');
     conn.run('PRAGMA foreign_keys = ON');
     db = conn;
-    db.run('PRAGMA busy_timeout = 10000'); // allow brief waits during DDL
+    db.run('PRAGMA busy_timeout = 10000');
     _runSchema();
     db.run('PRAGMA busy_timeout = 0');
     resolve();
