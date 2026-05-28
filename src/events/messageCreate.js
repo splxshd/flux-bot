@@ -48,6 +48,9 @@ const mentionTracker = new Map(); // userId -> count (reset per guild, simple pe
 // Sticky message counter — tracks messages since last repost per sticky id
 const stickyCounter = new Map(); // stickyId -> count
 
+// Credit earn cooldown — in-memory per user to avoid DB spam
+const creditCooldowns = new Map(); // `${guildId}-${userId}` -> timestamp ms
+
 module.exports = (client) => {
   console.log('[messageCreate] handler registered');
   client.on('messageCreate', async (message) => {
@@ -107,6 +110,20 @@ async function handleMessage(client, message) {
     }
 
     db.trackMessage(message.guild.id, message.author.id, message.channel.id, message.channel.name);
+
+    // ── Credits ──────────────────────────────────────────────────────────────
+    try {
+      const cs = db.getCreditSettings(message.guild.id);
+      if (cs.enabled && cs.credits_per_msg > 0) {
+        const key      = `${message.guild.id}-${message.author.id}`;
+        const lastAt   = creditCooldowns.get(key) || 0;
+        const nowMs    = Date.now();
+        if (nowMs - lastAt >= cs.cooldown_sec * 1000) {
+          creditCooldowns.set(key, nowMs);
+          db.addCredits(message.guild.id, message.author.id, cs.credits_per_msg);
+        }
+      }
+    } catch (e) { console.error('[credits earn]', e); }
 
     // ── XP / Leveling ────────────────────────────────────────────────────────
     const lvlSettings = db.getLevelSettings(message.guild.id);

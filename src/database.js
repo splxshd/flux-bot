@@ -1761,6 +1761,128 @@ function _runSchema() {
   message_id TEXT,
   options_json TEXT NOT NULL
 )`);
+
+  db.run(`CREATE TABLE IF NOT EXISTS credits (
+  guild_id TEXT NOT NULL,
+  user_id TEXT NOT NULL,
+  amount INTEGER DEFAULT 0,
+  total_earned INTEGER DEFAULT 0,
+  PRIMARY KEY (guild_id, user_id)
+)`);
+
+  db.run(`CREATE TABLE IF NOT EXISTS shop_items (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  guild_id TEXT NOT NULL,
+  name TEXT NOT NULL,
+  description TEXT DEFAULT '',
+  price INTEGER NOT NULL DEFAULT 100,
+  type TEXT NOT NULL DEFAULT 'color_role',
+  color TEXT DEFAULT '#5865F2',
+  role_name TEXT,
+  role_id TEXT,
+  channel_id TEXT,
+  stock INTEGER DEFAULT -1,
+  sold INTEGER DEFAULT 0,
+  active INTEGER DEFAULT 1
+)`);
+
+  db.run(`CREATE TABLE IF NOT EXISTS credit_settings (
+  guild_id TEXT PRIMARY KEY,
+  credits_per_msg INTEGER DEFAULT 1,
+  cooldown_sec INTEGER DEFAULT 30,
+  enabled INTEGER DEFAULT 1
+)`);
+
+  db.run(`CREATE TABLE IF NOT EXISTS user_shop_purchases (
+  guild_id TEXT NOT NULL,
+  user_id TEXT NOT NULL,
+  item_id INTEGER NOT NULL,
+  bought_at INTEGER DEFAULT (strftime('%s','now')),
+  PRIMARY KEY (guild_id, user_id, item_id)
+)`);
+}
+
+// ── Credits ───────────────────────────────────────────────────────────────────
+function getCredits(guildId, userId) {
+  db.run('INSERT OR IGNORE INTO credits (guild_id, user_id, amount, total_earned) VALUES (?, ?, 0, 0)', [guildId, userId]);
+  return db.get('SELECT * FROM credits WHERE guild_id=? AND user_id=?', [guildId, userId]) || { amount: 0, total_earned: 0 };
+}
+function addCredits(guildId, userId, amount) {
+  db.run('INSERT OR IGNORE INTO credits (guild_id, user_id, amount, total_earned) VALUES (?, ?, 0, 0)', [guildId, userId]);
+  if (amount > 0) {
+    db.run('UPDATE credits SET amount=amount+?, total_earned=total_earned+? WHERE guild_id=? AND user_id=?', [amount, amount, guildId, userId]);
+  } else {
+    db.run('UPDATE credits SET amount=MAX(0, amount+?) WHERE guild_id=? AND user_id=?', [amount, guildId, userId]);
+  }
+}
+function spendCredits(guildId, userId, amount) {
+  db.run('INSERT OR IGNORE INTO credits (guild_id, user_id, amount, total_earned) VALUES (?, ?, 0, 0)', [guildId, userId]);
+  db.run('UPDATE credits SET amount=MAX(0, amount-?) WHERE guild_id=? AND user_id=?', [amount, guildId, userId]);
+}
+function refundCredits(guildId, userId, amount) {
+  db.run('INSERT OR IGNORE INTO credits (guild_id, user_id, amount, total_earned) VALUES (?, ?, 0, 0)', [guildId, userId]);
+  db.run('UPDATE credits SET amount=amount+? WHERE guild_id=? AND user_id=?', [amount, guildId, userId]);
+}
+function setCreditsAmount(guildId, userId, amount) {
+  db.run('INSERT OR IGNORE INTO credits (guild_id, user_id, amount, total_earned) VALUES (?, ?, 0, 0)', [guildId, userId]);
+  db.run('UPDATE credits SET amount=? WHERE guild_id=? AND user_id=?', [amount, guildId, userId]);
+}
+function getCreditLeaderboard(guildId, limit = 10) {
+  return db.all('SELECT * FROM credits WHERE guild_id=? ORDER BY amount DESC LIMIT ?', [guildId, limit]);
+}
+
+// ── Shop Items ────────────────────────────────────────────────────────────────
+function getShopItems(guildId) {
+  return db.all('SELECT * FROM shop_items WHERE guild_id=? AND active=1 ORDER BY price ASC', [guildId]);
+}
+function getShopItem(id) {
+  return db.get('SELECT * FROM shop_items WHERE id=?', [id]);
+}
+function getShopItemByName(guildId, name) {
+  return db.get('SELECT * FROM shop_items WHERE guild_id=? AND active=1 AND LOWER(name)=LOWER(?)', [guildId, name]);
+}
+function addShopItem(data) {
+  db.run(
+    'INSERT INTO shop_items (guild_id, name, description, price, type, color, role_name, role_id, channel_id, stock, sold, active) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 1)',
+    [data.guild_id, data.name, data.description || '', data.price, data.type, data.color || null, data.role_name || null, data.role_id || null, data.channel_id || null, data.stock ?? -1],
+  );
+  return db.get('SELECT last_insert_rowid() as id').id;
+}
+function removeShopItem(id) {
+  db.run('UPDATE shop_items SET active=0 WHERE id=?', [id]);
+}
+function setShopItemRoleId(itemId, roleId) {
+  db.run('UPDATE shop_items SET role_id=? WHERE id=?', [roleId, itemId]);
+}
+function incrementItemSold(id) {
+  db.run('UPDATE shop_items SET sold=sold+1 WHERE id=?', [id]);
+}
+
+// ── Credit Settings ───────────────────────────────────────────────────────────
+function getCreditSettings(guildId) {
+  return db.get('SELECT * FROM credit_settings WHERE guild_id=?', [guildId])
+    || { credits_per_msg: 1, cooldown_sec: 30, enabled: 1 };
+}
+function upsertCreditSettings(guildId, data) {
+  const fields = Object.keys(data).map(k => `${k}=excluded.${k}`).join(', ');
+  const cols   = ['guild_id', ...Object.keys(data)].join(', ');
+  const vals   = [guildId, ...Object.values(data)];
+  const placeholders = vals.map(() => '?').join(', ');
+  db.run(`INSERT INTO credit_settings (${cols}) VALUES (${placeholders}) ON CONFLICT(guild_id) DO UPDATE SET ${fields}`, vals);
+}
+
+// ── User Purchases ────────────────────────────────────────────────────────────
+function getUserPurchase(guildId, userId, itemId) {
+  return db.get('SELECT * FROM user_shop_purchases WHERE guild_id=? AND user_id=? AND item_id=?', [guildId, userId, itemId]);
+}
+function addUserPurchase(guildId, userId, itemId) {
+  db.run('INSERT OR IGNORE INTO user_shop_purchases (guild_id, user_id, item_id) VALUES (?, ?, ?)', [guildId, userId, itemId]);
+}
+function getUserPurchases(guildId, userId) {
+  return db.all(
+    'SELECT p.*, s.name, s.type, s.color, s.price FROM user_shop_purchases p JOIN shop_items s ON p.item_id=s.id WHERE p.guild_id=? AND p.user_id=? ORDER BY p.bought_at DESC',
+    [guildId, userId],
+  );
 }
 
 module.exports = {
@@ -1825,4 +1947,8 @@ module.exports = {
   createBet, getBet, getActiveBets, updateBetStatus, updateBetMessage, setBetWinner,
   addBetEntry, removeBetEntry, getBetEntries, getUserBetEntry, getBetTotals, getBetBettorCounts,
   setHoneypot, getHoneypot, removeHoneypot, incrementHoneypotCount, getAllHoneypots,
+  getCredits, addCredits, spendCredits, refundCredits, setCreditsAmount, getCreditLeaderboard,
+  getShopItems, getShopItem, getShopItemByName, addShopItem, removeShopItem, setShopItemRoleId, incrementItemSold,
+  getCreditSettings, upsertCreditSettings,
+  getUserPurchase, addUserPurchase, getUserPurchases,
 };
