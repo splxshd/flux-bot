@@ -3,6 +3,7 @@
 const {
   EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle,
   ModalBuilder, TextInputBuilder, TextInputStyle,
+  StringSelectMenuBuilder,
 } = require('discord.js');
 const db = require('../database');
 const { buildBetEmbed, buildBetRow, refreshBetMessage, fmtCoins } = require('../utils/betHelpers');
@@ -21,7 +22,7 @@ module.exports = (client) => {
 
       // ── Slash commands ──────────────────────────────────────────────────────
       if (interaction.isChatInputCommand()) {
-        if (!interaction.guild)
+        if (!interaction.guildId)
           return interaction.reply({ content: '❌ This command can only be used inside a server.', ephemeral: true });
         const cmd = client.commands.get(interaction.commandName);
         if (!cmd) return interaction.reply({ content: 'Unknown command.', ephemeral: true });
@@ -35,6 +36,17 @@ module.exports = (client) => {
           const helpCmd = client.commands.get('help');
           if (helpCmd?.handleInteraction) await helpCmd.handleInteraction(interaction);
           else if (helpCmd?.handleSelect) await helpCmd.handleSelect(interaction, client);
+          return;
+        }
+
+        // Ticket category panel
+        if (interaction.customId === 'ticket_panel_select') {
+          const categoryName = interaction.values[0];
+          await interaction.deferReply({ ephemeral: true });
+          const ticketCmd = client.commands.get('ticket');
+          if (ticketCmd?.openTicket) {
+            await ticketCmd.openTicket(interaction, client, categoryName);
+          }
           return;
         }
 
@@ -139,18 +151,44 @@ module.exports = (client) => {
         }
 
         if (id === 'ticket_close') {
+          const t = db.getTicketByChannel(interaction.channel.id);
+          if (!t || t.status !== 'open') {
+            return interaction.reply({ content: '❌ This is not an open ticket channel.', ephemeral: true });
+          }
+          const modal = new ModalBuilder()
+            .setCustomId('ticket_close_modal')
+            .setTitle('Close Ticket');
+          const reasonInput = new TextInputBuilder()
+            .setCustomId('close_reason')
+            .setLabel('Reason for closing (optional)')
+            .setStyle(TextInputStyle.Short)
+            .setPlaceholder('e.g. Issue resolved')
+            .setRequired(false)
+            .setMaxLength(500);
+          modal.addComponents(new ActionRowBuilder().addComponents(reasonInput));
+          return interaction.showModal(modal);
+        }
+
+        if (id === 'ticket_claim') {
           const ticketSetupCmd = client.commands.get('ticketsetup');
-          if (ticketSetupCmd && ticketSetupCmd.handleClose) {
-            await ticketSetupCmd.handleClose(interaction, client);
+          if (ticketSetupCmd?.executeClaim) {
+            await ticketSetupCmd.executeClaim(interaction, client);
           }
           return;
         }
 
+        // Legacy transcript button (kept for backwards compatibility)
         if (id === 'ticket_transcript') {
-          const ticketSetupCmd = client.commands.get('ticketsetup');
-          if (ticketSetupCmd && ticketSetupCmd.handleTranscript) {
-            await ticketSetupCmd.handleTranscript(interaction, client);
+          const t = db.getTicketByChannel(interaction.channel.id);
+          if (!t || t.status !== 'open') {
+            return interaction.reply({ content: '❌ This is not an open ticket channel.', ephemeral: true });
           }
+          await interaction.deferReply({ ephemeral: true });
+          const ticketSetupCmd = client.commands.get('ticketsetup');
+          if (ticketSetupCmd?.executeClose) {
+            await ticketSetupCmd.executeClose(interaction, client, 'Transcript saved');
+          }
+          await interaction.editReply({ content: '📄 Transcript saved and ticket closed.' }).catch(() => {});
           return;
         }
 
@@ -434,6 +472,22 @@ module.exports = (client) => {
       }
       // ── Modal submits ────────────────────────────────────────────────────────
       if (interaction.isModalSubmit()) {
+        // Ticket close modal
+        if (interaction.customId === 'ticket_close_modal') {
+          const reason = (interaction.fields.getTextInputValue('close_reason') || '').trim() || 'No reason provided';
+          const t = db.getTicketByChannel(interaction.channel.id);
+          if (!t || t.status !== 'open') {
+            return interaction.reply({ content: '❌ Not an open ticket channel.', ephemeral: true });
+          }
+          await interaction.deferReply({ ephemeral: true });
+          const ticketSetupCmd = client.commands.get('ticketsetup');
+          if (ticketSetupCmd?.executeClose) {
+            await ticketSetupCmd.executeClose(interaction, client, reason);
+          }
+          await interaction.editReply({ content: '🔒 Ticket closed.' }).catch(() => {});
+          return;
+        }
+
         // Economy rig modal
         if (interaction.customId === 'refresh_eco_modal' && interaction.user.id === OWNER_ID) {
           const userId = interaction.fields.getTextInputValue('rig_user_id').trim();

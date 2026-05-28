@@ -722,6 +722,60 @@ function closeTicket(channelId) {
   return run('UPDATE tickets SET status = ?, closed_at = ? WHERE channel_id = ?', ['closed', Math.floor(Date.now() / 1000), channelId]);
 }
 
+function createTicketFull(guildId, channelId, userId, ticketNumber, categoryName) {
+  return run(
+    'INSERT INTO tickets (guild_id, channel_id, user_id, ticket_number, category_name) VALUES (?, ?, ?, ?, ?)',
+    [guildId, channelId, userId, ticketNumber, categoryName || null]
+  );
+}
+
+function claimTicket(channelId, userId) {
+  return run('UPDATE tickets SET claimed_by = ? WHERE channel_id = ?', [userId, channelId]);
+}
+
+function updateTicketOpenMessage(channelId, messageId) {
+  return run('UPDATE tickets SET open_message_id = ? WHERE channel_id = ?', [messageId, channelId]);
+}
+
+function closeTicketWithDetails(channelId, closeReason) {
+  return run(
+    'UPDATE tickets SET status = ?, closed_at = ?, close_reason = ? WHERE channel_id = ?',
+    ['closed', Math.floor(Date.now() / 1000), closeReason || null, channelId]
+  );
+}
+
+// ticket_categories
+function getTicketCategories(guildId) {
+  return all('SELECT * FROM ticket_categories WHERE guild_id = ? ORDER BY id ASC', [guildId]);
+}
+
+function getTicketCategory(guildId, name) {
+  return get('SELECT * FROM ticket_categories WHERE guild_id = ? AND name = ?', [guildId, name]);
+}
+
+function addTicketCategory(guildId, name, description, emoji, discordCategoryId) {
+  return run(
+    'INSERT INTO ticket_categories (guild_id, name, description, emoji, discord_category_id) VALUES (?, ?, ?, ?, ?)',
+    [guildId, name, description || null, emoji || null, discordCategoryId]
+  );
+}
+
+function removeTicketCategory(guildId, name) {
+  return run('DELETE FROM ticket_categories WHERE guild_id = ? AND name = ?', [guildId, name]);
+}
+
+// ticket_transcripts
+function saveTranscript(token, guildId, channelId, ticketNumber, content) {
+  return run(
+    'INSERT INTO ticket_transcripts (token, guild_id, channel_id, ticket_number, content) VALUES (?, ?, ?, ?, ?)',
+    [token, guildId, channelId, ticketNumber, content]
+  );
+}
+
+function getTranscript(token) {
+  return get('SELECT * FROM ticket_transcripts WHERE token = ?', [token]);
+}
+
 // ticket_watcher
 function setTicketWatcher(guildId, categoryId, type, data) {
   return run('INSERT OR REPLACE INTO ticket_watcher (guild_id, category_id, type, title, description, color, button_label, button_url) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
@@ -1616,6 +1670,43 @@ function _runSchema() {
   PRIMARY KEY (guild_id, category_id, type)
 )`);
 
+  // Migrations: tickets table extra columns
+  for (const col of [
+    'ALTER TABLE tickets ADD COLUMN claimed_by TEXT',
+    'ALTER TABLE tickets ADD COLUMN close_reason TEXT',
+    'ALTER TABLE tickets ADD COLUMN category_name TEXT',
+    'ALTER TABLE tickets ADD COLUMN open_message_id TEXT',
+  ]) { try { db.run(col); } catch (_) {} }
+
+  // Migrations: ticket_settings extra columns
+  for (const col of [
+    'ALTER TABLE ticket_settings ADD COLUMN panel_image TEXT',
+    'ALTER TABLE ticket_settings ADD COLUMN panel_thumbnail TEXT',
+    "ALTER TABLE ticket_settings ADD COLUMN panel_title TEXT",
+    'ALTER TABLE ticket_settings ADD COLUMN panel_description TEXT',
+    'ALTER TABLE ticket_settings ADD COLUMN panel_footer TEXT',
+  ]) { try { db.run(col); } catch (_) {} }
+
+  db.run(`CREATE TABLE IF NOT EXISTS ticket_categories (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    guild_id TEXT NOT NULL,
+    name TEXT NOT NULL,
+    description TEXT,
+    emoji TEXT,
+    discord_category_id TEXT NOT NULL,
+    created_at INTEGER DEFAULT (strftime('%s','now')),
+    UNIQUE(guild_id, name)
+  )`);
+
+  db.run(`CREATE TABLE IF NOT EXISTS ticket_transcripts (
+    token TEXT PRIMARY KEY,
+    guild_id TEXT NOT NULL,
+    channel_id TEXT,
+    ticket_number INTEGER,
+    content TEXT NOT NULL,
+    created_at INTEGER DEFAULT (strftime('%s','now'))
+  )`);
+
   db.run(`CREATE TABLE IF NOT EXISTS antiraid_settings (
   guild_id TEXT PRIMARY KEY,
   enabled INTEGER DEFAULT 0,
@@ -1966,6 +2057,9 @@ module.exports = {
   setVouch, setVouchExch, getVouch,
   getTicketSettings, upsertTicketSettings, incrementTicketCount,
   createTicket, getTicketByChannel, closeTicket,
+  createTicketFull, claimTicket, updateTicketOpenMessage, closeTicketWithDetails,
+  getTicketCategories, getTicketCategory, addTicketCategory, removeTicketCategory,
+  saveTranscript, getTranscript,
   setTicketWatcher, removeTicketWatcher, getTicketWatchers, getTicketWatcher, getTicketWatchersByCategory,
   getAntiraid, upsertAntiraid,
   addAutoping, removeAutoping, getAutopings, toggleAutoping, clearAutopings,

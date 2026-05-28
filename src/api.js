@@ -342,6 +342,94 @@ app.get('/api/guild/:guildId/tickets', auth, (req, res) => {
   }
 });
 
+// ─── Transcript viewer (public, no auth) ─────────────────────────────────────
+function escapeHtml(str) {
+  if (!str) return '';
+  return String(str)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+app.get('/transcript/:token', (req, res) => {
+  try {
+    const row = db.getTranscript(req.params.token);
+    if (!row) return res.status(404).send('<!DOCTYPE html><html><body style="background:#313338;color:#dbdee1;font-family:sans-serif;display:flex;align-items:center;justify-content:center;height:100vh;margin:0;"><h2>Transcript not found.</h2></body></html>');
+
+    let messages = [];
+    try { messages = JSON.parse(row.content); } catch {}
+
+    const ticketNum = String(row.ticket_number || 0).padStart(4, '0');
+    const created   = new Date((row.created_at || 0) * 1000).toUTCString();
+
+    const rows = messages.map(m => {
+      const time    = new Date(m.time).toLocaleString('en-GB', { hour12: false });
+      const content = m.content ? `<div class="content">${escapeHtml(m.content)}</div>` : '';
+      const embed   = m.hasEmbed ? `<div class="note">[embed]</div>` : '';
+      const atts    = (m.attachments || []).map(a =>
+        `<div class="att">📎 <a href="${escapeHtml(a.url)}" target="_blank">${escapeHtml(a.name)}</a></div>`
+      ).join('');
+      return `
+        <div class="msg">
+          <img class="av" src="${escapeHtml(m.authorAvatar)}" onerror="this.src='https://cdn.discordapp.com/embed/avatars/0.png'" alt="">
+          <div class="body">
+            <span class="tag">${escapeHtml(m.authorTag)}</span>
+            <span class="ts">${escapeHtml(time)}</span>
+            ${content}${embed}${atts}
+          </div>
+        </div>`;
+    }).join('');
+
+    const html = `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Ticket #${escapeHtml(ticketNum)} — Transcript</title>
+  <style>
+    *{box-sizing:border-box;margin:0;padding:0}
+    body{background:#313338;color:#dbdee1;font-family:'Segoe UI','Noto Sans',sans-serif;font-size:14px;line-height:1.4}
+    .top{background:#1e1f22;padding:14px 20px;border-bottom:1px solid #3f4147;display:flex;align-items:center;gap:14px}
+    .top .icon{font-size:28px}
+    .top h1{color:#fff;font-size:17px;font-weight:700}
+    .top .sub{color:#949ba4;font-size:12px;margin-top:2px}
+    .wrap{max-width:900px;margin:0 auto;padding:16px 20px}
+    .msg{display:flex;gap:14px;padding:6px 4px;border-radius:4px}
+    .msg:hover{background:rgba(0,0,0,.08)}
+    .av{width:40px;height:40px;border-radius:50%;flex-shrink:0;margin-top:2px;object-fit:cover}
+    .body{flex:1;min-width:0}
+    .tag{font-weight:600;color:#e3e5e8}
+    .ts{color:#72767d;font-size:11px;margin-left:8px}
+    .content{color:#dbdee1;margin-top:2px;white-space:pre-wrap;word-break:break-word}
+    .note{color:#949ba4;font-style:italic;font-size:12px;margin-top:2px}
+    .att{color:#00aaff;font-size:12px;margin-top:2px}
+    .att a{color:#00aaff;text-decoration:none}
+    .att a:hover{text-decoration:underline}
+    .foot{text-align:center;color:#72767d;font-size:12px;padding:24px}
+  </style>
+</head>
+<body>
+  <div class="top">
+    <div class="icon">🎫</div>
+    <div>
+      <h1>Ticket #${escapeHtml(ticketNum)}</h1>
+      <div class="sub">Generated ${escapeHtml(created)} &bull; ${messages.length} message${messages.length !== 1 ? 's' : ''}</div>
+    </div>
+  </div>
+  <div class="wrap">${rows}</div>
+  <div class="foot">nights bot &bull; Transcript #${escapeHtml(ticketNum)}</div>
+</body>
+</html>`;
+
+    res.setHeader('Content-Type', 'text/html; charset=utf-8');
+    res.send(html);
+  } catch (e) {
+    res.status(500).send('<!DOCTYPE html><html><body style="background:#313338;color:#dbdee1;font-family:sans-serif;padding:40px;"><h2>Error loading transcript</h2><pre>' + escapeHtml(e.message) + '</pre></body></html>');
+  }
+});
+
 // ─── Bot Status ───────────────────────────────────────────────────────────────
 let botStatus = {
   status: 'online',       // online | degraded | maintenance | offline

@@ -107,7 +107,7 @@ const setprefix = {
       return interaction.reply({ content: '❌ Prefix must be 5 characters or fewer.', ephemeral: true });
     }
 
-    db.setPrefix(interaction.guild.id, prefix);
+    db.setPrefix(interaction.guildId, prefix);
 
     const embed = new EmbedBuilder()
       .setColor(GREEN)
