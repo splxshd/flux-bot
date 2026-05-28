@@ -104,7 +104,7 @@ function buildRows(count, goal, disabled = false) {
   ];
 }
 
-module.exports = {
+module.exports = [{
   data: new SlashCommandBuilder()
     .setName('tortute')
     .setDescription('Start a public rock vote. At the rock limit, the target gets kicked.')
@@ -245,4 +245,4 @@ module.exports = {
       }
     });
   },
-};
+}];
