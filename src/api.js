@@ -687,13 +687,9 @@ app.get('/api/guilds', auth, (req, res) => {
 app.get('/health', (_, res) => res.json({ status: 'ok', uptime: process.uptime() }));
 
 // ─── Start ────────────────────────────────────────────────────────────────────
-function setClient(client) {
-  app.locals.client = client;
-}
-
 function startApi(client) {
   const port = process.env.PORT || process.env.API_PORT || 4000;
-  if (client) app.locals.client = client;
+  app.locals.client = client;
 
   // Ensure keyword_pings table exists
   db.run(`CREATE TABLE IF NOT EXISTS keyword_pings (
@@ -710,23 +706,17 @@ function startApi(client) {
     config TEXT NOT NULL DEFAULT '{}'
   )`);
 
-  // Member count endpoint — always uses app.locals.client (set after bot is ready)
+  // Member count endpoint
   app.get('/api/guild/:guildId/member-count', auth, async (req, res) => {
     try {
-      const c = req.app.locals.client;
-      if (!c) return res.json({ count: 0 });
-      const guild = await c.guilds.fetch(req.params.guildId);
+      const guild = await client.guilds.fetch(req.params.guildId);
       res.json({ count: guild.memberCount });
     } catch {
       res.json({ count: 0 });
     }
   });
 
-  const server = app.listen(port, () => console.log(`[API] Running on port ${port}`));
-  server.on('error', err => {
-    console.error('[API] Failed to start server:', err.message);
-    process.exit(1);
-  });
+  app.listen(port, () => console.log(`[API] Running on port ${port}`));
 }
 
-module.exports = { startApi, setClient };
+module.exports = { startApi };

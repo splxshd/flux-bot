@@ -208,21 +208,18 @@ function startCrons() {
 }
 
 // ─── Login ────────────────────────────────────────────────────────────────────
-const { startApi, setClient } = require('./api');
-
-// Start API immediately so Railway health check passes within its timeout window
-startApi(null);
+const { startApi } = require('./api');
 
 client.once('ready', () => {
   startCrons();
-  setClient(client);
+  startApi(client);
   console.log(`[flux] Bot ready. In ${client.guilds.cache.size} guilds.`);
 });
 
 console.log('[flux] Attempting Discord login...');
 client.login(process.env.BOT_TOKEN)
   .then(async () => {
-    console.log('[flux] Logged in. Deploying commands...');
+    console.log('[flux] Logged in successfully. Deploying commands...');
     await deploySlashCommands().catch(e => console.error('[Deploy Error]', e));
   })
   .catch(err => {
