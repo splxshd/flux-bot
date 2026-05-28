@@ -207,12 +207,12 @@ function startCrons() {
   });
 }
 
-// ─── Login ────────────────────────────────────────────────────────────────────
+// ─── Start API immediately so Railway health check passes before Discord ready ──
 const { startApi } = require('./api');
+startApi(client); // client exists but not yet connected — routes handle null guilds gracefully
 
 client.once('ready', () => {
   startCrons();
-  startApi(client);
   console.log(`[flux] Bot ready. In ${client.guilds.cache.size} guilds.`);
 });
 
