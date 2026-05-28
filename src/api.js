@@ -688,7 +688,7 @@ app.get('/health', (_, res) => res.json({ status: 'ok', uptime: process.uptime()
 
 // ─── Start ────────────────────────────────────────────────────────────────────
 function startApi(client) {
-  const port = process.env.API_PORT || 4000;
+  const port = process.env.PORT || process.env.API_PORT || 4000;
   app.locals.client = client;
 
   // Ensure keyword_pings table exists
