@@ -18,12 +18,25 @@ function getTranscriptBase() {
   return process.env.API_URL || 'http://localhost:4000';
 }
 
-// ─── Build category select menu ───────────────────────────────────────────────
+// ─── Helpers ──────────────────────────────────────────────────────────────────
+
+function getSupportRoleIds(settings) {
+  const ids = [];
+  try {
+    const arr = JSON.parse(settings.support_roles || '[]');
+    if (Array.isArray(arr)) ids.push(...arr);
+  } catch {}
+  // backwards-compat: old single column
+  if (settings.support_role && !ids.includes(settings.support_role)) {
+    ids.push(settings.support_role);
+  }
+  return ids;
+}
 
 function buildCategoryMenu(categories) {
   const select = new StringSelectMenuBuilder()
     .setCustomId('ticket_panel_select')
-    .setPlaceholder('Choose a category...')
+    .setPlaceholder('Choose a category to open a ticket…')
     .addOptions(categories.slice(0, 25).map(c => {
       const opt = {
         label: c.name.slice(0, 100),
@@ -31,7 +44,7 @@ function buildCategoryMenu(categories) {
         description: (c.description || 'Open a support ticket').slice(0, 100),
       };
       if (c.emoji) {
-        const isCustomId = /^\d+$/.test(c.emoji.trim());
+        const isCustomId = /^\d{17,20}$/.test(c.emoji.trim());
         opt.emoji = isCustomId ? { id: c.emoji.trim() } : { name: c.emoji.trim() };
       }
       return opt;
@@ -42,7 +55,6 @@ function buildCategoryMenu(categories) {
 // ─── Core: open a ticket ──────────────────────────────────────────────────────
 
 async function openTicket(interaction, client, categoryName) {
-  // interaction may be deferred or not — caller should defer before calling
   const guildId = interaction.guildId;
 
   const settings = db.getTicketSettings(guildId);
@@ -58,29 +70,26 @@ async function openTicket(interaction, client, categoryName) {
     return interaction.editReply({ content: `❌ You already have an open ticket: <#${existing[0].channel_id}>` });
   }
 
-  // Determine Discord category channel for ticket
   let discordCategoryId = settings.category_id;
   let catLabel = null;
 
   if (categoryName) {
     const cat = db.getTicketCategory(guildId, categoryName);
-    if (cat) {
-      discordCategoryId = cat.discord_category_id;
-      catLabel = cat.name;
-    }
+    if (cat) { discordCategoryId = cat.discord_category_id; catLabel = cat.name; }
   }
 
   if (!discordCategoryId) {
-    return interaction.editReply({ content: '❌ Ticket system has no category configured. Ask an admin to run `/ticketsetup setup`.' });
+    return interaction.editReply({ content: '❌ No ticket category configured. Ask an admin to run `/ticketsetup setup`.' });
   }
 
   db.incrementTicketCount(guildId);
   const ticketNumber = db.getTicketSettings(guildId).ticket_count;
   const padded = String(ticketNumber).padStart(4, '0');
 
-  const supportRole = settings.support_role
-    ? interaction.guild.roles.cache.get(settings.support_role)
-    : null;
+  const supportRoleIds = getSupportRoleIds(settings);
+  const supportRoles   = supportRoleIds
+    .map(id => interaction.guild.roles.cache.get(id))
+    .filter(Boolean);
 
   const channel = await interaction.guild.channels.create({
     name: `ticket-${padded}`,
@@ -97,14 +106,14 @@ async function openTicket(interaction, client, categoryName) {
           PermissionFlagsBits.AttachFiles,
         ],
       },
-      ...(supportRole ? [{
-        id: supportRole.id,
+      ...supportRoles.map(r => ({
+        id: r.id,
         allow: [
           PermissionFlagsBits.ViewChannel,
           PermissionFlagsBits.SendMessages,
           PermissionFlagsBits.ReadMessageHistory,
         ],
-      }] : []),
+      })),
       {
         id: client.user.id,
         allow: [
@@ -120,46 +129,35 @@ async function openTicket(interaction, client, categoryName) {
   db.createTicketFull(guildId, channel.id, interaction.user.id, ticketNumber, catLabel);
 
   const titleStr = catLabel ? `${catLabel} — Ticket #${padded}` : `Ticket #${padded}`;
+  const rolesValue = supportRoles.length ? supportRoles.map(r => `${r}`).join(' ') : 'None';
 
   const embed = new EmbedBuilder()
     .setTitle(`🎫 ${titleStr}`)
-    .setDescription(
-      (settings.open_message || '') ||
-      '**How can we help you?**\nPlease describe your issue and a staff member will assist you shortly.'
-    )
+    .setDescription(settings.open_message || '**How can we help you?**\nPlease describe your issue and a staff member will assist you shortly.')
     .setColor(BLUE)
     .setThumbnail(interaction.guild.iconURL())
     .addFields(
-      { name: '👤 Opened by', value: `<@${interaction.user.id}> (ID: \`${interaction.user.id}\`)`, inline: true },
-      { name: '🛡️ Assigned Staff', value: 'Unassigned', inline: true },
+      { name: '👤 Opened by',      value: `<@${interaction.user.id}> (ID: \`${interaction.user.id}\`)`, inline: true },
+      { name: '🛡️ Assigned Staff', value: 'Unassigned',                                                 inline: true },
+      { name: '🎖️ Support Roles',  value: rolesValue,                                                   inline: true },
     )
     .setFooter({ text: `Ticket #${padded} • nights bot` })
     .setTimestamp();
 
   const row = new ActionRowBuilder().addComponents(
-    new ButtonBuilder()
-      .setCustomId('ticket_close')
-      .setLabel('Close Ticket')
-      .setStyle(ButtonStyle.Danger)
-      .setEmoji('🔒'),
-    new ButtonBuilder()
-      .setCustomId('ticket_claim')
-      .setLabel('Assign me')
-      .setStyle(ButtonStyle.Success)
-      .setEmoji('✋'),
+    new ButtonBuilder().setCustomId('ticket_close').setLabel('Close Ticket').setStyle(ButtonStyle.Danger).setEmoji('🔒'),
+    new ButtonBuilder().setCustomId('ticket_claim').setLabel('Assign me').setStyle(ButtonStyle.Success).setEmoji('✋'),
   );
 
-  const mention = supportRole ? `${supportRole} ` : '';
+  const mention = supportRoles.map(r => `${r}`).join(' ');
   const sentMsg = await channel.send({
-    content: `${mention}<@${interaction.user.id}>`,
+    content: `${mention} <@${interaction.user.id}>`.trim(),
     embeds: [embed],
     components: [row],
   });
 
-  // Store message ID so claim/close can update the embed
   db.updateTicketOpenMessage(channel.id, sentMsg.id);
 
-  // Form embed (if configured)
   if (settings.form_enabled && settings.form_fields) {
     let fields;
     try { fields = JSON.parse(settings.form_fields); } catch { fields = []; }
@@ -181,11 +179,11 @@ async function openTicket(interaction, client, categoryName) {
 async function executeClose(interaction, client, reason) {
   const channel = interaction.channel;
   const t = db.getTicketByChannel(channel.id);
-  if (!t) return; // caller validates
+  if (!t) return;
 
   const settings = db.getTicketSettings(interaction.guild.id);
 
-  // Fetch up to 500 messages for transcript
+  // Fetch up to 500 messages
   const messages = [];
   let lastId = null;
   for (let i = 0; i < 5; i++) {
@@ -199,93 +197,74 @@ async function executeClose(interaction, client, reason) {
   }
   messages.sort((a, b) => a.createdTimestamp - b.createdTimestamp);
 
-  // Build + save transcript
   const token = crypto.randomBytes(16).toString('hex');
-  const transcriptData = messages.map(m => ({
-    time: m.createdTimestamp,
-    authorId: m.author.id,
-    authorTag: m.author.tag,
-    authorAvatar: m.author.displayAvatarURL({ size: 64 }),
-    content: m.content || null,
-    hasEmbed: m.embeds.length > 0,
-    attachments: [...m.attachments.values()].map(a => ({ name: a.name, url: a.url })),
-  }));
-  db.saveTranscript(token, interaction.guild.id, channel.id, t.ticket_number, JSON.stringify(transcriptData));
+  db.saveTranscript(token, interaction.guild.id, channel.id, t.ticket_number,
+    JSON.stringify(messages.map(m => ({
+      time: m.createdTimestamp,
+      authorId: m.author.id,
+      authorTag: m.author.tag,
+      authorAvatar: m.author.displayAvatarURL({ size: 64 }),
+      content: m.content || null,
+      hasEmbed: m.embeds.length > 0,
+      attachments: [...m.attachments.values()].map(a => ({ name: a.name, url: a.url })),
+    })))
+  );
 
   const transcriptUrl = `${getTranscriptBase()}/transcript/${token}`;
-
-  // Close in DB
   db.closeTicketWithDetails(channel.id, reason || 'No reason provided');
 
-  const ticketNum   = String(t.ticket_number).padStart(4, '0');
-  const opener      = await client.users.fetch(t.user_id).catch(() => null);
+  const ticketNum    = String(t.ticket_number).padStart(4, '0');
+  const opener       = await client.users.fetch(t.user_id).catch(() => null);
   const participants = [...new Set(messages.filter(m => !m.author.bot).map(m => m.author.id))];
-  const totalMsgs   = messages.filter(m => !m.author.bot).length;
+  const totalMsgs    = messages.filter(m => !m.author.bot).length;
 
   const transcriptRow = new ActionRowBuilder().addComponents(
     new ButtonBuilder()
-      .setLabel('View Transcript')
-      .setStyle(ButtonStyle.Link)
-      .setURL(transcriptUrl)
-      .setEmoji('📄'),
+      .setLabel('View Transcript').setStyle(ButtonStyle.Link).setURL(transcriptUrl).setEmoji('📄'),
   );
 
-  // ── Close embed (sent in ticket channel) ──────────────────────────────────
   const closeEmbed = new EmbedBuilder()
-    .setColor(RED)
-    .setTitle('🔒 Ticket Closed')
+    .setColor(RED).setTitle('🔒 Ticket Closed')
     .setThumbnail(interaction.guild.iconURL())
     .addFields(
-      {
-        name: '📋 Ticket Details',
-        value: [
-          `**Category:** ${t.category_name || 'General'}`,
-          `**Close Reason:** ${reason || 'No reason provided'}`,
-          `**Closed by:** <@${interaction.user.id}>`,
-          `**Claimed by:** ${t.claimed_by ? `<@${t.claimed_by}>` : 'Unassigned'}`,
-          `**Total Messages:** ${totalMsgs}`,
-        ].join('\n'),
-      },
-      {
-        name: '👥 Participants',
-        value: participants.length > 0
-          ? participants.slice(0, 20).map(id => `<@${id}>`).join(', ')
-          : 'None',
-      },
+      { name: '📋 Ticket Details', value: [
+        `**Category:** ${t.category_name || 'General'}`,
+        `**Reason:** ${reason || 'No reason provided'}`,
+        `**Closed by:** <@${interaction.user.id}>`,
+        `**Claimed by:** ${t.claimed_by ? `<@${t.claimed_by}>` : 'Unassigned'}`,
+        `**Total Messages:** ${totalMsgs}`,
+      ].join('\n') },
+      { name: '👥 Participants', value: participants.length ? participants.slice(0, 20).map(id => `<@${id}>`).join(', ') : 'None' },
     )
     .setFooter({ text: `Ticket #${ticketNum} • deleting in 5 seconds` })
     .setTimestamp();
 
   await channel.send({ embeds: [closeEmbed], components: [transcriptRow] });
 
-  // ── Log embed ─────────────────────────────────────────────────────────────
   if (settings?.log_channel) {
     const logCh = interaction.guild.channels.cache.get(settings.log_channel);
     if (logCh) {
-      const logEmbed = new EmbedBuilder()
-        .setColor(RED)
-        .setTitle(`📋 Ticket Closed — #${ticketNum}`)
-        .addFields(
-          { name: '🔒 Closed by',      value: `<@${interaction.user.id}>`,                                inline: true },
-          { name: '👤 Ticket Creator', value: opener ? `<@${opener.id}>` : `\`${t.user_id}\``,           inline: true },
-          { name: '📁 Channel',        value: `#${channel.name} (${t.category_name || 'General'})`,       inline: true },
-          { name: '📝 Reason',         value: reason || 'No reason provided',                             inline: false },
-          { name: '💬 Total Messages', value: String(totalMsgs),                                          inline: true },
-        )
-        .setFooter({ text: 'nights bot' })
-        .setTimestamp();
-      await logCh.send({ embeds: [logEmbed], components: [transcriptRow] }).catch(() => {});
+      await logCh.send({
+        embeds: [new EmbedBuilder()
+          .setColor(RED).setTitle(`📋 Ticket Closed — #${ticketNum}`)
+          .addFields(
+            { name: '🔒 Closed by',      value: `<@${interaction.user.id}>`,                               inline: true },
+            { name: '👤 Creator',         value: opener ? `<@${opener.id}>` : `\`${t.user_id}\``,          inline: true },
+            { name: '📁 Channel',         value: `#${channel.name} (${t.category_name || 'General'})`,      inline: true },
+            { name: '📝 Reason',          value: reason || 'No reason provided',                            inline: false },
+            { name: '💬 Total Messages',  value: String(totalMsgs),                                         inline: true },
+          )
+          .setFooter({ text: 'nights bot' }).setTimestamp()],
+        components: [transcriptRow],
+      }).catch(() => {});
     }
   }
 
-  // ── DM ticket opener ──────────────────────────────────────────────────────
   if (opener) {
     await opener.send({
-      embeds: [new EmbedBuilder()
-        .setColor(RED)
+      embeds: [new EmbedBuilder().setColor(RED)
         .setDescription(`Your ticket **#${ticketNum}** in **${interaction.guild.name}** has been closed.`)
-        .addFields({ name: '📝 Reason', value: reason || 'No reason provided' })
-        .setTimestamp()],
+        .addFields({ name: '📝 Reason', value: reason || 'No reason provided' }).setTimestamp()],
       components: [transcriptRow],
     }).catch(() => {});
   }
@@ -303,7 +282,6 @@ async function executeClaim(interaction, client) {
   const isClaimer = t.claimed_by === interaction.user.id;
   db.claimTicket(interaction.channel.id, isClaimer ? null : interaction.user.id);
 
-  // Update the original open message embed
   if (t.open_message_id) {
     try {
       const msg = await interaction.channel.messages.fetch(t.open_message_id);
@@ -323,11 +301,9 @@ async function executeClaim(interaction, client) {
   return interaction.reply({
     embeds: [new EmbedBuilder()
       .setColor(isClaimer ? YELLOW : GREEN)
-      .setDescription(
-        isClaimer
-          ? `↩️ <@${interaction.user.id}> unclaimed this ticket.`
-          : `✋ **Ticket Claimed!**\n<@${interaction.user.id}> is now handling this ticket.`
-      )
+      .setDescription(isClaimer
+        ? `↩️ <@${interaction.user.id}> unclaimed this ticket.`
+        : `✋ **Ticket Claimed!**\n<@${interaction.user.id}> is now handling this ticket.`)
       .setTimestamp()],
     ephemeral: true,
   });
@@ -342,7 +318,6 @@ const ticket = {
 
   async execute(interaction, client) {
     const categories = db.getTicketCategories(interaction.guildId);
-
     if (categories.length > 0) {
       return interaction.reply({
         content: '**Select a category to open a ticket:**',
@@ -350,13 +325,10 @@ const ticket = {
         ephemeral: true,
       });
     }
-
-    // No categories — open directly
     await interaction.deferReply({ ephemeral: true });
     return openTicket(interaction, client, null);
   },
 
-  // Exposed for use in interactionCreate.js
   openTicket,
 };
 
@@ -366,44 +338,38 @@ const ticketsetup = {
   data: new SlashCommandBuilder()
     .setName('ticketsetup')
     .setDescription('Configure the ticket system')
-    .addSubcommand(s => s.setName('setup').setDescription('Initial setup')
+    .addSubcommand(s => s.setName('setup').setDescription('Initial setup — category, support roles, log channel')
       .addChannelOption(o => o.setName('category').setDescription('Default Discord category for tickets').setRequired(true))
-      .addRoleOption(o => o.setName('support_role').setDescription('Support role'))
-      .addChannelOption(o => o.setName('log_channel').setDescription('Log channel'))
-      .addStringOption(o => o.setName('open_message').setDescription('Welcome message in new tickets')))
+      .addChannelOption(o => o.setName('log_channel').setDescription('Channel for close/transcript logs'))
+      .addRoleOption(o => o.setName('support_role1').setDescription('Support role'))
+      .addRoleOption(o => o.setName('support_role2').setDescription('2nd support role'))
+      .addRoleOption(o => o.setName('support_role3').setDescription('3rd support role'))
+      .addStringOption(o => o.setName('open_message').setDescription('Welcome message in new ticket channels')))
+    .addSubcommand(s => s.setName('addsupportrole').setDescription('Add a support role')
+      .addRoleOption(o => o.setName('role').setDescription('Role to add').setRequired(true)))
+    .addSubcommand(s => s.setName('removesupportrole').setDescription('Remove a support role')
+      .addRoleOption(o => o.setName('role').setDescription('Role to remove').setRequired(true)))
     .addSubcommand(s => s.setName('panel').setDescription('Post the ticket panel')
       .addChannelOption(o => o.setName('channel').setDescription('Channel to post panel in (defaults to current)'))
       .addStringOption(o => o.setName('image').setDescription('Banner image URL'))
       .addStringOption(o => o.setName('title').setDescription('Panel title'))
       .addStringOption(o => o.setName('description').setDescription('Panel description'))
       .addStringOption(o => o.setName('thumbnail').setDescription('Thumbnail URL (default: server icon)')))
-    .addSubcommand(s => s.setName('addcategory').setDescription('Add a ticket category')
-      .addStringOption(o => o.setName('name').setDescription('Category display name').setRequired(true))
+    .addSubcommand(s => s.setName('addcategory').setDescription('Add a ticket category to the panel dropdown')
+      .addStringOption(o => o.setName('name').setDescription('Display name (e.g. "General Support")').setRequired(true))
       .addChannelOption(o => o.setName('discord_category').setDescription('Discord category channel for this type').setRequired(true))
-      .addStringOption(o => o.setName('description').setDescription('Short description shown in dropdown'))
+      .addStringOption(o => o.setName('description').setDescription('Short text shown in the dropdown'))
       .addStringOption(o => o.setName('emoji').setDescription('Emoji (unicode or custom emoji ID)')))
     .addSubcommand(s => s.setName('removecategory').setDescription('Remove a ticket category')
       .addStringOption(o => o.setName('name').setDescription('Category name to remove').setRequired(true)))
     .addSubcommand(s => s.setName('categories').setDescription('List all configured ticket categories'))
-    .addSubcommand(s => s.setName('close').setDescription('Close the current ticket')
-      .addStringOption(o => o.setName('reason').setDescription('Close reason')))
-    .addSubcommand(s => s.setName('transcript').setDescription('Save transcript and close ticket'))
-    .addSubcommand(s => s.setName('add').setDescription('Add a user to this ticket')
-      .addUserOption(o => o.setName('user').setDescription('User to add').setRequired(true)))
-    .addSubcommand(s => s.setName('remove').setDescription('Remove a user from this ticket')
-      .addUserOption(o => o.setName('user').setDescription('User to remove').setRequired(true)))
-    .addSubcommand(s => s.setName('alert').setDescription('Ping the ticket creator to respond')
-      .addStringOption(o => o.setName('message').setDescription('Custom alert message')))
-    .addSubcommand(s => s.setName('move').setDescription('Move ticket to a different category')
-      .addStringOption(o => o.setName('category').setDescription('Category name to move to').setRequired(true)))
-    .addSubcommand(s => s.setName('rename').setDescription('Rename the ticket channel')
-      .addStringOption(o => o.setName('name').setDescription('New channel name').setRequired(true)))
+    .addSubcommand(s => s.setName('transcript').setDescription('Save transcript and close this ticket'))
     .addSubcommand(s => s.setName('form').setDescription('Configure the ticket form')
       .addBooleanOption(o => o.setName('enabled').setDescription('Enable form').setRequired(true))
-      .addStringOption(o => o.setName('fields').setDescription('Fields (comma-separated)'))
-      .addStringOption(o => o.setName('title').setDescription('Form title'))
-      .addStringOption(o => o.setName('footer').setDescription('Form footer'))
-      .addStringOption(o => o.setName('color').setDescription('Form embed color')))
+      .addStringOption(o => o.setName('fields').setDescription('Questions (comma-separated)'))
+      .addStringOption(o => o.setName('title').setDescription('Form embed title'))
+      .addStringOption(o => o.setName('footer').setDescription('Form embed footer'))
+      .addStringOption(o => o.setName('color').setDescription('Form embed color hex')))
     .addSubcommand(s => s.setName('view').setDescription('View current ticket settings'))
     .setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild),
 
@@ -413,28 +379,75 @@ const ticketsetup = {
     // ── setup ────────────────────────────────────────────────────────────────
     if (sub === 'setup') {
       const category    = interaction.options.getChannel('category');
-      const supportRole = interaction.options.getRole('support_role');
       const logChannel  = interaction.options.getChannel('log_channel');
       const openMessage = interaction.options.getString('open_message');
 
+      // Collect up to 3 support roles
+      const newRoleIds = [1, 2, 3]
+        .map(n => interaction.options.getRole(`support_role${n}`)?.id)
+        .filter(Boolean);
+
+      // Merge with existing support_roles
+      const existing = db.getTicketSettings(interaction.guild.id);
+      let existingIds = [];
+      try { existingIds = JSON.parse(existing?.support_roles || '[]'); } catch {}
+      const merged = [...new Set([...existingIds, ...newRoleIds])];
+
       db.upsertTicketSettings(interaction.guild.id, {
-        category_id:  category.id,
-        support_role: supportRole?.id  || null,
-        log_channel:  logChannel?.id   || null,
-        open_message: openMessage       || null,
+        category_id:   category.id,
+        log_channel:   logChannel?.id    || null,
+        open_message:  openMessage        || null,
+        support_roles: JSON.stringify(merged),
         enabled: 1,
       });
+
+      const rolesDisplay = merged.length
+        ? merged.map(id => `<@&${id}>`).join(', ')
+        : 'None';
 
       return interaction.reply({
         embeds: [new EmbedBuilder()
           .setColor(GREEN)
           .setAuthor({ name: '✅ Ticket System Configured', iconURL: interaction.user.displayAvatarURL() })
           .addFields(
-            { name: '📁 Default Category', value: `${category}`,                           inline: true },
-            { name: '🛡️ Support Role',    value: supportRole ? `${supportRole}` : 'None', inline: true },
-            { name: '📋 Log Channel',      value: logChannel  ? `${logChannel}`  : 'None', inline: true },
+            { name: '📁 Default Category', value: `${category}`,         inline: true },
+            { name: '📋 Log Channel',      value: logChannel ? `${logChannel}` : 'None', inline: true },
+            { name: '🎖️ Support Roles',   value: rolesDisplay,          inline: false },
           )
+          .setDescription('Use `/ticketsetup addcategory` to add panel categories, `/ticketsetup panel` to post the panel, and `/ticketsetup addsupportrole` to add more support roles.')
           .setFooter({ text: 'nights bot' }).setTimestamp()],
+        ephemeral: true,
+      });
+
+    // ── addsupportrole ───────────────────────────────────────────────────────
+    } else if (sub === 'addsupportrole') {
+      const role = interaction.options.getRole('role');
+      const settings = db.getTicketSettings(interaction.guild.id);
+      let ids = [];
+      try { ids = JSON.parse(settings?.support_roles || '[]'); } catch {}
+      if (ids.includes(role.id)) {
+        return interaction.reply({ content: `❌ ${role} is already a support role.`, ephemeral: true });
+      }
+      ids.push(role.id);
+      db.upsertTicketSettings(interaction.guild.id, { support_roles: JSON.stringify(ids) });
+      return interaction.reply({
+        content: `✅ Added ${role} as a support role. (${ids.length} total)`,
+        ephemeral: true,
+      });
+
+    // ── removesupportrole ────────────────────────────────────────────────────
+    } else if (sub === 'removesupportrole') {
+      const role = interaction.options.getRole('role');
+      const settings = db.getTicketSettings(interaction.guild.id);
+      let ids = [];
+      try { ids = JSON.parse(settings?.support_roles || '[]'); } catch {}
+      if (!ids.includes(role.id)) {
+        return interaction.reply({ content: `❌ ${role} is not a support role.`, ephemeral: true });
+      }
+      ids = ids.filter(id => id !== role.id);
+      db.upsertTicketSettings(interaction.guild.id, { support_roles: JSON.stringify(ids) });
+      return interaction.reply({
+        content: `✅ Removed ${role} from support roles. (${ids.length} remaining)`,
         ephemeral: true,
       });
 
@@ -458,14 +471,19 @@ const ticketsetup = {
         .setTimestamp();
       if (image) embed.setImage(image);
 
+      // Show category fields so users know what each option opens
+      if (categories.length > 0) {
+        embed.addFields(categories.map(c => ({
+          name: `${c.emoji ? c.emoji + ' ' : ''}${c.name}`,
+          value: c.description || 'Open a support ticket',
+          inline: true,
+        })));
+      }
+
       const components = categories.length > 0
         ? [buildCategoryMenu(categories)]
         : [new ActionRowBuilder().addComponents(
-            new ButtonBuilder()
-              .setCustomId('open_ticket')
-              .setLabel('Open Ticket')
-              .setStyle(ButtonStyle.Primary)
-              .setEmoji('🎫')
+            new ButtonBuilder().setCustomId('open_ticket').setLabel('Open Ticket').setStyle(ButtonStyle.Primary).setEmoji('🎫')
           )];
 
       await ch.send({ embeds: [embed], components });
@@ -480,27 +498,26 @@ const ticketsetup = {
 
       if (discordCat.type !== ChannelType.GuildCategory) {
         return interaction.reply({
-          content: '❌ `discord_category` must be a **Category** channel, not a text/voice channel.',
+          content: '❌ `discord_category` must be a **Category** channel (not text/voice).',
           ephemeral: true,
         });
       }
-
       if (db.getTicketCategory(interaction.guild.id, name)) {
         return interaction.reply({ content: `❌ A category named **${name}** already exists.`, ephemeral: true });
       }
-
       db.addTicketCategory(interaction.guild.id, name, description, emoji, discordCat.id);
 
+      const cats = db.getTicketCategories(interaction.guild.id);
       return interaction.reply({
         embeds: [new EmbedBuilder()
-          .setColor(GREEN)
-          .setTitle('✅ Category Added')
+          .setColor(GREEN).setTitle('✅ Category Added')
           .addFields(
-            { name: '📁 Name',              value: name,                     inline: true },
-            { name: '📂 Discord Category', value: `${discordCat}`,          inline: true },
-            { name: '📝 Description',      value: description || 'None',    inline: true },
+            { name: '📁 Name',             value: name,                  inline: true },
+            { name: '📂 Discord Category', value: `${discordCat}`,       inline: true },
+            { name: '📝 Description',      value: description || 'None', inline: true },
           )
-          .setFooter({ text: 'nights bot' }).setTimestamp()],
+          .setFooter({ text: `${cats.length} total categor${cats.length === 1 ? 'y' : 'ies'} • Re-post the panel to apply` })
+          .setTimestamp()],
         ephemeral: true,
       });
 
@@ -511,137 +528,33 @@ const ticketsetup = {
         return interaction.reply({ content: `❌ No category named **${name}** found.`, ephemeral: true });
       }
       db.removeTicketCategory(interaction.guild.id, name);
-      return interaction.reply({ content: `✅ Category **${name}** removed.`, ephemeral: true });
+      return interaction.reply({ content: `✅ Category **${name}** removed. Re-post the panel to apply.`, ephemeral: true });
 
     // ── categories ───────────────────────────────────────────────────────────
     } else if (sub === 'categories') {
       const cats = db.getTicketCategories(interaction.guild.id);
       if (cats.length === 0) {
-        return interaction.reply({
-          content: '📭 No categories configured yet. Use `/ticketsetup addcategory` to add one.',
-          ephemeral: true,
-        });
+        return interaction.reply({ content: '📭 No categories yet. Use `/ticketsetup addcategory` to add one.', ephemeral: true });
       }
       const embed = new EmbedBuilder()
-        .setColor(BLUE)
-        .setTitle('📁 Ticket Categories')
+        .setColor(BLUE).setTitle('📁 Ticket Categories')
         .setDescription(cats.map((c, i) => {
           const ch = interaction.guild.channels.cache.get(c.discord_category_id);
-          return `**${i + 1}. ${c.emoji ? c.emoji + ' ' : ''}${c.name}**\n└ ${c.description || 'No description'} • \`${ch ? ch.name : c.discord_category_id}\``;
+          return `**${i + 1}. ${c.emoji ? c.emoji + ' ' : ''}${c.name}**\n└ ${c.description || 'No description'} → \`${ch ? ch.name : c.discord_category_id}\``;
         }).join('\n\n'))
-        .setFooter({ text: `${cats.length} categor${cats.length === 1 ? 'y' : 'ies'}` })
+        .setFooter({ text: `${cats.length} categor${cats.length === 1 ? 'y' : 'ies'} — each maps to its own Discord category channel` })
         .setTimestamp();
       return interaction.reply({ embeds: [embed], ephemeral: true });
-
-    // ── close ────────────────────────────────────────────────────────────────
-    } else if (sub === 'close') {
-      const t = db.getTicketByChannel(interaction.channel.id);
-      if (!t || t.status !== 'open') {
-        return interaction.reply({ content: '❌ This is not an open ticket channel.', ephemeral: true });
-      }
-      const reason = interaction.options.getString('reason') || 'No reason provided';
-      await interaction.deferReply({ ephemeral: true });
-      await executeClose(interaction, client, reason);
-      await interaction.editReply({ content: '🔒 Ticket closed.' }).catch(() => {});
 
     // ── transcript ───────────────────────────────────────────────────────────
     } else if (sub === 'transcript') {
       const t = db.getTicketByChannel(interaction.channel.id);
       if (!t || t.status !== 'open') {
-        return interaction.reply({ content: '❌ This is not an open ticket channel.', ephemeral: true });
+        return interaction.reply({ content: '❌ Not an open ticket channel.', ephemeral: true });
       }
       await interaction.deferReply({ ephemeral: true });
       await executeClose(interaction, client, 'Transcript saved');
       await interaction.editReply({ content: '📄 Transcript saved and ticket closed.' }).catch(() => {});
-
-    // ── add ──────────────────────────────────────────────────────────────────
-    } else if (sub === 'add') {
-      if (!db.getTicketByChannel(interaction.channel.id)) {
-        return interaction.reply({ content: '❌ Not a ticket channel.', ephemeral: true });
-      }
-      const user = interaction.options.getUser('user');
-      await interaction.channel.permissionOverwrites.edit(user.id, {
-        ViewChannel: true, SendMessages: true, ReadMessageHistory: true,
-      });
-      return interaction.reply({ content: `✅ Added <@${user.id}> to the ticket.`, ephemeral: true });
-
-    // ── remove ───────────────────────────────────────────────────────────────
-    } else if (sub === 'remove') {
-      const t = db.getTicketByChannel(interaction.channel.id);
-      if (!t) return interaction.reply({ content: '❌ Not a ticket channel.', ephemeral: true });
-      const user = interaction.options.getUser('user');
-      if (user.id === t.user_id) {
-        return interaction.reply({ content: '❌ Cannot remove the ticket creator.', ephemeral: true });
-      }
-      await interaction.channel.permissionOverwrites.delete(user.id);
-      return interaction.reply({ content: `✅ Removed <@${user.id}> from the ticket.`, ephemeral: true });
-
-    // ── alert ────────────────────────────────────────────────────────────────
-    } else if (sub === 'alert') {
-      const t = db.getTicketByChannel(interaction.channel.id);
-      if (!t || t.status !== 'open') {
-        return interaction.reply({ content: '❌ Not an open ticket channel.', ephemeral: true });
-      }
-      const msg = interaction.options.getString('message')
-        || 'The staff team is awaiting your response. Please reply as soon as possible.';
-      await interaction.channel.send({
-        content: `<@${t.user_id}>`,
-        embeds: [new EmbedBuilder()
-          .setColor(YELLOW)
-          .setTitle('🔔 Ticket Alert')
-          .setDescription(msg)
-          .setFooter({ text: `Sent by ${interaction.user.tag}` })
-          .setTimestamp()],
-      });
-      return interaction.reply({ content: '✅ Alert sent.', ephemeral: true });
-
-    // ── move ─────────────────────────────────────────────────────────────────
-    } else if (sub === 'move') {
-      const t = db.getTicketByChannel(interaction.channel.id);
-      if (!t || t.status !== 'open') {
-        return interaction.reply({ content: '❌ Not an open ticket channel.', ephemeral: true });
-      }
-      const catName = interaction.options.getString('category');
-      const cat = db.getTicketCategory(interaction.guild.id, catName);
-      if (!cat) {
-        return interaction.reply({
-          content: `❌ No category named **${catName}**. Check \`/ticketsetup categories\`.`,
-          ephemeral: true,
-        });
-      }
-      await interaction.channel.setParent(cat.discord_category_id, { lockPermissions: false });
-      db.run('UPDATE tickets SET category_name = ? WHERE channel_id = ?', [cat.name, interaction.channel.id]);
-
-      // Update embed title if possible
-      if (t.open_message_id) {
-        try {
-          const ticketMsg = await interaction.channel.messages.fetch(t.open_message_id);
-          if (ticketMsg?.embeds?.[0]) {
-            const padded = String(t.ticket_number).padStart(4, '0');
-            const updEmbed = EmbedBuilder.from(ticketMsg.embeds[0]);
-            updEmbed.setTitle(`🎫 ${cat.name} — Ticket #${padded}`);
-            await ticketMsg.edit({ embeds: [updEmbed] }).catch(() => {});
-          }
-        } catch (_) {}
-      }
-
-      return interaction.reply({
-        embeds: [new EmbedBuilder()
-          .setColor(GREEN)
-          .setDescription(`✅ Ticket moved to **${cat.name}**`)
-          .setTimestamp()],
-        ephemeral: true,
-      });
-
-    // ── rename ───────────────────────────────────────────────────────────────
-    } else if (sub === 'rename') {
-      if (!db.getTicketByChannel(interaction.channel.id)) {
-        return interaction.reply({ content: '❌ Not a ticket channel.', ephemeral: true });
-      }
-      const newName = interaction.options.getString('name')
-        .toLowerCase().replace(/[^a-z0-9-]/g, '-').replace(/-{2,}/g, '-').slice(0, 100);
-      await interaction.channel.setName(newName);
-      return interaction.reply({ content: `✅ Channel renamed to \`${newName}\`.`, ephemeral: true });
 
     // ── form ─────────────────────────────────────────────────────────────────
     } else if (sub === 'form') {
@@ -659,12 +572,11 @@ const ticketsetup = {
         form_footer:  footer || null,
         form_color:   color  || BLUE,
       });
-
       return interaction.reply({
         embeds: [new EmbedBuilder()
           .setColor(enabled ? GREEN : RED)
           .setAuthor({ name: `📝 Form ${enabled ? 'Enabled' : 'Disabled'}`, iconURL: interaction.user.displayAvatarURL() })
-          .addFields({ name: '📋 Fields', value: fieldsArr.length > 0 ? fieldsArr.join(', ') : 'None' })
+          .addFields({ name: '📋 Fields', value: fieldsArr.length ? fieldsArr.join(', ') : 'None' })
           .setFooter({ text: 'nights bot' }).setTimestamp()],
         ephemeral: true,
       });
@@ -672,35 +584,199 @@ const ticketsetup = {
     // ── view ─────────────────────────────────────────────────────────────────
     } else if (sub === 'view') {
       const settings = db.getTicketSettings(interaction.guild.id);
-      if (!settings) {
-        return interaction.reply({ content: '❌ No settings found. Run `/ticketsetup setup` first.', ephemeral: true });
-      }
+      if (!settings) return interaction.reply({ content: '❌ No settings found. Run `/ticketsetup setup` first.', ephemeral: true });
+
       const cats = db.getTicketCategories(interaction.guild.id);
+      const roleIds = getSupportRoleIds(settings);
       let formFields;
       try { formFields = JSON.parse(settings.form_fields || '[]'); } catch { formFields = []; }
 
-      const embed = new EmbedBuilder()
-        .setTitle('🎫 Ticket Settings')
-        .setColor(BLUE)
-        .setThumbnail(interaction.guild.iconURL())
-        .addFields(
-          { name: '✅ Enabled',         value: settings.enabled ? 'Yes' : 'No',                            inline: true },
-          { name: '📁 Default Category',value: settings.category_id ? `<#${settings.category_id}>` : 'None', inline: true },
-          { name: '🛡️ Support Role',   value: settings.support_role ? `<@&${settings.support_role}>` : 'None', inline: true },
-          { name: '📋 Log Channel',     value: settings.log_channel  ? `<#${settings.log_channel}>` : 'None', inline: true },
-          { name: '🎟️ Total Tickets',  value: settings.ticket_count?.toString() || '0',                    inline: true },
-          { name: '📂 Categories',      value: cats.length > 0 ? cats.map(c => `${c.emoji || '📁'} ${c.name}`).join(', ') : 'None', inline: false },
-          { name: '📝 Form',            value: settings.form_enabled ? `Enabled — ${formFields.length} field(s)` : 'Disabled', inline: true },
-        )
-        .setFooter({ text: 'nights bot' }).setTimestamp();
-
-      return interaction.reply({ embeds: [embed], ephemeral: true });
+      return interaction.reply({
+        embeds: [new EmbedBuilder()
+          .setTitle('🎫 Ticket Settings').setColor(BLUE).setThumbnail(interaction.guild.iconURL())
+          .addFields(
+            { name: '✅ Enabled',          value: settings.enabled ? 'Yes' : 'No',                              inline: true },
+            { name: '📁 Default Category', value: settings.category_id ? `<#${settings.category_id}>` : 'None', inline: true },
+            { name: '📋 Log Channel',      value: settings.log_channel ? `<#${settings.log_channel}>` : 'None', inline: true },
+            { name: '🎖️ Support Roles',   value: roleIds.length ? roleIds.map(id => `<@&${id}>`).join(', ') : 'None', inline: false },
+            { name: '🎟️ Total Tickets',   value: settings.ticket_count?.toString() || '0',                      inline: true },
+            { name: '📂 Categories',       value: cats.length ? cats.map(c => `${c.emoji || '📁'} ${c.name}`).join(', ') : 'None (use /ticketsetup addcategory)', inline: false },
+            { name: '📝 Form',             value: settings.form_enabled ? `Enabled — ${formFields.length} field(s)` : 'Disabled', inline: true },
+          )
+          .setFooter({ text: 'nights bot' }).setTimestamp()],
+        ephemeral: true,
+      });
     }
   },
 
-  // Exposed for interactionCreate.js
   executeClose,
   executeClaim,
 };
 
-module.exports = [ticket, ticketsetup];
+// ─── Standalone ticket channel commands ───────────────────────────────────────
+
+const tclose = {
+  data: new SlashCommandBuilder()
+    .setName('tclose')
+    .setDescription('Close this ticket')
+    .addStringOption(o => o.setName('reason').setDescription('Reason for closing')),
+  async execute(interaction, client) {
+    const t = db.getTicketByChannel(interaction.channel.id);
+    if (!t || t.status !== 'open') return interaction.reply({ content: '❌ Not an open ticket channel.', ephemeral: true });
+    const reason = interaction.options.getString('reason') || 'No reason provided';
+    await interaction.deferReply({ ephemeral: true });
+    await executeClose(interaction, client, reason);
+    await interaction.editReply({ content: '🔒 Ticket closed.' }).catch(() => {});
+  },
+};
+
+const talert = {
+  data: new SlashCommandBuilder()
+    .setName('talert')
+    .setDescription('Ping the ticket creator to remind them to respond')
+    .addStringOption(o => o.setName('message').setDescription('Custom alert message')),
+  async execute(interaction) {
+    const t = db.getTicketByChannel(interaction.channel.id);
+    if (!t || t.status !== 'open') return interaction.reply({ content: '❌ Not an open ticket channel.', ephemeral: true });
+    const msg = interaction.options.getString('message') || 'The staff team is awaiting your response. Please reply as soon as possible.';
+    await interaction.channel.send({
+      content: `<@${t.user_id}>`,
+      embeds: [new EmbedBuilder()
+        .setColor(YELLOW).setTitle('🔔 Ticket Alert').setDescription(msg)
+        .setFooter({ text: `Sent by ${interaction.user.tag}` }).setTimestamp()],
+    });
+    return interaction.reply({ content: '✅ Alert sent.', ephemeral: true });
+  },
+};
+
+const tclaim = {
+  data: new SlashCommandBuilder()
+    .setName('tclaim')
+    .setDescription('Claim or unclaim this ticket'),
+  async execute(interaction, client) {
+    return executeClaim(interaction, client);
+  },
+};
+
+const tmove = {
+  data: new SlashCommandBuilder()
+    .setName('tmove')
+    .setDescription('Move this ticket to a different category')
+    .addStringOption(o => o.setName('category').setDescription('Category name to move to').setRequired(true)),
+  async execute(interaction) {
+    const t = db.getTicketByChannel(interaction.channel.id);
+    if (!t || t.status !== 'open') return interaction.reply({ content: '❌ Not an open ticket channel.', ephemeral: true });
+    const catName = interaction.options.getString('category');
+    const cat = db.getTicketCategory(interaction.guild.id, catName);
+    if (!cat) {
+      // Show available categories to help
+      const all = db.getTicketCategories(interaction.guild.id);
+      const list = all.length ? all.map(c => `• ${c.name}`).join('\n') : 'No categories configured.';
+      return interaction.reply({
+        embeds: [new EmbedBuilder().setColor(RED)
+          .setDescription(`❌ No category named **${catName}** found.\n\n**Available categories:**\n${list}`)],
+        ephemeral: true,
+      });
+    }
+    await interaction.channel.setParent(cat.discord_category_id, { lockPermissions: false });
+    db.run('UPDATE tickets SET category_name = ? WHERE channel_id = ?', [cat.name, interaction.channel.id]);
+
+    if (t.open_message_id) {
+      try {
+        const ticketMsg = await interaction.channel.messages.fetch(t.open_message_id);
+        if (ticketMsg?.embeds?.[0]) {
+          const padded = String(t.ticket_number).padStart(4, '0');
+          const upd = EmbedBuilder.from(ticketMsg.embeds[0]);
+          upd.setTitle(`🎫 ${cat.name} — Ticket #${padded}`);
+          await ticketMsg.edit({ embeds: [upd] }).catch(() => {});
+        }
+      } catch (_) {}
+    }
+    return interaction.reply({
+      embeds: [new EmbedBuilder().setColor(GREEN).setDescription(`✅ Ticket moved to **${cat.name}**`).setTimestamp()],
+      ephemeral: true,
+    });
+  },
+};
+
+const tadd = {
+  data: new SlashCommandBuilder()
+    .setName('tadd')
+    .setDescription('Add a user to this ticket')
+    .addUserOption(o => o.setName('user').setDescription('User to add').setRequired(true)),
+  async execute(interaction) {
+    if (!db.getTicketByChannel(interaction.channel.id)) {
+      return interaction.reply({ content: '❌ Not a ticket channel.', ephemeral: true });
+    }
+    const user = interaction.options.getUser('user');
+    await interaction.channel.permissionOverwrites.edit(user.id, {
+      ViewChannel: true, SendMessages: true, ReadMessageHistory: true,
+    });
+    return interaction.reply({ content: `✅ Added <@${user.id}> to the ticket.`, ephemeral: true });
+  },
+};
+
+const tremove = {
+  data: new SlashCommandBuilder()
+    .setName('tremove')
+    .setDescription('Remove a user from this ticket')
+    .addUserOption(o => o.setName('user').setDescription('User to remove').setRequired(true)),
+  async execute(interaction) {
+    const t = db.getTicketByChannel(interaction.channel.id);
+    if (!t) return interaction.reply({ content: '❌ Not a ticket channel.', ephemeral: true });
+    const user = interaction.options.getUser('user');
+    if (user.id === t.user_id) return interaction.reply({ content: '❌ Cannot remove the ticket creator.', ephemeral: true });
+    await interaction.channel.permissionOverwrites.delete(user.id);
+    return interaction.reply({ content: `✅ Removed <@${user.id}> from the ticket.`, ephemeral: true });
+  },
+};
+
+const trename = {
+  data: new SlashCommandBuilder()
+    .setName('trename')
+    .setDescription('Rename this ticket channel')
+    .addStringOption(o => o.setName('name').setDescription('New channel name').setRequired(true)),
+  async execute(interaction) {
+    if (!db.getTicketByChannel(interaction.channel.id)) {
+      return interaction.reply({ content: '❌ Not a ticket channel.', ephemeral: true });
+    }
+    const newName = interaction.options.getString('name')
+      .toLowerCase().replace(/[^a-z0-9-]/g, '-').replace(/-{2,}/g, '-').slice(0, 100);
+    await interaction.channel.setName(newName);
+    return interaction.reply({ content: `✅ Channel renamed to \`${newName}\`.`, ephemeral: true });
+  },
+};
+
+const tinfo = {
+  data: new SlashCommandBuilder()
+    .setName('tinfo')
+    .setDescription('Show info about this ticket'),
+  async execute(interaction, client) {
+    const t = db.getTicketByChannel(interaction.channel.id);
+    if (!t) return interaction.reply({ content: '❌ Not a ticket channel.', ephemeral: true });
+
+    const opener  = await client.users.fetch(t.user_id).catch(() => null);
+    const claimer = t.claimed_by ? await client.users.fetch(t.claimed_by).catch(() => null) : null;
+    const padded  = String(t.ticket_number).padStart(4, '0');
+
+    const embed = new EmbedBuilder()
+      .setColor(BLUE)
+      .setTitle(`🎫 Ticket #${padded}`)
+      .setThumbnail(opener?.displayAvatarURL() || null)
+      .addFields(
+        { name: '👤 Opened by',      value: opener ? `<@${opener.id}>` : `\`${t.user_id}\``,    inline: true },
+        { name: '📁 Category',       value: t.category_name || 'General',                        inline: true },
+        { name: '🔖 Status',         value: t.status === 'open' ? '🟢 Open' : '🔴 Closed',      inline: true },
+        { name: '🛡️ Claimed by',    value: claimer ? `<@${claimer.id}>` : 'Unassigned',          inline: true },
+        { name: '📅 Opened',         value: `<t:${t.created_at}:R>`,                             inline: true },
+        ...(t.closed_at ? [{ name: '🔒 Closed', value: `<t:${t.closed_at}:R>`, inline: true }] : []),
+        ...(t.close_reason ? [{ name: '📝 Close Reason', value: t.close_reason, inline: false }] : []),
+      )
+      .setFooter({ text: 'nights bot' })
+      .setTimestamp();
+
+    return interaction.reply({ embeds: [embed], ephemeral: true });
+  },
+};
+
+module.exports = [ticket, ticketsetup, tclose, talert, tclaim, tmove, tadd, tremove, trename, tinfo];

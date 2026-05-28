@@ -1685,6 +1685,7 @@ function _runSchema() {
     "ALTER TABLE ticket_settings ADD COLUMN panel_title TEXT",
     'ALTER TABLE ticket_settings ADD COLUMN panel_description TEXT',
     'ALTER TABLE ticket_settings ADD COLUMN panel_footer TEXT',
+    "ALTER TABLE ticket_settings ADD COLUMN support_roles TEXT DEFAULT '[]'",
   ]) { try { db.run(col); } catch (_) {} }
 
   db.run(`CREATE TABLE IF NOT EXISTS ticket_categories (
