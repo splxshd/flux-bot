@@ -53,39 +53,48 @@ _convertFromWAL(dbPath);
 
 // ─── One-time data migration from nights.db → nights2.db ─────────────────────
 function _migrateFromOldDb() {
-  // Log all files in data dir so we can see what's available
-  try { console.log('[DB] Data dir files:', fs.readdirSync(dataDir).join(', ')); } catch (_) {}
-
-  // Find the old database (nights.db or a timestamped backup of it)
+  // The retry-30 failsafe renamed nights.db → nights.db.bak.TIMESTAMP
+  // so the real data is in the .bak file. Check that first, then fall back.
   let src = null;
-  if (fs.existsSync(oldDbPath) && fs.statSync(oldDbPath).size > 4096) {
-    src = oldDbPath;
-  } else {
-    // Check for backup files created by the retry-30 failsafe
-    const bak = fs.readdirSync(dataDir)
-      .filter(f => f.startsWith('nights.db.bak.'))
-      .sort().reverse()[0];
-    if (bak) src = path.join(dataDir, bak);
-  }
-  if (!src) return;
 
-  // Only migrate if nights2.db is essentially empty (fresh install)
   try {
-    const existing = db.get('SELECT COUNT(*) as c FROM guild_settings')?.c ?? 0;
-    if (existing > 0) return; // already has data, skip
+    const baks = fs.readdirSync(dataDir)
+      .filter(f => f.startsWith('nights.db.bak.'))
+      .sort().reverse();
+    for (const bak of baks) {
+      const p = path.join(dataDir, bak);
+      if (fs.statSync(p).size > 8192) { src = p; break; }
+    }
   } catch (_) {}
 
-  console.log(`[DB] Migrating data from ${path.basename(src)} → nights2.db ...`);
+  if (!src) {
+    try {
+      if (fs.existsSync(oldDbPath) && fs.statSync(oldDbPath).size > 8192) src = oldDbPath;
+    } catch (_) {}
+  }
+
+  if (!src) { console.log('[DB] No old database found to migrate.'); return; }
+
+  try {
+    const existing = db.get('SELECT COUNT(*) as c FROM guild_settings')?.c ?? 0;
+    if (existing > 0) { console.log('[DB] Already has data — skipping migration.'); return; }
+  } catch (_) {}
+
+  console.log(`[DB] Migrating from ${path.basename(src)} → nights2.db ...`);
+
+  // Must convert source from WAL mode first or ATTACH will fail on Railway volumes
+  _convertFromWAL(src);
+
   try {
     db.run(`ATTACH DATABASE '${src}' AS old`);
     const tables = db.all("SELECT name FROM old.sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'");
     let copied = 0;
     for (const { name } of tables) {
       try { db.run(`INSERT OR IGNORE INTO main.${name} SELECT * FROM old.${name}`); copied++; }
-      catch (_) {}
+      catch (e) { console.warn(`[DB] Could not migrate table ${name}:`, e.message); }
     }
     db.run('DETACH DATABASE old');
-    console.log(`[DB] Migration complete — copied ${copied} tables from old database.`);
+    console.log(`[DB] Migration complete — restored ${copied} tables.`);
   } catch (e) {
     console.warn('[DB] Migration error:', e.message);
     try { db.run('DETACH DATABASE old'); } catch (_) {}
