@@ -687,9 +687,13 @@ app.get('/api/guilds', auth, (req, res) => {
 app.get('/health', (_, res) => res.json({ status: 'ok', uptime: process.uptime() }));
 
 // ─── Start ────────────────────────────────────────────────────────────────────
+function setClient(client) {
+  app.locals.client = client;
+}
+
 function startApi(client) {
   const port = process.env.PORT || process.env.API_PORT || 4000;
-  app.locals.client = client;
+  if (client) app.locals.client = client;
 
   // Ensure keyword_pings table exists
   db.run(`CREATE TABLE IF NOT EXISTS keyword_pings (
@@ -719,4 +723,4 @@ function startApi(client) {
   app.listen(port, () => console.log(`[API] Running on port ${port}`));
 }
 
-module.exports = { startApi };
+module.exports = { startApi, setClient };

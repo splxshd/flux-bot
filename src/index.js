@@ -189,12 +189,15 @@ function startCrons() {
 }
 
 // ─── Login ────────────────────────────────────────────────────────────────────
-const { startApi } = require('./api');
+const { startApi, setClient } = require('./api');
+
+// Start API immediately so Railway health check passes within its timeout window
+startApi(null);
 
 client.once('ready', () => {
   startCrons();
-  startApi(client);
-  console.log(`[flux] API started. In ${client.guilds.cache.size} guilds.`);
+  setClient(client);
+  console.log(`[flux] Bot ready. In ${client.guilds.cache.size} guilds.`);
 });
 
 client.login(process.env.BOT_TOKEN).then(async () => {
