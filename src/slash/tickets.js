@@ -133,19 +133,17 @@ async function openTicket(interaction, client, categoryName) {
   db.createTicketFull(guildId, channel.id, interaction.user.id, ticketNumber, catLabel);
 
   const titleStr = catLabel ? `${catLabel} — Ticket #${padded}` : `Ticket #${padded}`;
-  const rolesValue = supportRoles.length ? supportRoles.map(r => `${r}`).join(' ') : 'None';
 
   const embed = new EmbedBuilder()
     .setTitle(`🎫 ${titleStr}`)
-    .setDescription(settings.open_message || '**How can we help you?**\nPlease describe your issue and a staff member will assist you shortly.')
-    .setColor(BLUE)
-    .setThumbnail(interaction.guild.iconURL())
+    .setDescription(settings.open_message || 'Welcome! Our support team will be with you shortly.\nPlease describe your issue in as much detail as possible.')
+    .setColor(0x23272A)
     .addFields(
-      { name: '👤 Opened by',      value: `<@${interaction.user.id}> (ID: \`${interaction.user.id}\`)`, inline: true },
-      { name: '🛡️ Assigned Staff', value: 'Unassigned',                                                 inline: true },
-      { name: '🎖️ Support Roles',  value: rolesValue,                                                   inline: true },
+      { name: 'Ticket',         value: `\`#${padded}\``,            inline: true },
+      { name: 'Opened by',      value: `<@${interaction.user.id}>`, inline: true },
+      { name: 'Assigned Staff', value: 'Unassigned',                 inline: true },
     )
-    .setFooter({ text: `Ticket #${padded} • nights bot` })
+    .setFooter({ text: 'nights bot' })
     .setTimestamp();
 
   const row = new ActionRowBuilder().addComponents(
@@ -175,7 +173,20 @@ async function openTicket(interaction, client, categoryName) {
     }
   }
 
-  await interaction.editReply({ content: `✅ Your ticket has been opened: ${channel}` });
+  const now = new Date();
+  const timeStr = now.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true });
+  const createdEmbed = new EmbedBuilder()
+    .setTitle('🎫 Ticket Created')
+    .setDescription(`Your ticket has been created in ${channel}`)
+    .setColor(0x23272A)
+    .setFooter({ text: `${interaction.user.tag} • Today at ${timeStr}`, iconURL: interaction.user.displayAvatarURL() });
+  const jumpRow = new ActionRowBuilder().addComponents(
+    new ButtonBuilder()
+      .setLabel('🎫 Ticket')
+      .setStyle(ButtonStyle.Link)
+      .setURL(`https://discord.com/channels/${interaction.guildId}/${channel.id}`),
+  );
+  await interaction.editReply({ embeds: [createdEmbed], components: [jumpRow] });
 }
 
 // ─── Core: close a ticket ─────────────────────────────────────────────────────
@@ -201,74 +212,151 @@ async function executeClose(interaction, client, reason) {
   }
   messages.sort((a, b) => a.createdTimestamp - b.createdTimestamp);
 
+  const ticketNum = String(t.ticket_number).padStart(4, '0');
+  const opener    = await client.users.fetch(t.user_id).catch(() => null);
+  const claimer   = t.claimed_by ? await client.users.fetch(t.claimed_by).catch(() => null) : null;
+  const claimedByName = claimer ? claimer.username : 'Nobody';
+
+  // Per-user message counts
+  const participantCounts = {};
+  messages.filter(m => !m.author.bot).forEach(m => {
+    if (!participantCounts[m.author.id]) participantCounts[m.author.id] = { id: m.author.id, count: 0 };
+    participantCounts[m.author.id].count++;
+  });
+  const participantsArr   = Object.values(participantCounts).sort((a, b) => b.count - a.count);
+  const participantsValue = participantsArr.length
+    ? participantsArr.slice(0, 15).map(p => `<@${p.id}> — ${p.count} msg${p.count !== 1 ? 's' : ''}`).join('\n')
+    : 'None';
+  const totalMsgs = messages.filter(m => !m.author.bot).length;
+
   const token = crypto.randomBytes(16).toString('hex');
   db.saveTranscript(token, interaction.guild.id, channel.id, t.ticket_number,
-    JSON.stringify(messages.map(m => ({
-      time: m.createdTimestamp,
-      authorId: m.author.id,
-      authorTag: m.author.tag,
-      authorAvatar: m.author.displayAvatarURL({ size: 64 }),
-      content: m.content || null,
-      hasEmbed: m.embeds.length > 0,
-      attachments: [...m.attachments.values()].map(a => ({ name: a.name, url: a.url })),
-    })))
+    JSON.stringify({
+      meta: {
+        guildName:    interaction.guild.name,
+        guildIcon:    interaction.guild.iconURL({ size: 128 }),
+        channelName:  channel.name,
+        ticketNumber: ticketNum,
+        closedAt:     Date.now(),
+        closedBy:     interaction.user.tag,
+      },
+      messages: messages.map(m => ({
+        time:         m.createdTimestamp,
+        authorId:     m.author.id,
+        authorTag:    m.author.tag,
+        authorAvatar: m.author.displayAvatarURL({ size: 64 }),
+        isBot:        m.author.bot,
+        content:      m.content || null,
+        embeds: m.embeds.map(e => ({
+          color:       e.color,
+          title:       e.title       || null,
+          url:         e.url         || null,
+          description: e.description || null,
+          fields:      e.fields      || [],
+          thumbnail:   e.thumbnail?.url || null,
+          image:       e.image?.url     || null,
+          author: e.author ? {
+            name:    e.author.name,
+            iconURL: e.author.iconURL || null,
+            url:     e.author.url    || null,
+          } : null,
+          footer: e.footer ? {
+            text:    e.footer.text,
+            iconURL: e.footer.iconURL || null,
+          } : null,
+          timestamp: e.timestamp || null,
+        })),
+        attachments: [...m.attachments.values()].map(a => ({
+          name: a.name, url: a.url, contentType: a.contentType,
+        })),
+        components: m.components.map(row => ({
+          components: row.components.map(c => ({
+            type:     c.type,
+            label:    c.label    || null,
+            style:    c.style,
+            url:      c.url      || null,
+            emoji:    c.emoji ? (c.emoji.name || c.emoji.id) : null,
+            disabled: c.disabled || false,
+          })),
+        })),
+      })),
+    })
   );
 
   const transcriptUrl = `${getTranscriptBase()}/transcript/${token}`;
   db.closeTicketWithDetails(channel.id, reason || 'No reason provided');
-
-  const ticketNum    = String(t.ticket_number).padStart(4, '0');
-  const opener       = await client.users.fetch(t.user_id).catch(() => null);
-  const participants = [...new Set(messages.filter(m => !m.author.bot).map(m => m.author.id))];
-  const totalMsgs    = messages.filter(m => !m.author.bot).length;
 
   const transcriptRow = new ActionRowBuilder().addComponents(
     new ButtonBuilder()
       .setLabel('View Transcript').setStyle(ButtonStyle.Link).setURL(transcriptUrl).setEmoji('📄'),
   );
 
-  const closeEmbed = new EmbedBuilder()
-    .setColor(RED).setTitle('🔒 Ticket Closed')
-    .setThumbnail(interaction.guild.iconURL())
-    .addFields(
-      { name: '📋 Ticket Details', value: [
-        `**Category:** ${t.category_name || 'General'}`,
-        `**Reason:** ${reason || 'No reason provided'}`,
-        `**Closed by:** <@${interaction.user.id}>`,
-        `**Claimed by:** ${t.claimed_by ? `<@${t.claimed_by}>` : 'Unassigned'}`,
-        `**Total Messages:** ${totalMsgs}`,
-      ].join('\n') },
-      { name: '👥 Participants', value: participants.length ? participants.slice(0, 20).map(id => `<@${id}>`).join(', ') : 'None' },
-    )
-    .setFooter({ text: `Ticket #${ticketNum} • deleting in 5 seconds` })
-    .setTimestamp();
+  // ── In-channel: simple closing notice ──────────────────────────────────────
+  await channel.send({
+    embeds: [new EmbedBuilder()
+      .setColor(0x23272A)
+      .setTitle('🔒 Closing Ticket')
+      .setDescription('This ticket will be closed in 5 seconds.')
+      .setTimestamp()],
+    components: [transcriptRow],
+  });
 
-  await channel.send({ embeds: [closeEmbed], components: [transcriptRow] });
-
+  // ── Log channel ─────────────────────────────────────────────────────────────
   if (settings?.log_channel) {
     const logCh = interaction.guild.channels.cache.get(settings.log_channel);
     if (logCh) {
       await logCh.send({
         embeds: [new EmbedBuilder()
-          .setColor(RED).setTitle(`📋 Ticket Closed — #${ticketNum}`)
+          .setColor(0x23272A)
+          .setTitle('🔒 Ticket Closed')
+          .setDescription(`A ticket was closed in **${interaction.guild.name}**.`)
+          .setThumbnail(interaction.guild.iconURL())
           .addFields(
-            { name: '🔒 Closed by',      value: `<@${interaction.user.id}>`,                               inline: true },
-            { name: '👤 Creator',         value: opener ? `<@${opener.id}>` : `\`${t.user_id}\``,          inline: true },
-            { name: '📁 Channel',         value: `#${channel.name} (${t.category_name || 'General'})`,      inline: true },
-            { name: '📝 Reason',          value: reason || 'No reason provided',                            inline: false },
-            { name: '💬 Total Messages',  value: String(totalMsgs),                                         inline: true },
+            {
+              name: '📋 Ticket Details',
+              value: [
+                `Ticket: \`#${ticketNum}\``,
+                `Category: \`${t.category_name || 'General'}\``,
+                `Channel: \`#${channel.name}\``,
+                `Opened by: \`${opener?.tag || t.user_id}\``,
+                `Closed by: \`${interaction.user.tag}\``,
+                `Claimed by: \`${claimedByName}\``,
+                `Reason: \`${reason || 'No reason provided'}\``,
+                `Total: \`${totalMsgs} message${totalMsgs !== 1 ? 's' : ''}\``,
+              ].join('\n'),
+            },
+            { name: '👥 Participants', value: participantsValue },
           )
-          .setFooter({ text: 'nights bot' }).setTimestamp()],
+          .setFooter({ text: 'nights bot' })
+          .setTimestamp()],
         components: [transcriptRow],
       }).catch(() => {});
     }
   }
 
+  // ── DM to ticket opener ─────────────────────────────────────────────────────
   if (opener) {
     await opener.send({
-      embeds: [new EmbedBuilder().setColor(RED)
-        .setDescription(`Your ticket **#${ticketNum}** in **${interaction.guild.name}** has been closed.`)
-        .addFields({ name: '📝 Reason', value: reason || 'No reason provided' }).setTimestamp()],
+      embeds: [new EmbedBuilder()
+        .setColor(0x23272A)
+        .setTitle('🔒 Ticket Closed')
+        .setDescription(`Thank you for contacting support in **${interaction.guild.name}**.\nYour ticket has been reviewed and closed.`)
+        .setThumbnail(interaction.guild.iconURL())
+        .addFields(
+          {
+            name: '📋 Ticket Details',
+            value: [
+              `Category: \`${t.category_name || 'General'}\``,
+              `Reason: \`${reason || 'No reason provided'}\``,
+              `Closed by: \`${interaction.user.username}\``,
+              `Claimed by: \`${claimedByName}\``,
+              `Total: \`${totalMsgs} message${totalMsgs !== 1 ? 's' : ''}\``,
+            ].join('\n'),
+          },
+          { name: '👥 Participants', value: participantsValue },
+        )
+        .setFooter({ text: `Ticket #${ticketNum} • nights bot` })
+        .setTimestamp()],
       components: [transcriptRow],
     }).catch(() => {});
   }

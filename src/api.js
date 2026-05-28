@@ -353,73 +353,297 @@ function escapeHtml(str) {
     .replace(/'/g, '&#39;');
 }
 
+function colorToHex(color) {
+  if (!color) return '#1e1f22';
+  return '#' + (color & 0xFFFFFF).toString(16).padStart(6, '0');
+}
+
+function renderContent(str) {
+  if (!str) return '';
+  let h = escapeHtml(str);
+  // Code blocks
+  h = h.replace(/```(?:\w+\n)?([\s\S]*?)```/g, (_, c) => `<pre><code>${c.trim()}</code></pre>`);
+  // Inline code
+  h = h.replace(/`([^`\n]+)`/g, '<code>$1</code>');
+  // Bold + italic
+  h = h.replace(/\*\*\*(.+?)\*\*\*/gs, '<strong><em>$1</em></strong>');
+  // Bold
+  h = h.replace(/\*\*(.+?)\*\*/gs, '<strong>$1</strong>');
+  // Italic
+  h = h.replace(/\*([^*\n]+)\*/g, '<em>$1</em>');
+  // Strikethrough
+  h = h.replace(/~~([^~\n]+)~~/g, '<s>$1</s>');
+  // Discord mentions (after HTML escape: &lt;@123&gt;)
+  h = h.replace(/&lt;@!?(\d+)&gt;/g, '<span class="mention">@user</span>');
+  h = h.replace(/&lt;#(\d+)&gt;/g, '<span class="mention">#channel</span>');
+  h = h.replace(/&lt;@&amp;(\d+)&gt;/g, '<span class="mention">@role</span>');
+  // Newlines
+  h = h.replace(/\n/g, '<br>');
+  return h;
+}
+
+function renderEmbed(e) {
+  const border = colorToHex(e.color);
+  const bodyParts = [];
+
+  if (e.author) {
+    const icon = e.author.iconURL ? `<img src="${escapeHtml(e.author.iconURL)}" onerror="this.style.display='none'" alt="">` : '';
+    bodyParts.push(`<div class="e-author">${icon}<span>${escapeHtml(e.author.name)}</span></div>`);
+  }
+  if (e.title) {
+    const t = e.url
+      ? `<a href="${escapeHtml(e.url)}" target="_blank" rel="noopener">${escapeHtml(e.title)}</a>`
+      : escapeHtml(e.title);
+    bodyParts.push(`<div class="e-title">${t}</div>`);
+  }
+  if (e.description) {
+    bodyParts.push(`<div class="e-desc">${renderContent(e.description)}</div>`);
+  }
+  if (e.fields && e.fields.length > 0) {
+    const fieldHtml = e.fields.map(f =>
+      `<div class="e-field${f.inline ? ' inline' : ''}">` +
+        `<div class="e-fname">${renderContent(f.name)}</div>` +
+        `<div class="e-fval">${renderContent(f.value)}</div>` +
+      `</div>`
+    ).join('');
+    bodyParts.push(`<div class="e-fields">${fieldHtml}</div>`);
+  }
+  if (e.image) {
+    bodyParts.push(`<img class="e-image" src="${escapeHtml(e.image)}" onerror="this.style.display='none'" alt="">`);
+  }
+  if (e.footer) {
+    const fIcon = e.footer.iconURL ? `<img src="${escapeHtml(e.footer.iconURL)}" onerror="this.style.display='none'" alt="">` : '';
+    const fTs   = e.timestamp
+      ? ` <span class="e-footer-sep">•</span> <span>${escapeHtml(new Date(e.timestamp).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }))}</span>`
+      : '';
+    bodyParts.push(`<div class="e-footer">${fIcon}<span>${escapeHtml(e.footer.text)}</span>${fTs}</div>`);
+  }
+
+  const thumb = e.thumbnail
+    ? `<img class="e-thumb" src="${escapeHtml(e.thumbnail)}" onerror="this.style.display='none'" alt="">`
+    : '';
+
+  return `<div class="embed" style="border-left-color:${border}"><div class="e-body">${bodyParts.join('')}</div>${thumb}</div>`;
+}
+
+function renderComponents(components) {
+  if (!components || !components.length) return '';
+  const btns = [];
+  const styleMap = { 1: 'btn-primary', 2: 'btn-secondary', 3: 'btn-success', 4: 'btn-danger', 5: 'btn-link' };
+  for (const row of components) {
+    for (const c of (row.components || [])) {
+      if (c.type !== 2) continue; // buttons only
+      const cls = `btn ${styleMap[c.style] || 'btn-secondary'}${c.disabled ? ' btn-disabled' : ''}`;
+      const emoji = c.emoji ? `<span>${escapeHtml(c.emoji)}</span> ` : '';
+      const label = c.label ? escapeHtml(c.label) : '';
+      if (c.url) {
+        btns.push(`<a href="${escapeHtml(c.url)}" target="_blank" rel="noopener" class="${cls}">${emoji}${label}</a>`);
+      } else {
+        btns.push(`<span class="${cls}">${emoji}${label}</span>`);
+      }
+    }
+  }
+  return btns.length ? `<div class="components-row">${btns.join('')}</div>` : '';
+}
+
 app.get('/transcript/:token', (req, res) => {
   try {
     const row = db.getTranscript(req.params.token);
     if (!row) return res.status(404).send('<!DOCTYPE html><html><body style="background:#313338;color:#dbdee1;font-family:sans-serif;display:flex;align-items:center;justify-content:center;height:100vh;margin:0;"><h2>Transcript not found.</h2></body></html>');
 
+    let meta     = null;
     let messages = [];
-    try { messages = JSON.parse(row.content); } catch {}
+    try {
+      const parsed = JSON.parse(row.content);
+      if (Array.isArray(parsed)) {
+        messages = parsed; // old format compatibility
+      } else {
+        meta     = parsed.meta;
+        messages = parsed.messages || [];
+      }
+    } catch {}
 
-    const ticketNum = String(row.ticket_number || 0).padStart(4, '0');
-    const created   = new Date((row.created_at || 0) * 1000).toUTCString();
+    const ticketNum   = meta?.ticketNumber || String(row.ticket_number || 0).padStart(4, '0');
+    const channelName = meta?.channelName  || `ticket-${ticketNum}`;
+    const guildName   = meta?.guildName    || 'Discord Server';
+    const guildIcon   = meta?.guildIcon    || '';
+    const generatedAt = new Date().toLocaleString('en-GB', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit', hour12: false });
 
-    const rows = messages.map(m => {
-      const time    = new Date(m.time).toLocaleString('en-GB', { hour12: false });
-      const content = m.content ? `<div class="content">${escapeHtml(m.content)}</div>` : '';
-      const embed   = m.hasEmbed ? `<div class="note">[embed]</div>` : '';
-      const atts    = (m.attachments || []).map(a =>
-        `<div class="att">📎 <a href="${escapeHtml(a.url)}" target="_blank">${escapeHtml(a.name)}</a></div>`
-      ).join('');
-      return `
-        <div class="msg">
-          <img class="av" src="${escapeHtml(m.authorAvatar)}" onerror="this.src='https://cdn.discordapp.com/embed/avatars/0.png'" alt="">
-          <div class="body">
-            <span class="tag">${escapeHtml(m.authorTag)}</span>
-            <span class="ts">${escapeHtml(time)}</span>
-            ${content}${embed}${atts}
-          </div>
-        </div>`;
+    // Group consecutive messages from the same author within 7 minutes
+    const THRESHOLD = 7 * 60 * 1000;
+    const groups = [];
+    for (const m of messages) {
+      const last = groups[groups.length - 1];
+      if (last && last.authorId === m.authorId && m.time - last.lastTime < THRESHOLD) {
+        last.msgs.push(m);
+        last.lastTime = m.time;
+      } else {
+        groups.push({ authorId: m.authorId, authorTag: m.authorTag, authorAvatar: m.authorAvatar, isBot: m.isBot, firstTime: m.time, lastTime: m.time, msgs: [m] });
+      }
+    }
+
+    function fmtTime(ts) {
+      return new Date(ts).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true });
+    }
+    function fmtDate(ts) {
+      return new Date(ts).toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
+    }
+
+    let lastDay = null;
+    const msgHtml = groups.map(g => {
+      const day = new Date(g.firstTime).toDateString();
+      let divider = '';
+      if (day !== lastDay) {
+        lastDay = day;
+        divider = `<div class="day-divider"><div class="line"></div><div class="date">${escapeHtml(fmtDate(g.firstTime))}</div><div class="line"></div></div>`;
+      }
+
+      const bodies = g.msgs.map((m, idx) => {
+        const ts      = fmtTime(m.time);
+        const text    = m.content   ? `<div class="msg-text">${renderContent(m.content)}</div>` : '';
+        const embeds  = (m.embeds   || []).map(renderEmbed).join('');
+        const comps   = renderComponents(m.components);
+        const atts    = (m.attachments || []).map(a => {
+          const isImg = (a.contentType || '').startsWith('image/') || /\.(png|jpe?g|gif|webp|svg)$/i.test(a.name || '');
+          return isImg
+            ? `<div class="attachment"><img src="${escapeHtml(a.url)}" alt="${escapeHtml(a.name)}" onerror="this.style.display='none'"></div>`
+            : `<div class="attachment">📎 <a href="${escapeHtml(a.url)}" target="_blank" rel="noopener">${escapeHtml(a.name)}</a></div>`;
+        }).join('');
+
+        if (idx === 0) {
+          const botTag = g.isBot ? ' <span class="bot-tag">APP</span>' : '';
+          return `<div class="msg-group has-header">
+            <div class="avatar-wrap"><img class="avatar" src="${escapeHtml(g.authorAvatar || '')}" onerror="this.src='https://cdn.discordapp.com/embed/avatars/0.png'" alt=""></div>
+            <div class="msg-content">
+              <div class="msg-header"><span class="username">${escapeHtml(g.authorTag)}</span>${botTag}<span class="timestamp">${escapeHtml(ts)}</span></div>
+              ${text}${embeds}${atts}${comps}
+            </div>
+          </div>`;
+        }
+        return `<div class="msg-group">
+            <div class="avatar-spacer"><span class="msg-ts">${escapeHtml(ts)}</span></div>
+            <div class="msg-content">${text}${embeds}${atts}${comps}</div>
+          </div>`;
+      }).join('');
+
+      return divider + bodies;
     }).join('');
+
+    const guildBarHtml = guildIcon
+      ? `<div class="guild-bar"><img class="guild-icon" src="${escapeHtml(guildIcon)}" onerror="this.style.display='none'" alt=""><span class="guild-name">${escapeHtml(guildName)}</span></div>`
+      : '';
 
     const html = `<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
-  <title>Ticket #${escapeHtml(ticketNum)} — Transcript</title>
+  <title>#${escapeHtml(channelName)} — Transcript</title>
   <style>
     *{box-sizing:border-box;margin:0;padding:0}
-    body{background:#313338;color:#dbdee1;font-family:'Segoe UI','Noto Sans',sans-serif;font-size:14px;line-height:1.4}
-    .top{background:#1e1f22;padding:14px 20px;border-bottom:1px solid #3f4147;display:flex;align-items:center;gap:14px}
-    .top .icon{font-size:28px}
-    .top h1{color:#fff;font-size:17px;font-weight:700}
-    .top .sub{color:#949ba4;font-size:12px;margin-top:2px}
-    .wrap{max-width:900px;margin:0 auto;padding:16px 20px}
-    .msg{display:flex;gap:14px;padding:6px 4px;border-radius:4px}
-    .msg:hover{background:rgba(0,0,0,.08)}
-    .av{width:40px;height:40px;border-radius:50%;flex-shrink:0;margin-top:2px;object-fit:cover}
-    .body{flex:1;min-width:0}
-    .tag{font-weight:600;color:#e3e5e8}
-    .ts{color:#72767d;font-size:11px;margin-left:8px}
-    .content{color:#dbdee1;margin-top:2px;white-space:pre-wrap;word-break:break-word}
-    .note{color:#949ba4;font-style:italic;font-size:12px;margin-top:2px}
-    .att{color:#00aaff;font-size:12px;margin-top:2px}
-    .att a{color:#00aaff;text-decoration:none}
-    .att a:hover{text-decoration:underline}
-    .foot{text-align:center;color:#72767d;font-size:12px;padding:24px}
+    body{background:#313338;color:#dbdee1;font-family:'gg sans','Noto Sans','Helvetica Neue',Helvetica,Arial,sans-serif;font-size:16px;line-height:1.375}
+    a{color:#00a8fc;text-decoration:none}
+    a:hover{text-decoration:underline}
+    strong{font-weight:700}
+    em{font-style:italic}
+    code{background:#1e1f22;font-family:Consolas,Monaco,'Courier New',monospace;font-size:.875em;padding:2px 6px;border-radius:3px}
+    pre{background:#1e1f22;border-radius:4px;padding:12px;overflow-x:auto;margin:4px 0}
+    pre code{padding:0;background:none}
+    s{text-decoration:line-through}
+    /* Guild bar */
+    .guild-bar{background:#1e1f22;padding:10px 16px;display:flex;align-items:center;gap:10px;border-bottom:1px solid #111214}
+    .guild-icon{width:28px;height:28px;border-radius:50%;object-fit:cover}
+    .guild-name{font-size:14px;font-weight:700;color:#f2f3f5}
+    /* Channel header */
+    .channel-bar{background:#2b2d31;height:48px;display:flex;align-items:center;padding:0 16px;gap:8px;border-bottom:1px solid #1e1f22;position:sticky;top:0;z-index:100}
+    .hash{color:#80848e;font-size:22px;font-weight:900;line-height:1;margin-right:2px}
+    .ch-name{font-weight:700;font-size:16px;color:#f2f3f5}
+    .ch-sep{width:1px;height:20px;background:#3f4147;margin:0 10px}
+    .ch-label{color:#949ba4;font-size:14px}
+    /* Messages */
+    .msgs-wrap{padding-bottom:40px}
+    /* Welcome */
+    .welcome{padding:24px 16px 20px}
+    .welcome-circle{width:68px;height:68px;border-radius:50%;background:#5865f2;display:flex;align-items:center;justify-content:center;font-size:34px;margin-bottom:16px}
+    .welcome-title{font-size:24px;font-weight:700;color:#f2f3f5;margin-bottom:6px}
+    .welcome-sub{color:#949ba4;font-size:15px}
+    /* Day divider */
+    .day-divider{display:flex;align-items:center;gap:8px;padding:16px 16px 4px}
+    .day-divider .line{flex:1;height:1px;background:#3f4147}
+    .day-divider .date{color:#949ba4;font-size:12px;font-weight:600;white-space:nowrap;padding:0 4px}
+    /* Message groups */
+    .msg-group{padding:2px 16px;display:flex;gap:16px}
+    .msg-group:hover{background:rgba(0,0,0,.06)}
+    .msg-group.has-header{padding-top:8px;margin-top:4px}
+    .avatar-wrap{width:40px;flex-shrink:0;padding-top:2px}
+    .avatar{width:40px;height:40px;border-radius:50%;object-fit:cover}
+    .avatar-spacer{width:40px;flex-shrink:0;display:flex;align-items:flex-start;justify-content:flex-end;padding-top:5px}
+    .msg-ts{color:#72767d;font-size:10px;opacity:0;transition:opacity .1s;white-space:nowrap}
+    .msg-group:hover .msg-ts{opacity:1}
+    .msg-content{flex:1;min-width:0;padding-bottom:2px}
+    .msg-header{display:flex;align-items:baseline;flex-wrap:wrap;gap:6px;margin-bottom:2px}
+    .username{font-weight:500;font-size:16px;color:#f2f3f5}
+    .bot-tag{background:#5865f2;color:#fff;font-size:10px;font-weight:700;padding:2px 5px;border-radius:3px;letter-spacing:.2px;line-height:1;flex-shrink:0;align-self:center}
+    .timestamp{color:#949ba4;font-size:12px}
+    .msg-text{color:#dbdee1;font-size:16px;word-break:break-word;margin-bottom:2px}
+    /* Embeds */
+    .embed{background:#2b2d31;border-radius:4px;border-left:4px solid #1e1f22;max-width:520px;margin-top:4px;padding:8px 12px 12px 12px;display:flex;gap:16px;align-items:flex-start}
+    .e-body{flex:1;min-width:0}
+    .e-author{display:flex;align-items:center;gap:8px;margin-top:4px;margin-bottom:4px}
+    .e-author img{width:24px;height:24px;border-radius:50%}
+    .e-author span{font-size:14px;font-weight:600;color:#dbdee1}
+    .e-title{font-size:15px;font-weight:700;color:#dbdee1;margin-top:6px;line-height:1.3}
+    .e-title a{color:#00a8fc}
+    .e-desc{font-size:14px;color:#dbdee1;margin-top:6px;word-break:break-word;line-height:1.5}
+    .e-fields{display:flex;flex-wrap:wrap;gap:8px;margin-top:8px}
+    .e-field{flex:0 0 100%}
+    .e-field.inline{flex:0 0 calc(33.333% - 6px);min-width:80px}
+    .e-fname{font-size:13px;font-weight:700;color:#dbdee1;margin-bottom:2px}
+    .e-fval{font-size:13px;color:#dbdee1;word-break:break-word}
+    .e-image{max-width:100%;max-height:350px;border-radius:4px;margin-top:10px;display:block}
+    .e-thumb{width:80px;height:80px;object-fit:cover;border-radius:4px;flex-shrink:0;margin-top:4px}
+    .e-footer{display:flex;align-items:center;flex-wrap:wrap;gap:6px;margin-top:8px}
+    .e-footer img{width:20px;height:20px;border-radius:50%}
+    .e-footer span,.e-footer-sep{font-size:12px;color:#949ba4}
+    /* Attachments */
+    .attachment{margin-top:4px}
+    .attachment img{max-width:400px;max-height:280px;border-radius:4px;display:block;margin-top:2px}
+    .attachment a{font-size:14px}
+    /* Components */
+    .components-row{display:flex;flex-wrap:wrap;gap:8px;margin-top:6px}
+    .btn{display:inline-flex;align-items:center;gap:6px;padding:6px 16px;border-radius:3px;font-size:14px;font-weight:500;cursor:default;text-decoration:none!important;user-select:none}
+    .btn-primary{background:#5865f2;color:#fff}
+    .btn-secondary{background:#4e5058;color:#dbdee1}
+    .btn-success{background:#248046;color:#fff}
+    .btn-danger{background:#da373c;color:#fff}
+    .btn-link{background:transparent;color:#dbdee1;border:1px solid #4e5058}
+    .btn-disabled{opacity:.5}
+    /* Mentions */
+    .mention{background:rgba(88,101,242,.15);color:#c9cdfb;padding:0 3px;border-radius:3px;font-weight:500}
+    /* Footer */
+    .t-footer{text-align:center;color:#72767d;font-size:13px;padding:28px 16px;border-top:1px solid #3f4147;margin-top:8px}
+    .t-footer strong{color:#949ba4}
   </style>
 </head>
 <body>
-  <div class="top">
-    <div class="icon">🎫</div>
-    <div>
-      <h1>Ticket #${escapeHtml(ticketNum)}</h1>
-      <div class="sub">Generated ${escapeHtml(created)} &bull; ${messages.length} message${messages.length !== 1 ? 's' : ''}</div>
-    </div>
+  ${guildBarHtml}
+  <div class="channel-bar">
+    <span class="hash">#</span>
+    <span class="ch-name">${escapeHtml(channelName)}</span>
+    <div class="ch-sep"></div>
+    <span class="ch-label">Ticket #${escapeHtml(ticketNum)} — Transcript</span>
   </div>
-  <div class="wrap">${rows}</div>
-  <div class="foot">nights bot &bull; Transcript #${escapeHtml(ticketNum)}</div>
+  <div class="msgs-wrap">
+    <div class="welcome">
+      <div class="welcome-circle">🎫</div>
+      <div class="welcome-title">Welcome to #${escapeHtml(channelName)}!</div>
+      <div class="welcome-sub">This is the beginning of the <strong>#${escapeHtml(channelName)}</strong> channel.</div>
+    </div>
+    ${msgHtml}
+  </div>
+  <div class="t-footer">
+    <strong>nights bot</strong> &bull; <strong>#${escapeHtml(channelName)}</strong> &bull; ${messages.length} message${messages.length !== 1 ? 's' : ''} &bull; Generated ${escapeHtml(generatedAt)}
+  </div>
 </body>
 </html>`;
 
