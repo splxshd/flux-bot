@@ -53,6 +53,9 @@ _convertFromWAL(dbPath);
 
 // ─── One-time data migration from nights.db → nights2.db ─────────────────────
 function _migrateFromOldDb() {
+  // Log all files in data dir so we can see what's available
+  try { console.log('[DB] Data dir files:', fs.readdirSync(dataDir).join(', ')); } catch (_) {}
+
   // Find the old database (nights.db or a timestamped backup of it)
   let src = null;
   if (fs.existsSync(oldDbPath) && fs.statSync(oldDbPath).size > 4096) {
