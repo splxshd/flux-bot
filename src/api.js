@@ -687,8 +687,17 @@ app.get('/api/guilds', auth, (req, res) => {
 app.get('/health', (_, res) => res.json({ status: 'ok', uptime: process.uptime() }));
 
 // ─── Start ────────────────────────────────────────────────────────────────────
-function startApi(client) {
+
+// Phase 1: bind the port immediately so Railway's health check gets a response
+// even while the DB is still retrying to open. No DB needed here.
+function startServer() {
   const port = process.env.PORT || process.env.API_PORT || 4000;
+  app.listen(port, () => console.log(`[API] Running on port ${port}`));
+}
+
+// Phase 2: wire up DB-dependent routes and set client reference.
+// Called AFTER _dbReady resolves.
+function startApi(client) {
   app.locals.client = client;
 
   // Ensure keyword_pings table exists
@@ -715,8 +724,6 @@ function startApi(client) {
       res.json({ count: 0 });
     }
   });
-
-  app.listen(port, () => console.log(`[API] Running on port ${port}`));
 }
 
-module.exports = { startApi };
+module.exports = { startServer, startApi };

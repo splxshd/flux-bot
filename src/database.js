@@ -9,534 +9,39 @@ if (!fs.existsSync(dataDir)) fs.mkdirSync(dataDir, { recursive: true });
 const { Database } = require('node-sqlite3-wasm');
 const dbPath = path.join(dataDir, 'nights.db');
 let db;
-for (let i = 0; i < 30; i++) {
+
+// ─── Non-blocking async DB init ───────────────────────────────────────────────
+// Uses setTimeout instead of Atomics.wait() so the Node.js event loop stays
+// free to respond to Railway health checks during a rolling-deploy lock window.
+// busy_timeout=0 makes each attempt fail immediately if locked, then we wait
+// 2 s via setTimeout (non-blocking) before the next attempt.
+function _tryOpenDb(resolve, reject, attempt) {
+  let conn;
   try {
-    db = new Database(dbPath);
-    db.run('PRAGMA busy_timeout = 10000');
-    db.run('PRAGMA journal_mode = WAL');
-    db.run('PRAGMA foreign_keys = ON');
-    break;
+    conn = new Database(dbPath);
+    conn.run('PRAGMA busy_timeout = 0');   // fail fast; retry handled below
+    conn.run('PRAGMA journal_mode = WAL');
+    conn.run('PRAGMA foreign_keys = ON');
+    db = conn;
+    resolve();
   } catch (e) {
-    if (db) { try { db.close(); } catch (_) {} db = null; }
-    if (i === 29) throw e;
-    Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 1000);
+    if (conn) { try { conn.close(); } catch (_) {} }
+    if (attempt >= 60) { reject(e); return; }
+    console.warn(`[DB] Locked, retry ${attempt + 1}/60 in 2s...`);
+    setTimeout(() => _tryOpenDb(resolve, reject, attempt + 1), 2000);
   }
 }
 
-// ─── Schema ───────────────────────────────────────────────────────────────────
-db.run(`CREATE TABLE IF NOT EXISTS guild_settings (
-  guild_id TEXT PRIMARY KEY,
-  prefix TEXT DEFAULT '!',
-  log_channel TEXT,
-  log_events TEXT,
-  log_color TEXT DEFAULT '#5865F2',
-  log_ignored TEXT
-)`);
-
-db.run(`CREATE TABLE IF NOT EXISTS warnings (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  guild_id TEXT NOT NULL,
-  user_id TEXT NOT NULL,
-  mod_id TEXT NOT NULL,
-  reason TEXT,
-  created_at INTEGER DEFAULT (strftime('%s','now'))
-)`);
-
-db.run(`CREATE TABLE IF NOT EXISTS mutes (
-  guild_id TEXT NOT NULL,
-  user_id TEXT NOT NULL,
-  expires_at INTEGER,
-  reason TEXT,
-  PRIMARY KEY (guild_id, user_id)
-)`);
-
-db.run(`CREATE TABLE IF NOT EXISTS bans (
-  guild_id TEXT NOT NULL,
-  user_id TEXT NOT NULL,
-  mod_id TEXT NOT NULL,
-  reason TEXT,
-  expires_at INTEGER,
-  created_at INTEGER DEFAULT (strftime('%s','now')),
-  PRIMARY KEY (guild_id, user_id)
-)`);
-
-db.run(`CREATE TABLE IF NOT EXISTS notes (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  guild_id TEXT NOT NULL,
-  user_id TEXT NOT NULL,
-  mod_id TEXT NOT NULL,
-  content TEXT,
-  created_at INTEGER DEFAULT (strftime('%s','now'))
-)`);
-
-db.run(`CREATE TABLE IF NOT EXISTS mod_history (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  guild_id TEXT NOT NULL,
-  user_id TEXT NOT NULL,
-  mod_id TEXT NOT NULL,
-  action TEXT NOT NULL,
-  reason TEXT,
-  extra TEXT,
-  created_at INTEGER DEFAULT (strftime('%s','now'))
-)`);
-
-db.run(`CREATE TABLE IF NOT EXISTS role_persist (
-  guild_id TEXT NOT NULL,
-  user_id TEXT NOT NULL,
-  roles TEXT NOT NULL,
-  PRIMARY KEY (guild_id, user_id)
-)`);
-
-db.run(`CREATE TABLE IF NOT EXISTS temp_roles (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  guild_id TEXT NOT NULL,
-  user_id TEXT NOT NULL,
-  role_id TEXT NOT NULL,
-  expires_at INTEGER NOT NULL
-)`);
-
-db.run(`CREATE TABLE IF NOT EXISTS forced_nicknames (
-  guild_id TEXT NOT NULL,
-  user_id TEXT NOT NULL,
-  nickname TEXT NOT NULL,
-  PRIMARY KEY (guild_id, user_id)
-)`);
-
-db.run(`CREATE TABLE IF NOT EXISTS fake_permissions (
-  guild_id TEXT NOT NULL,
-  role_id TEXT NOT NULL,
-  permission TEXT NOT NULL,
-  PRIMARY KEY (guild_id, role_id, permission)
-)`);
-
-db.run(`CREATE TABLE IF NOT EXISTS invoke_mods (
-  guild_id TEXT NOT NULL,
-  action TEXT NOT NULL,
-  message TEXT,
-  dm_message TEXT,
-  PRIMARY KEY (guild_id, action)
-)`);
-
-db.run(`CREATE TABLE IF NOT EXISTS nuke_schedules (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  guild_id TEXT NOT NULL,
-  channel_id TEXT NOT NULL,
-  interval_ms INTEGER NOT NULL,
-  next_at INTEGER NOT NULL
-)`);
-
-db.run(`CREATE TABLE IF NOT EXISTS autoresponder (
-  guild_id TEXT NOT NULL,
-  trigger TEXT NOT NULL,
-  response TEXT NOT NULL,
-  PRIMARY KEY (guild_id, trigger)
-)`);
-
-db.run(`CREATE TABLE IF NOT EXISTS reactions (
-  guild_id TEXT NOT NULL,
-  trigger TEXT NOT NULL,
-  emoji TEXT NOT NULL,
-  PRIMARY KEY (guild_id, trigger, emoji)
-)`);
-
-db.run(`CREATE TABLE IF NOT EXISTS reaction_messages (
-  guild_id TEXT NOT NULL,
-  message_id TEXT NOT NULL,
-  emoji TEXT NOT NULL,
-  role_id TEXT NOT NULL,
-  PRIMARY KEY (guild_id, message_id, emoji)
-)`);
-
-db.run(`CREATE TABLE IF NOT EXISTS channel_autoreact (
-  guild_id TEXT NOT NULL,
-  channel_id TEXT NOT NULL,
-  emoji TEXT NOT NULL,
-  PRIMARY KEY (guild_id, channel_id, emoji)
-)`);
-
-db.run(`CREATE TABLE IF NOT EXISTS giveaways (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  guild_id TEXT NOT NULL,
-  channel_id TEXT NOT NULL,
-  message_id TEXT,
-  host_id TEXT NOT NULL,
-  prize TEXT NOT NULL,
-  winners INTEGER NOT NULL DEFAULT 1,
-  ends_at INTEGER NOT NULL,
-  ended INTEGER NOT NULL DEFAULT 0,
-  cancelled INTEGER NOT NULL DEFAULT 0,
-  required_roles TEXT DEFAULT '[]',
-  blacklisted_roles TEXT DEFAULT '[]',
-  min_level INTEGER DEFAULT 0,
-  max_level INTEGER,
-  stay_in_server INTEGER DEFAULT 0,
-  color TEXT DEFAULT '#FFD700',
-  voice_channel TEXT,
-  image_url TEXT
-)`);
-
-try { db.run(`ALTER TABLE giveaways ADD COLUMN image_url TEXT`); } catch (_) {}
-
-db.run(`CREATE TABLE IF NOT EXISTS giveaway_rigged (
-  giveaway_id INTEGER PRIMARY KEY,
-  user_ids TEXT NOT NULL DEFAULT '[]'
-)`);
-
-db.run(`CREATE TABLE IF NOT EXISTS invite_tracking (
-  guild_id TEXT NOT NULL,
-  user_id  TEXT NOT NULL,
-  invites  INTEGER NOT NULL DEFAULT 0,
-  PRIMARY KEY (guild_id, user_id)
-)`);
-
-try { db.run(`ALTER TABLE giveaways ADD COLUMN min_invites INTEGER DEFAULT 0`); } catch (_) {}
-
-db.run(`CREATE TABLE IF NOT EXISTS boost_roles (
-  guild_id TEXT NOT NULL,
-  user_id  TEXT NOT NULL,
-  role_id  TEXT NOT NULL,
-  PRIMARY KEY (guild_id, user_id)
-)`);
-
-db.run(`CREATE TABLE IF NOT EXISTS honeypot_channels (
-  guild_id   TEXT NOT NULL,
-  channel_id TEXT NOT NULL,
-  action     TEXT NOT NULL DEFAULT 'kick',
-  message_id TEXT,
-  count      INTEGER NOT NULL DEFAULT 0,
-  PRIMARY KEY (guild_id, channel_id)
-)`);
-
-db.run(`CREATE TABLE IF NOT EXISTS bets (
-  id          INTEGER PRIMARY KEY AUTOINCREMENT,
-  guild_id    TEXT    NOT NULL,
-  creator_id  TEXT    NOT NULL,
-  question    TEXT    NOT NULL,
-  options_json TEXT   NOT NULL DEFAULT '[]',
-  status      TEXT    NOT NULL DEFAULT 'open',
-  winner_option INTEGER DEFAULT NULL,
-  channel_id  TEXT,
-  message_id  TEXT,
-  created_at  INTEGER DEFAULT (strftime('%s','now'))
-)`);
-
-db.run(`CREATE TABLE IF NOT EXISTS bet_entries (
-  id           INTEGER PRIMARY KEY AUTOINCREMENT,
-  bet_id       INTEGER NOT NULL,
-  user_id      TEXT    NOT NULL,
-  option_index INTEGER NOT NULL,
-  amount       INTEGER NOT NULL,
-  UNIQUE(bet_id, user_id)
-)`);
-
-db.run(`CREATE TABLE IF NOT EXISTS giveaway_entries (
-  giveaway_id INTEGER NOT NULL,
-  user_id TEXT NOT NULL,
-  entered_at INTEGER NOT NULL DEFAULT (strftime('%s','now')),
-  PRIMARY KEY (giveaway_id, user_id)
-)`);
-
-db.run(`CREATE TABLE IF NOT EXISTS sticky_messages (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  guild_id TEXT NOT NULL,
-  channel_id TEXT NOT NULL,
-  content TEXT NOT NULL,
-  name TEXT,
-  interval INTEGER DEFAULT 25,
-  last_message_id TEXT
-)`);
-
-// Migrate old single-sticky schema (PRIMARY KEY was guild_id+channel_id, no id column)
-try { db.run(`ALTER TABLE sticky_messages ADD COLUMN id INTEGER`); } catch {}
-try { db.run(`ALTER TABLE sticky_messages ADD COLUMN name TEXT`); } catch {}
-try { db.run(`ALTER TABLE sticky_messages ADD COLUMN interval INTEGER DEFAULT 25`); } catch {}
-
-db.run(`CREATE TABLE IF NOT EXISTS snipes (
-  guild_id TEXT NOT NULL,
-  channel_id TEXT NOT NULL,
-  content TEXT,
-  author_id TEXT,
-  author_tag TEXT,
-  author_avatar TEXT,
-  deleted_at INTEGER,
-  type TEXT NOT NULL DEFAULT 'delete',
-  PRIMARY KEY (guild_id, channel_id, type)
-)`);
-
-db.run(`CREATE TABLE IF NOT EXISTS aliases (
-  guild_id TEXT NOT NULL,
-  alias TEXT NOT NULL,
-  command TEXT NOT NULL,
-  PRIMARY KEY (guild_id, alias)
-)`);
-
-db.run(`CREATE TABLE IF NOT EXISTS webhooks (
-  id TEXT PRIMARY KEY,
-  guild_id TEXT NOT NULL,
-  channel_id TEXT NOT NULL,
-  webhook_url TEXT NOT NULL,
-  name TEXT,
-  locked INTEGER DEFAULT 0
-)`);
-
-db.run(`CREATE TABLE IF NOT EXISTS afk (
-  guild_id TEXT NOT NULL,
-  user_id TEXT NOT NULL,
-  reason TEXT,
-  set_at INTEGER DEFAULT (strftime('%s','now')),
-  PRIMARY KEY (guild_id, user_id)
-)`);
-
-db.run(`CREATE TABLE IF NOT EXISTS wallets (
-  user_id TEXT PRIMARY KEY,
-  address TEXT NOT NULL,
-  key_hash TEXT NOT NULL,
-  wif_encrypted TEXT NOT NULL,
-  public_key TEXT NOT NULL,
-  created_at INTEGER DEFAULT (strftime('%s','now'))
-)`);
-
-db.run(`CREATE TABLE IF NOT EXISTS wallet_tos (
-  user_id TEXT PRIMARY KEY,
-  accepted_at INTEGER DEFAULT (strftime('%s','now'))
-)`);
-
-db.run(`CREATE TABLE IF NOT EXISTS wallet_transactions (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  user_id TEXT NOT NULL,
-  type TEXT NOT NULL,
-  amount REAL NOT NULL,
-  address TEXT NOT NULL,
-  txid TEXT,
-  status TEXT DEFAULT 'pending',
-  created_at INTEGER DEFAULT (strftime('%s','now'))
-)`);
-
-db.run(`CREATE TABLE IF NOT EXISTS stock_watchlist (
-  guild_id TEXT NOT NULL,
-  user_id TEXT NOT NULL,
-  symbol TEXT NOT NULL,
-  PRIMARY KEY (guild_id, user_id, symbol)
-)`);
-
-db.run(`CREATE TABLE IF NOT EXISTS stock_options (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  guild_id TEXT NOT NULL,
-  user_id TEXT NOT NULL,
-  symbol TEXT NOT NULL,
-  type TEXT NOT NULL,
-  strike REAL NOT NULL,
-  expiry TEXT NOT NULL,
-  quantity INTEGER DEFAULT 1,
-  created_at INTEGER DEFAULT (strftime('%s','now'))
-)`);
-
-db.run(`CREATE TABLE IF NOT EXISTS payment_addresses (
-  user_id TEXT NOT NULL,
-  coin TEXT NOT NULL,
-  address TEXT NOT NULL,
-  PRIMARY KEY (user_id, coin)
-)`);
-
-db.run(`CREATE TABLE IF NOT EXISTS paypal_settings (
-  user_id TEXT PRIMARY KEY,
-  email TEXT NOT NULL,
-  embed_title TEXT,
-  embed_description TEXT,
-  embed_color TEXT DEFAULT '#003087'
-)`);
-
-db.run(`CREATE TABLE IF NOT EXISTS sellauth_settings (
-  user_id TEXT PRIMARY KEY,
-  api_key TEXT NOT NULL,
-  shop_id TEXT,
-  product_id TEXT,
-  variant_id TEXT
-)`);
-
-db.run(`CREATE TABLE IF NOT EXISTS vouch_settings (
-  user_id TEXT PRIMARY KEY,
-  target_user_id TEXT,
-  exchange_user_id TEXT
-)`);
-
-db.run(`CREATE TABLE IF NOT EXISTS ticket_settings (
-  guild_id TEXT PRIMARY KEY,
-  category_id TEXT,
-  log_channel TEXT,
-  support_role TEXT,
-  ticket_count INTEGER DEFAULT 0,
-  enabled INTEGER DEFAULT 1,
-  open_message TEXT,
-  form_enabled INTEGER DEFAULT 0,
-  form_title TEXT,
-  form_color TEXT DEFAULT '#5865F2',
-  form_fields TEXT DEFAULT '[]',
-  form_footer TEXT
-)`);
-
-db.run(`CREATE TABLE IF NOT EXISTS tickets (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  guild_id TEXT NOT NULL,
-  channel_id TEXT NOT NULL,
-  user_id TEXT NOT NULL,
-  ticket_number INTEGER NOT NULL,
-  status TEXT DEFAULT 'open',
-  created_at INTEGER DEFAULT (strftime('%s','now')),
-  closed_at INTEGER
-)`);
-
-db.run(`CREATE TABLE IF NOT EXISTS ticket_watcher (
-  guild_id TEXT NOT NULL,
-  category_id TEXT NOT NULL,
-  type TEXT NOT NULL,
-  title TEXT,
-  description TEXT,
-  color TEXT DEFAULT '#5865F2',
-  button_label TEXT,
-  button_url TEXT,
-  PRIMARY KEY (guild_id, category_id, type)
-)`);
-
-db.run(`CREATE TABLE IF NOT EXISTS antiraid_settings (
-  guild_id TEXT PRIMARY KEY,
-  enabled INTEGER DEFAULT 0,
-  join_threshold INTEGER DEFAULT 10,
-  join_window INTEGER DEFAULT 10,
-  action TEXT DEFAULT 'kick',
-  mention_threshold INTEGER DEFAULT 10,
-  log_channel TEXT
-)`);
-
-db.run(`CREATE TABLE IF NOT EXISTS autoping (
-  guild_id TEXT NOT NULL,
-  channel_id TEXT NOT NULL,
-  delete_after INTEGER DEFAULT 5,
-  enabled INTEGER DEFAULT 1,
-  PRIMARY KEY (guild_id, channel_id)
-)`);
-
-db.run(`CREATE TABLE IF NOT EXISTS deposit_monitors (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  user_id TEXT NOT NULL,
-  address TEXT NOT NULL,
-  coin TEXT NOT NULL DEFAULT 'LTC',
-  last_balance REAL DEFAULT 0,
-  channel_id TEXT,
-  expires_at INTEGER NOT NULL,
-  notified INTEGER DEFAULT 0
-)`);
-
-db.run(`CREATE TABLE IF NOT EXISTS wallet_ratelimits (
-  user_id TEXT PRIMARY KEY,
-  last_send INTEGER NOT NULL
-)`);
-
-db.run(`CREATE TABLE IF NOT EXISTS message_stats (
-  guild_id TEXT NOT NULL,
-  user_id TEXT NOT NULL,
-  channel_id TEXT NOT NULL,
-  sent_at INTEGER NOT NULL
-)`);
-
-// Stores the last-known name of every channel we've seen a message in
-db.run(`CREATE TABLE IF NOT EXISTS channel_name_cache (
-  channel_id TEXT PRIMARY KEY,
-  name TEXT NOT NULL
-)`);
-
-db.run(`CREATE INDEX IF NOT EXISTS idx_msgstats ON message_stats (guild_id, user_id, sent_at)`);
-
-db.run(`CREATE TABLE IF NOT EXISTS voice_stats (
-  guild_id TEXT NOT NULL,
-  user_id TEXT NOT NULL,
-  joined_at INTEGER NOT NULL,
-  left_at INTEGER
-)`);
-
-db.run(`CREATE TABLE IF NOT EXISTS tags (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  guild_id TEXT NOT NULL,
-  name TEXT NOT NULL,
-  content TEXT NOT NULL,
-  created_by TEXT NOT NULL,
-  created_at INTEGER DEFAULT (strftime('%s','now')),
-  uses INTEGER DEFAULT 0,
-  UNIQUE(guild_id, name)
-)`);
-
-db.run(`CREATE TABLE IF NOT EXISTS user_levels (
-  guild_id TEXT NOT NULL,
-  user_id TEXT NOT NULL,
-  xp INTEGER DEFAULT 0,
-  level INTEGER DEFAULT 0,
-  last_xp_at INTEGER DEFAULT 0,
-  PRIMARY KEY (guild_id, user_id)
-)`);
-
-db.run(`CREATE TABLE IF NOT EXISTS level_settings (
-  guild_id TEXT PRIMARY KEY,
-  enabled INTEGER DEFAULT 1,
-  levelup_channel TEXT,
-  levelup_message TEXT
-)`);
-
-db.run(`CREATE TABLE IF NOT EXISTS level_rewards (
-  guild_id TEXT NOT NULL,
-  level INTEGER NOT NULL,
-  role_id TEXT NOT NULL,
-  PRIMARY KEY (guild_id, level)
-)`);
-
-db.run(`CREATE TABLE IF NOT EXISTS welcome_settings (
-  guild_id TEXT PRIMARY KEY,
-  channel_id TEXT,
-  enabled INTEGER DEFAULT 0,
-  title TEXT DEFAULT 'Welcome!',
-  description TEXT DEFAULT 'Welcome {mention} to {server}!',
-  color TEXT DEFAULT '#5865F2',
-  footer TEXT,
-  image_url TEXT,
-  thumbnail INTEGER DEFAULT 1
-)`);
-
-db.run(`CREATE TABLE IF NOT EXISTS autorole (
-  guild_id TEXT NOT NULL,
-  role_id TEXT NOT NULL,
-  PRIMARY KEY (guild_id, role_id)
-)`);
-
-db.run(`CREATE TABLE IF NOT EXISTS economy (
-  guild_id TEXT NOT NULL,
-  user_id TEXT NOT NULL,
-  wallet INTEGER DEFAULT 0,
-  bank INTEGER DEFAULT 0,
-  total_earned INTEGER DEFAULT 0,
-  daily_at INTEGER DEFAULT 0,
-  work_at INTEGER DEFAULT 0,
-  rob_at INTEGER DEFAULT 0,
-  crime_at INTEGER DEFAULT 0,
-  beg_at INTEGER DEFAULT 0,
-  invest_at INTEGER DEFAULT 0,
-  PRIMARY KEY (guild_id, user_id)
-)`);
-// Migrations: add columns to existing rows
-try { db.run('ALTER TABLE economy ADD COLUMN crime_at INTEGER DEFAULT 0');   } catch { /* exists */ }
-try { db.run('ALTER TABLE economy ADD COLUMN beg_at INTEGER DEFAULT 0');     } catch { /* exists */ }
-try { db.run('ALTER TABLE economy ADD COLUMN invest_at INTEGER DEFAULT 0');  } catch { /* exists */ }
-try { db.run('ALTER TABLE economy ADD COLUMN fish_at INTEGER DEFAULT 0');    } catch { /* exists */ }
-try { db.run('ALTER TABLE economy ADD COLUMN hunt_at INTEGER DEFAULT 0');    } catch { /* exists */ }
-try { db.run('ALTER TABLE economy ADD COLUMN mine_at INTEGER DEFAULT 0');    } catch { /* exists */ }
-try { db.run('ALTER TABLE economy ADD COLUMN scratch_at INTEGER DEFAULT 0'); } catch { /* exists */ }
-
-db.run(`CREATE TABLE IF NOT EXISTS economy_settings (
-  guild_id TEXT PRIMARY KEY,
-  currency_name TEXT DEFAULT 'coins',
-  currency_emoji TEXT DEFAULT '🪙',
-  daily_amount INTEGER DEFAULT 500,
-  work_min INTEGER DEFAULT 150,
-  work_max INTEGER DEFAULT 450
-)`);
+const _dbReady = new Promise((resolve, reject) => _tryOpenDb(resolve, reject, 0))
+  .then(() => {
+    _runSchema();
+    setInterval(pruneOldData, 86400 * 1000);
+    pruneOldData();
+  })
+  .catch(err => {
+    console.error('[DB] Fatal: could not open database after 60 retries:', err.message);
+    process.exit(1);
+  });
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -1202,7 +707,6 @@ function markDepositNotified(id) {
 function trackMessage(guildId, userId, channelId, channelName) {
   run('INSERT INTO message_stats (guild_id, user_id, channel_id, sent_at) VALUES (?, ?, ?, ?)',
     [guildId, userId, channelId, Math.floor(Date.now() / 1000)]);
-  // Cache the channel name so deleted channels still show a readable name
   if (channelName) {
     run('INSERT OR REPLACE INTO channel_name_cache (channel_id, name) VALUES (?, ?)',
       [channelId, channelName]);
@@ -1302,13 +806,6 @@ function upsertWelcomeSettings(guildId, fields) {
 }
 
 // ── panels ────────────────────────────────────────────────────────────────────
-db.run(`CREATE TABLE IF NOT EXISTS panels (
-  id TEXT PRIMARY KEY,
-  guild_id TEXT NOT NULL,
-  message_id TEXT,
-  options_json TEXT NOT NULL
-)`);
-
 function setPanel(id, guildId, messageId, optionsJson) {
   run('INSERT OR REPLACE INTO panels (id, guild_id, message_id, options_json) VALUES (?, ?, ?, ?)',
     [id, guildId, messageId, optionsJson]);
@@ -1337,8 +834,6 @@ function pruneOldData() {
     console.error('[DB] Prune error:', e.message);
   }
 }
-setInterval(pruneOldData, 86400 * 1000);
-pruneOldData(); // run once on startup
 
 // ─── Tags ─────────────────────────────────────────────────────────────────────
 function createTag(guildId, name, content, createdBy) {
@@ -1361,19 +856,16 @@ function editTag(guildId, name, content) {
 }
 
 // ─── Levels / XP ─────────────────────────────────────────────────────────────
-// XP needed to go from level n → level n+1
 function xpForLevel(level) {
   return 5 * level * level + 50 * level + 100;
 }
 
-// Total cumulative XP required to reach `level` from 0
 function cumulativeXpForLevel(level) {
   let total = 0;
   for (let i = 0; i < level; i++) total += xpForLevel(i);
   return total;
 }
 
-// Derive level from total cumulative XP
 function levelFromXp(totalXp) {
   let level = 0;
   while (totalXp >= cumulativeXpForLevel(level + 1)) level++;
@@ -1394,16 +886,14 @@ function getLevelLeaderboard(guildId, limit = 10) {
   return all('SELECT * FROM user_levels WHERE guild_id=? ORDER BY xp DESC LIMIT ?', [guildId, limit]);
 }
 
-// Returns { leveled: bool, newLevel: number } — handles XP gain + level-up check
 function addXp(guildId, userId, amount) {
-  const XP_COOLDOWN = 60; // seconds
+  const XP_COOLDOWN = 60;
   const now = Math.floor(Date.now() / 1000);
   let row = get('SELECT * FROM user_levels WHERE guild_id=? AND user_id=?', [guildId, userId]);
   if (!row) {
     run('INSERT INTO user_levels (guild_id, user_id, xp, level, last_xp_at) VALUES (?, ?, 0, 0, 0)', [guildId, userId]);
     row = { guild_id: guildId, user_id: userId, xp: 0, level: 0, last_xp_at: 0 };
   }
-  // Cooldown check
   if (now - row.last_xp_at < XP_COOLDOWN) return { leveled: false, newLevel: row.level };
 
   const newXp = row.xp + amount;
@@ -1655,8 +1145,530 @@ function getBetBettorCounts(betId) {
   return out;
 }
 
+// ─── Schema (run after DB opens) ─────────────────────────────────────────────
+function _runSchema() {
+  db.run(`CREATE TABLE IF NOT EXISTS guild_settings (
+  guild_id TEXT PRIMARY KEY,
+  prefix TEXT DEFAULT '!',
+  log_channel TEXT,
+  log_events TEXT,
+  log_color TEXT DEFAULT '#5865F2',
+  log_ignored TEXT
+)`);
+
+  db.run(`CREATE TABLE IF NOT EXISTS warnings (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  guild_id TEXT NOT NULL,
+  user_id TEXT NOT NULL,
+  mod_id TEXT NOT NULL,
+  reason TEXT,
+  created_at INTEGER DEFAULT (strftime('%s','now'))
+)`);
+
+  db.run(`CREATE TABLE IF NOT EXISTS mutes (
+  guild_id TEXT NOT NULL,
+  user_id TEXT NOT NULL,
+  expires_at INTEGER,
+  reason TEXT,
+  PRIMARY KEY (guild_id, user_id)
+)`);
+
+  db.run(`CREATE TABLE IF NOT EXISTS bans (
+  guild_id TEXT NOT NULL,
+  user_id TEXT NOT NULL,
+  mod_id TEXT NOT NULL,
+  reason TEXT,
+  expires_at INTEGER,
+  created_at INTEGER DEFAULT (strftime('%s','now')),
+  PRIMARY KEY (guild_id, user_id)
+)`);
+
+  db.run(`CREATE TABLE IF NOT EXISTS notes (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  guild_id TEXT NOT NULL,
+  user_id TEXT NOT NULL,
+  mod_id TEXT NOT NULL,
+  content TEXT,
+  created_at INTEGER DEFAULT (strftime('%s','now'))
+)`);
+
+  db.run(`CREATE TABLE IF NOT EXISTS mod_history (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  guild_id TEXT NOT NULL,
+  user_id TEXT NOT NULL,
+  mod_id TEXT NOT NULL,
+  action TEXT NOT NULL,
+  reason TEXT,
+  extra TEXT,
+  created_at INTEGER DEFAULT (strftime('%s','now'))
+)`);
+
+  db.run(`CREATE TABLE IF NOT EXISTS role_persist (
+  guild_id TEXT NOT NULL,
+  user_id TEXT NOT NULL,
+  roles TEXT NOT NULL,
+  PRIMARY KEY (guild_id, user_id)
+)`);
+
+  db.run(`CREATE TABLE IF NOT EXISTS temp_roles (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  guild_id TEXT NOT NULL,
+  user_id TEXT NOT NULL,
+  role_id TEXT NOT NULL,
+  expires_at INTEGER NOT NULL
+)`);
+
+  db.run(`CREATE TABLE IF NOT EXISTS forced_nicknames (
+  guild_id TEXT NOT NULL,
+  user_id TEXT NOT NULL,
+  nickname TEXT NOT NULL,
+  PRIMARY KEY (guild_id, user_id)
+)`);
+
+  db.run(`CREATE TABLE IF NOT EXISTS fake_permissions (
+  guild_id TEXT NOT NULL,
+  role_id TEXT NOT NULL,
+  permission TEXT NOT NULL,
+  PRIMARY KEY (guild_id, role_id, permission)
+)`);
+
+  db.run(`CREATE TABLE IF NOT EXISTS invoke_mods (
+  guild_id TEXT NOT NULL,
+  action TEXT NOT NULL,
+  message TEXT,
+  dm_message TEXT,
+  PRIMARY KEY (guild_id, action)
+)`);
+
+  db.run(`CREATE TABLE IF NOT EXISTS nuke_schedules (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  guild_id TEXT NOT NULL,
+  channel_id TEXT NOT NULL,
+  interval_ms INTEGER NOT NULL,
+  next_at INTEGER NOT NULL
+)`);
+
+  db.run(`CREATE TABLE IF NOT EXISTS autoresponder (
+  guild_id TEXT NOT NULL,
+  trigger TEXT NOT NULL,
+  response TEXT NOT NULL,
+  PRIMARY KEY (guild_id, trigger)
+)`);
+
+  db.run(`CREATE TABLE IF NOT EXISTS reactions (
+  guild_id TEXT NOT NULL,
+  trigger TEXT NOT NULL,
+  emoji TEXT NOT NULL,
+  PRIMARY KEY (guild_id, trigger, emoji)
+)`);
+
+  db.run(`CREATE TABLE IF NOT EXISTS reaction_messages (
+  guild_id TEXT NOT NULL,
+  message_id TEXT NOT NULL,
+  emoji TEXT NOT NULL,
+  role_id TEXT NOT NULL,
+  PRIMARY KEY (guild_id, message_id, emoji)
+)`);
+
+  db.run(`CREATE TABLE IF NOT EXISTS channel_autoreact (
+  guild_id TEXT NOT NULL,
+  channel_id TEXT NOT NULL,
+  emoji TEXT NOT NULL,
+  PRIMARY KEY (guild_id, channel_id, emoji)
+)`);
+
+  db.run(`CREATE TABLE IF NOT EXISTS giveaways (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  guild_id TEXT NOT NULL,
+  channel_id TEXT NOT NULL,
+  message_id TEXT,
+  host_id TEXT NOT NULL,
+  prize TEXT NOT NULL,
+  winners INTEGER NOT NULL DEFAULT 1,
+  ends_at INTEGER NOT NULL,
+  ended INTEGER NOT NULL DEFAULT 0,
+  cancelled INTEGER NOT NULL DEFAULT 0,
+  required_roles TEXT DEFAULT '[]',
+  blacklisted_roles TEXT DEFAULT '[]',
+  min_level INTEGER DEFAULT 0,
+  max_level INTEGER,
+  stay_in_server INTEGER DEFAULT 0,
+  color TEXT DEFAULT '#FFD700',
+  voice_channel TEXT,
+  image_url TEXT
+)`);
+
+  try { db.run(`ALTER TABLE giveaways ADD COLUMN image_url TEXT`); } catch (_) {}
+
+  db.run(`CREATE TABLE IF NOT EXISTS giveaway_rigged (
+  giveaway_id INTEGER PRIMARY KEY,
+  user_ids TEXT NOT NULL DEFAULT '[]'
+)`);
+
+  db.run(`CREATE TABLE IF NOT EXISTS invite_tracking (
+  guild_id TEXT NOT NULL,
+  user_id  TEXT NOT NULL,
+  invites  INTEGER NOT NULL DEFAULT 0,
+  PRIMARY KEY (guild_id, user_id)
+)`);
+
+  try { db.run(`ALTER TABLE giveaways ADD COLUMN min_invites INTEGER DEFAULT 0`); } catch (_) {}
+
+  db.run(`CREATE TABLE IF NOT EXISTS boost_roles (
+  guild_id TEXT NOT NULL,
+  user_id  TEXT NOT NULL,
+  role_id  TEXT NOT NULL,
+  PRIMARY KEY (guild_id, user_id)
+)`);
+
+  db.run(`CREATE TABLE IF NOT EXISTS honeypot_channels (
+  guild_id   TEXT NOT NULL,
+  channel_id TEXT NOT NULL,
+  action     TEXT NOT NULL DEFAULT 'kick',
+  message_id TEXT,
+  count      INTEGER NOT NULL DEFAULT 0,
+  PRIMARY KEY (guild_id, channel_id)
+)`);
+
+  db.run(`CREATE TABLE IF NOT EXISTS bets (
+  id          INTEGER PRIMARY KEY AUTOINCREMENT,
+  guild_id    TEXT    NOT NULL,
+  creator_id  TEXT    NOT NULL,
+  question    TEXT    NOT NULL,
+  options_json TEXT   NOT NULL DEFAULT '[]',
+  status      TEXT    NOT NULL DEFAULT 'open',
+  winner_option INTEGER DEFAULT NULL,
+  channel_id  TEXT,
+  message_id  TEXT,
+  created_at  INTEGER DEFAULT (strftime('%s','now'))
+)`);
+
+  db.run(`CREATE TABLE IF NOT EXISTS bet_entries (
+  id           INTEGER PRIMARY KEY AUTOINCREMENT,
+  bet_id       INTEGER NOT NULL,
+  user_id      TEXT    NOT NULL,
+  option_index INTEGER NOT NULL,
+  amount       INTEGER NOT NULL,
+  UNIQUE(bet_id, user_id)
+)`);
+
+  db.run(`CREATE TABLE IF NOT EXISTS giveaway_entries (
+  giveaway_id INTEGER NOT NULL,
+  user_id TEXT NOT NULL,
+  entered_at INTEGER NOT NULL DEFAULT (strftime('%s','now')),
+  PRIMARY KEY (giveaway_id, user_id)
+)`);
+
+  db.run(`CREATE TABLE IF NOT EXISTS sticky_messages (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  guild_id TEXT NOT NULL,
+  channel_id TEXT NOT NULL,
+  content TEXT NOT NULL,
+  name TEXT,
+  interval INTEGER DEFAULT 25,
+  last_message_id TEXT
+)`);
+
+  try { db.run(`ALTER TABLE sticky_messages ADD COLUMN id INTEGER`); } catch {}
+  try { db.run(`ALTER TABLE sticky_messages ADD COLUMN name TEXT`); } catch {}
+  try { db.run(`ALTER TABLE sticky_messages ADD COLUMN interval INTEGER DEFAULT 25`); } catch {}
+
+  db.run(`CREATE TABLE IF NOT EXISTS snipes (
+  guild_id TEXT NOT NULL,
+  channel_id TEXT NOT NULL,
+  content TEXT,
+  author_id TEXT,
+  author_tag TEXT,
+  author_avatar TEXT,
+  deleted_at INTEGER,
+  type TEXT NOT NULL DEFAULT 'delete',
+  PRIMARY KEY (guild_id, channel_id, type)
+)`);
+
+  db.run(`CREATE TABLE IF NOT EXISTS aliases (
+  guild_id TEXT NOT NULL,
+  alias TEXT NOT NULL,
+  command TEXT NOT NULL,
+  PRIMARY KEY (guild_id, alias)
+)`);
+
+  db.run(`CREATE TABLE IF NOT EXISTS webhooks (
+  id TEXT PRIMARY KEY,
+  guild_id TEXT NOT NULL,
+  channel_id TEXT NOT NULL,
+  webhook_url TEXT NOT NULL,
+  name TEXT,
+  locked INTEGER DEFAULT 0
+)`);
+
+  db.run(`CREATE TABLE IF NOT EXISTS afk (
+  guild_id TEXT NOT NULL,
+  user_id TEXT NOT NULL,
+  reason TEXT,
+  set_at INTEGER DEFAULT (strftime('%s','now')),
+  PRIMARY KEY (guild_id, user_id)
+)`);
+
+  db.run(`CREATE TABLE IF NOT EXISTS wallets (
+  user_id TEXT PRIMARY KEY,
+  address TEXT NOT NULL,
+  key_hash TEXT NOT NULL,
+  wif_encrypted TEXT NOT NULL,
+  public_key TEXT NOT NULL,
+  created_at INTEGER DEFAULT (strftime('%s','now'))
+)`);
+
+  db.run(`CREATE TABLE IF NOT EXISTS wallet_tos (
+  user_id TEXT PRIMARY KEY,
+  accepted_at INTEGER DEFAULT (strftime('%s','now'))
+)`);
+
+  db.run(`CREATE TABLE IF NOT EXISTS wallet_transactions (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  user_id TEXT NOT NULL,
+  type TEXT NOT NULL,
+  amount REAL NOT NULL,
+  address TEXT NOT NULL,
+  txid TEXT,
+  status TEXT DEFAULT 'pending',
+  created_at INTEGER DEFAULT (strftime('%s','now'))
+)`);
+
+  db.run(`CREATE TABLE IF NOT EXISTS stock_watchlist (
+  guild_id TEXT NOT NULL,
+  user_id TEXT NOT NULL,
+  symbol TEXT NOT NULL,
+  PRIMARY KEY (guild_id, user_id, symbol)
+)`);
+
+  db.run(`CREATE TABLE IF NOT EXISTS stock_options (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  guild_id TEXT NOT NULL,
+  user_id TEXT NOT NULL,
+  symbol TEXT NOT NULL,
+  type TEXT NOT NULL,
+  strike REAL NOT NULL,
+  expiry TEXT NOT NULL,
+  quantity INTEGER DEFAULT 1,
+  created_at INTEGER DEFAULT (strftime('%s','now'))
+)`);
+
+  db.run(`CREATE TABLE IF NOT EXISTS payment_addresses (
+  user_id TEXT NOT NULL,
+  coin TEXT NOT NULL,
+  address TEXT NOT NULL,
+  PRIMARY KEY (user_id, coin)
+)`);
+
+  db.run(`CREATE TABLE IF NOT EXISTS paypal_settings (
+  user_id TEXT PRIMARY KEY,
+  email TEXT NOT NULL,
+  embed_title TEXT,
+  embed_description TEXT,
+  embed_color TEXT DEFAULT '#003087'
+)`);
+
+  db.run(`CREATE TABLE IF NOT EXISTS sellauth_settings (
+  user_id TEXT PRIMARY KEY,
+  api_key TEXT NOT NULL,
+  shop_id TEXT,
+  product_id TEXT,
+  variant_id TEXT
+)`);
+
+  db.run(`CREATE TABLE IF NOT EXISTS vouch_settings (
+  user_id TEXT PRIMARY KEY,
+  target_user_id TEXT,
+  exchange_user_id TEXT
+)`);
+
+  db.run(`CREATE TABLE IF NOT EXISTS ticket_settings (
+  guild_id TEXT PRIMARY KEY,
+  category_id TEXT,
+  log_channel TEXT,
+  support_role TEXT,
+  ticket_count INTEGER DEFAULT 0,
+  enabled INTEGER DEFAULT 1,
+  open_message TEXT,
+  form_enabled INTEGER DEFAULT 0,
+  form_title TEXT,
+  form_color TEXT DEFAULT '#5865F2',
+  form_fields TEXT DEFAULT '[]',
+  form_footer TEXT
+)`);
+
+  db.run(`CREATE TABLE IF NOT EXISTS tickets (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  guild_id TEXT NOT NULL,
+  channel_id TEXT NOT NULL,
+  user_id TEXT NOT NULL,
+  ticket_number INTEGER NOT NULL,
+  status TEXT DEFAULT 'open',
+  created_at INTEGER DEFAULT (strftime('%s','now')),
+  closed_at INTEGER
+)`);
+
+  db.run(`CREATE TABLE IF NOT EXISTS ticket_watcher (
+  guild_id TEXT NOT NULL,
+  category_id TEXT NOT NULL,
+  type TEXT NOT NULL,
+  title TEXT,
+  description TEXT,
+  color TEXT DEFAULT '#5865F2',
+  button_label TEXT,
+  button_url TEXT,
+  PRIMARY KEY (guild_id, category_id, type)
+)`);
+
+  db.run(`CREATE TABLE IF NOT EXISTS antiraid_settings (
+  guild_id TEXT PRIMARY KEY,
+  enabled INTEGER DEFAULT 0,
+  join_threshold INTEGER DEFAULT 10,
+  join_window INTEGER DEFAULT 10,
+  action TEXT DEFAULT 'kick',
+  mention_threshold INTEGER DEFAULT 10,
+  log_channel TEXT
+)`);
+
+  db.run(`CREATE TABLE IF NOT EXISTS autoping (
+  guild_id TEXT NOT NULL,
+  channel_id TEXT NOT NULL,
+  delete_after INTEGER DEFAULT 5,
+  enabled INTEGER DEFAULT 1,
+  PRIMARY KEY (guild_id, channel_id)
+)`);
+
+  db.run(`CREATE TABLE IF NOT EXISTS deposit_monitors (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  user_id TEXT NOT NULL,
+  address TEXT NOT NULL,
+  coin TEXT NOT NULL DEFAULT 'LTC',
+  last_balance REAL DEFAULT 0,
+  channel_id TEXT,
+  expires_at INTEGER NOT NULL,
+  notified INTEGER DEFAULT 0
+)`);
+
+  db.run(`CREATE TABLE IF NOT EXISTS wallet_ratelimits (
+  user_id TEXT PRIMARY KEY,
+  last_send INTEGER NOT NULL
+)`);
+
+  db.run(`CREATE TABLE IF NOT EXISTS message_stats (
+  guild_id TEXT NOT NULL,
+  user_id TEXT NOT NULL,
+  channel_id TEXT NOT NULL,
+  sent_at INTEGER NOT NULL
+)`);
+
+  db.run(`CREATE TABLE IF NOT EXISTS channel_name_cache (
+  channel_id TEXT PRIMARY KEY,
+  name TEXT NOT NULL
+)`);
+
+  db.run(`CREATE INDEX IF NOT EXISTS idx_msgstats ON message_stats (guild_id, user_id, sent_at)`);
+
+  db.run(`CREATE TABLE IF NOT EXISTS voice_stats (
+  guild_id TEXT NOT NULL,
+  user_id TEXT NOT NULL,
+  joined_at INTEGER NOT NULL,
+  left_at INTEGER
+)`);
+
+  db.run(`CREATE TABLE IF NOT EXISTS tags (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  guild_id TEXT NOT NULL,
+  name TEXT NOT NULL,
+  content TEXT NOT NULL,
+  created_by TEXT NOT NULL,
+  created_at INTEGER DEFAULT (strftime('%s','now')),
+  uses INTEGER DEFAULT 0,
+  UNIQUE(guild_id, name)
+)`);
+
+  db.run(`CREATE TABLE IF NOT EXISTS user_levels (
+  guild_id TEXT NOT NULL,
+  user_id TEXT NOT NULL,
+  xp INTEGER DEFAULT 0,
+  level INTEGER DEFAULT 0,
+  last_xp_at INTEGER DEFAULT 0,
+  PRIMARY KEY (guild_id, user_id)
+)`);
+
+  db.run(`CREATE TABLE IF NOT EXISTS level_settings (
+  guild_id TEXT PRIMARY KEY,
+  enabled INTEGER DEFAULT 1,
+  levelup_channel TEXT,
+  levelup_message TEXT
+)`);
+
+  db.run(`CREATE TABLE IF NOT EXISTS level_rewards (
+  guild_id TEXT NOT NULL,
+  level INTEGER NOT NULL,
+  role_id TEXT NOT NULL,
+  PRIMARY KEY (guild_id, level)
+)`);
+
+  db.run(`CREATE TABLE IF NOT EXISTS welcome_settings (
+  guild_id TEXT PRIMARY KEY,
+  channel_id TEXT,
+  enabled INTEGER DEFAULT 0,
+  title TEXT DEFAULT 'Welcome!',
+  description TEXT DEFAULT 'Welcome {mention} to {server}!',
+  color TEXT DEFAULT '#5865F2',
+  footer TEXT,
+  image_url TEXT,
+  thumbnail INTEGER DEFAULT 1
+)`);
+
+  db.run(`CREATE TABLE IF NOT EXISTS autorole (
+  guild_id TEXT NOT NULL,
+  role_id TEXT NOT NULL,
+  PRIMARY KEY (guild_id, role_id)
+)`);
+
+  db.run(`CREATE TABLE IF NOT EXISTS economy (
+  guild_id TEXT NOT NULL,
+  user_id TEXT NOT NULL,
+  wallet INTEGER DEFAULT 0,
+  bank INTEGER DEFAULT 0,
+  total_earned INTEGER DEFAULT 0,
+  daily_at INTEGER DEFAULT 0,
+  work_at INTEGER DEFAULT 0,
+  rob_at INTEGER DEFAULT 0,
+  crime_at INTEGER DEFAULT 0,
+  beg_at INTEGER DEFAULT 0,
+  invest_at INTEGER DEFAULT 0,
+  PRIMARY KEY (guild_id, user_id)
+)`);
+
+  try { db.run('ALTER TABLE economy ADD COLUMN crime_at INTEGER DEFAULT 0');   } catch {}
+  try { db.run('ALTER TABLE economy ADD COLUMN beg_at INTEGER DEFAULT 0');     } catch {}
+  try { db.run('ALTER TABLE economy ADD COLUMN invest_at INTEGER DEFAULT 0');  } catch {}
+  try { db.run('ALTER TABLE economy ADD COLUMN fish_at INTEGER DEFAULT 0');    } catch {}
+  try { db.run('ALTER TABLE economy ADD COLUMN hunt_at INTEGER DEFAULT 0');    } catch {}
+  try { db.run('ALTER TABLE economy ADD COLUMN mine_at INTEGER DEFAULT 0');    } catch {}
+  try { db.run('ALTER TABLE economy ADD COLUMN scratch_at INTEGER DEFAULT 0'); } catch {}
+
+  db.run(`CREATE TABLE IF NOT EXISTS economy_settings (
+  guild_id TEXT PRIMARY KEY,
+  currency_name TEXT DEFAULT 'coins',
+  currency_emoji TEXT DEFAULT '🪙',
+  daily_amount INTEGER DEFAULT 500,
+  work_min INTEGER DEFAULT 150,
+  work_max INTEGER DEFAULT 450
+)`);
+
+  db.run(`CREATE TABLE IF NOT EXISTS panels (
+  id TEXT PRIMARY KEY,
+  guild_id TEXT NOT NULL,
+  message_id TEXT,
+  options_json TEXT NOT NULL
+)`);
+}
+
 module.exports = {
-  db,
+  _dbReady,
   get, all, run,
   getGuildSettings, upsertGuildSettings,
   addWarning, getWarnings, clearWarnings,

@@ -23,10 +23,13 @@ if (!process.env.CLIENT_ID) {
 const dataDir = path.join(__dirname, '..', 'data');
 if (!fs.existsSync(dataDir)) fs.mkdirSync(dataDir, { recursive: true });
 
-console.log('[flux] Opening database...');
-const db = require('./database');
-console.log('[flux] Database ready.');
+// ─── Start Express IMMEDIATELY so Railway health check passes ─────────────────
+// This binds the port right now — before the DB opens — so /health responds
+// during the non-blocking DB retry period and Railway doesn't kill us.
+const { startServer, startApi } = require('./api');
+startServer();
 
+// ─── Discord client ───────────────────────────────────────────────────────────
 const client = new Client({
   intents: [
     GatewayIntentBits.Guilds,
@@ -44,41 +47,9 @@ const client = new Client({
 client.commands = new Collection();
 client.prefixCommands = new Collection();
 
-// ─── Load prefix command modules ─────────────────────────────────────────────
-console.log('[flux] Loading prefix commands...');
-const prefixDir = path.join(__dirname, 'prefix');
-if (fs.existsSync(prefixDir)) {
-  for (const file of fs.readdirSync(prefixDir).filter(f => f.endsWith('.js'))) {
-    const cmds = require(path.join(prefixDir, file));
-    for (const cmd of cmds) {
-      client.prefixCommands.set(cmd.name, cmd);
-      for (const alias of (cmd.aliases || [])) {
-        client.prefixCommands.set(alias, cmd);
-      }
-    }
-  }
-}
-
-// ─── Load slash command modules ───────────────────────────────────────────────
-console.log('[flux] Loading slash commands...');
+// ─── Slash command dirs (needed by deploy fn too) ─────────────────────────────
 const slashDir = path.join(__dirname, 'slash');
-for (const file of fs.readdirSync(slashDir).filter(f => f.endsWith('.js'))) {
-  const mod = require(path.join(slashDir, file));
-  const cmds = Array.isArray(mod) ? mod : Object.values(mod).flat();
-  for (const cmd of cmds) {
-    if (cmd && cmd.data && cmd.execute) {
-      client.commands.set(cmd.data.name, cmd);
-    }
-  }
-}
-
-// ─── Load events ─────────────────────────────────────────────────────────────
-console.log('[flux] Loading events...');
-const eventsDir = path.join(__dirname, 'events');
-for (const file of fs.readdirSync(eventsDir).filter(f => f.endsWith('.js'))) {
-  require(path.join(eventsDir, file))(client);
-}
-console.log('[flux] All modules loaded.');
+const prefixDir = path.join(__dirname, 'prefix');
 
 // ─── Auto-deploy slash commands ───────────────────────────────────────────────
 async function deploySlashCommands() {
@@ -107,6 +78,8 @@ async function deploySlashCommands() {
 
 // ─── Cron jobs ────────────────────────────────────────────────────────────────
 function startCrons() {
+  const db = require('./database');
+
   // Every 1 minute: expire mutes, bans, temproles, giveaways
   cron.schedule('* * * * *', async () => {
     // Expired mutes
@@ -207,22 +180,70 @@ function startCrons() {
   });
 }
 
-// ─── Start API immediately so Railway health check passes before Discord ready ──
-const { startApi } = require('./api');
-startApi(client); // client exists but not yet connected — routes handle null guilds gracefully
+// ─── Async startup ────────────────────────────────────────────────────────────
+(async () => {
+  // 1. Wait for DB — uses non-blocking setTimeout retries so the event loop
+  //    stays free to serve the /health endpoint during this period.
+  console.log('[flux] Opening database...');
+  await require('./database')._dbReady;
+  console.log('[flux] Database ready.');
 
-client.once('ready', () => {
-  startCrons();
-  console.log(`[flux] Bot ready. In ${client.guilds.cache.size} guilds.`);
-});
+  // 2. Finish API setup (registers 2 extra tables + member-count route)
+  startApi(client);
 
-console.log('[flux] Attempting Discord login...');
-client.login(process.env.BOT_TOKEN)
-  .then(async () => {
-    console.log('[flux] Logged in successfully. Deploying commands...');
-    await deploySlashCommands().catch(e => console.error('[Deploy Error]', e));
-  })
-  .catch(err => {
-    console.error('[FATAL] Discord login failed:', err.message);
-    process.exit(1);
+  // 3. Load prefix command modules
+  console.log('[flux] Loading prefix commands...');
+  if (fs.existsSync(prefixDir)) {
+    for (const file of fs.readdirSync(prefixDir).filter(f => f.endsWith('.js'))) {
+      const cmds = require(path.join(prefixDir, file));
+      for (const cmd of cmds) {
+        client.prefixCommands.set(cmd.name, cmd);
+        for (const alias of (cmd.aliases || [])) {
+          client.prefixCommands.set(alias, cmd);
+        }
+      }
+    }
+  }
+
+  // 4. Load slash command modules
+  console.log('[flux] Loading slash commands...');
+  for (const file of fs.readdirSync(slashDir).filter(f => f.endsWith('.js'))) {
+    const mod = require(path.join(slashDir, file));
+    const cmds = Array.isArray(mod) ? mod : Object.values(mod).flat();
+    for (const cmd of cmds) {
+      if (cmd && cmd.data && cmd.execute) {
+        client.commands.set(cmd.data.name, cmd);
+      }
+    }
+  }
+
+  // 5. Load events
+  console.log('[flux] Loading events...');
+  const eventsDir = path.join(__dirname, 'events');
+  for (const file of fs.readdirSync(eventsDir).filter(f => f.endsWith('.js'))) {
+    require(path.join(eventsDir, file))(client);
+  }
+  console.log('[flux] All modules loaded.');
+
+  // 6. Ready handler
+  client.once('ready', () => {
+    startCrons();
+    console.log(`[flux] Bot ready. In ${client.guilds.cache.size} guilds.`);
   });
+
+  // 7. Login
+  console.log('[flux] Attempting Discord login...');
+  client.login(process.env.BOT_TOKEN)
+    .then(async () => {
+      console.log('[flux] Logged in successfully. Deploying commands...');
+      await deploySlashCommands().catch(e => console.error('[Deploy Error]', e));
+    })
+    .catch(err => {
+      console.error('[FATAL] Discord login failed:', err.message);
+      process.exit(1);
+    });
+
+})().catch(err => {
+  console.error('[FATAL] Startup error:', err);
+  process.exit(1);
+});
