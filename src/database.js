@@ -10,42 +10,60 @@ const { Database } = require('node-sqlite3-wasm');
 const dbPath = path.join(dataDir, 'nights.db');
 let db;
 
-// ─── Non-blocking async DB init ───────────────────────────────────────────────
-// Uses setTimeout (non-blocking) so the event loop stays free for Railway
-// health checks during a rolling-deploy lock window.
+// ─── WAL → DELETE mode conversion ────────────────────────────────────────────
+// Railway persistent volumes don't support the mmap() calls SQLite uses for
+// WAL-mode shared memory (.db-shm). Any database file whose header bytes 18-19
+// equal 0x02 will fail to open with SQLITE_BUSY — even with zero other processes
+// running — because SQLite recreates and tries to mmap the -shm file every open.
 //
-// WAL mode is intentionally NOT used: PRAGMA journal_mode=WAL acquires an
-// exclusive lock to set up the WAL header, which always fails with SQLITE_BUSY
-// when another container already has the file open. Default DELETE journal mode
-// allows new Database() to succeed without any exclusive lock.
-//
-// On first attempt we also delete any stale .db-wal/.db-shm files left by a
-// previous WAL-mode run (safe to do — if a live process held the lock we would
-// already have gotten a busy error on new Database() and bailed out).
+// Fix: read the 100-byte SQLite header, check bytes 18/19, and if they're 0x02
+// (WAL) overwrite them with 0x01 (DELETE/rollback mode) before we ever call
+// new Database(). Also delete any leftover -wal/-shm files. This runs once,
+// synchronously, at module-load time.
+function _convertFromWAL() {
+  if (!fs.existsSync(dbPath)) return; // new install — nothing to convert
+  let fd;
+  try {
+    const stat = fs.statSync(dbPath);
+    if (stat.size < 100) return; // not a valid SQLite file
 
-function _tryOpenDb(resolve, reject, attempt) {
-  // On first attempt, delete any stale WAL/SHM files from previous runs.
-  if (attempt === 0) {
-    for (const suffix of ['-wal', '-shm']) {
-      const f = dbPath + suffix;
-      try { if (fs.existsSync(f)) { fs.unlinkSync(f); console.warn(`[DB] Removed stale ${suffix} file`); } } catch (_) {}
+    fd = fs.openSync(dbPath, 'r+');
+    const hdr = Buffer.alloc(100);
+    if (fs.readSync(fd, hdr, 0, 100, 0) < 100) return;
+
+    if (hdr.slice(0, 15).toString('ascii') !== 'SQLite format 3') return;
+
+    const wv = hdr[18], rv = hdr[19];
+    if (wv === 2 || rv === 2) {
+      console.warn(`[DB] WAL-mode DB detected (hdr bytes 18/19=${wv}/${rv}) — converting to DELETE mode`);
+      for (const suf of ['-wal', '-shm']) {
+        try { fs.unlinkSync(dbPath + suf); console.warn(`[DB] Deleted ${suf}`); } catch (_) {}
+      }
+      hdr[18] = 1; hdr[19] = 1;
+      fs.writeSync(fd, hdr, 0, 100, 0);
+      console.warn('[DB] Header patched — DELETE mode active');
+    } else {
+      console.log(`[DB] Database already in DELETE mode (bytes 18/19=${wv}/${rv})`);
     }
+  } catch (e) {
+    console.warn('[DB] WAL→DELETE conversion error:', e.message);
+  } finally {
+    if (fd !== undefined) try { fs.closeSync(fd); } catch (_) {}
   }
+}
+_convertFromWAL(); // runs synchronously before any Database() call
 
+// ─── Non-blocking async DB init ───────────────────────────────────────────────
+function _tryOpenDb(resolve, reject, attempt) {
   let conn;
   try {
     conn = new Database(dbPath);
-    // busy_timeout=0 → fail immediately if locked; our setTimeout loop handles retries.
     conn.run('PRAGMA busy_timeout = 0');
-    // No WAL pragma — use SQLite default (DELETE journal mode).
     conn.run('PRAGMA foreign_keys = ON');
     db = conn;
-    // Run schema while holding the open connection.
-    // Allow up to 10 s of internal SQLite wait for each DDL statement in case
-    // the old container is mid-write (this blocks briefly but Express is already up).
-    db.run('PRAGMA busy_timeout = 10000');
+    db.run('PRAGMA busy_timeout = 10000'); // allow brief waits during DDL
     _runSchema();
-    db.run('PRAGMA busy_timeout = 0');   // restore fast-fail for runtime queries
+    db.run('PRAGMA busy_timeout = 0');
     resolve();
   } catch (e) {
     if (conn) { try { conn.close(); } catch (_) {} db = null; }
