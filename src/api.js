@@ -710,17 +710,23 @@ function startApi(client) {
     config TEXT NOT NULL DEFAULT '{}'
   )`);
 
-  // Patch stats endpoint to use real member count from Discord client
+  // Member count endpoint — always uses app.locals.client (set after bot is ready)
   app.get('/api/guild/:guildId/member-count', auth, async (req, res) => {
     try {
-      const guild = await client.guilds.fetch(req.params.guildId);
+      const c = req.app.locals.client;
+      if (!c) return res.json({ count: 0 });
+      const guild = await c.guilds.fetch(req.params.guildId);
       res.json({ count: guild.memberCount });
     } catch {
       res.json({ count: 0 });
     }
   });
 
-  app.listen(port, () => console.log(`[API] Running on port ${port}`));
+  const server = app.listen(port, () => console.log(`[API] Running on port ${port}`));
+  server.on('error', err => {
+    console.error('[API] Failed to start server:', err.message);
+    process.exit(1);
+  });
 }
 
 module.exports = { startApi, setClient };

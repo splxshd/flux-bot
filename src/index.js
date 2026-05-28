@@ -10,11 +10,22 @@ const cron = require('node-cron');
 process.on('unhandledRejection', err => console.error('[UnhandledRejection]', err));
 process.on('uncaughtException', err => { console.error('[UncaughtException]', err); process.exit(1); });
 
+// ─── Critical env var check ───────────────────────────────────────────────────
+if (!process.env.BOT_TOKEN) {
+  console.error('[FATAL] BOT_TOKEN env var is not set. Cannot start bot.');
+  process.exit(1);
+}
+if (!process.env.CLIENT_ID) {
+  console.warn('[WARN] CLIENT_ID env var is not set. Slash command deploy will be skipped.');
+}
+
 // ensure data dir exists before requiring DB
 const dataDir = path.join(__dirname, '..', 'data');
 if (!fs.existsSync(dataDir)) fs.mkdirSync(dataDir, { recursive: true });
 
+console.log('[flux] Opening database...');
 const db = require('./database');
+console.log('[flux] Database ready.');
 
 const client = new Client({
   intents: [
@@ -34,6 +45,7 @@ client.commands = new Collection();
 client.prefixCommands = new Collection();
 
 // ─── Load prefix command modules ─────────────────────────────────────────────
+console.log('[flux] Loading prefix commands...');
 const prefixDir = path.join(__dirname, 'prefix');
 if (fs.existsSync(prefixDir)) {
   for (const file of fs.readdirSync(prefixDir).filter(f => f.endsWith('.js'))) {
@@ -48,6 +60,7 @@ if (fs.existsSync(prefixDir)) {
 }
 
 // ─── Load slash command modules ───────────────────────────────────────────────
+console.log('[flux] Loading slash commands...');
 const slashDir = path.join(__dirname, 'slash');
 for (const file of fs.readdirSync(slashDir).filter(f => f.endsWith('.js'))) {
   const mod = require(path.join(slashDir, file));
@@ -60,13 +73,19 @@ for (const file of fs.readdirSync(slashDir).filter(f => f.endsWith('.js'))) {
 }
 
 // ─── Load events ─────────────────────────────────────────────────────────────
+console.log('[flux] Loading events...');
 const eventsDir = path.join(__dirname, 'events');
 for (const file of fs.readdirSync(eventsDir).filter(f => f.endsWith('.js'))) {
   require(path.join(eventsDir, file))(client);
 }
+console.log('[flux] All modules loaded.');
 
 // ─── Auto-deploy slash commands ───────────────────────────────────────────────
 async function deploySlashCommands() {
+  if (!process.env.CLIENT_ID) {
+    console.warn('[Deploy] Skipping slash command deploy — CLIENT_ID not set.');
+    return;
+  }
   const rest = new REST({ version: '10' }).setToken(process.env.BOT_TOKEN);
   const commands = [];
 
@@ -200,7 +219,13 @@ client.once('ready', () => {
   console.log(`[flux] Bot ready. In ${client.guilds.cache.size} guilds.`);
 });
 
-client.login(process.env.BOT_TOKEN).then(async () => {
-  console.log('[flux] Logged in. Deploying commands...');
-  await deploySlashCommands().catch(e => console.error('[Deploy Error]', e));
-});
+console.log('[flux] Attempting Discord login...');
+client.login(process.env.BOT_TOKEN)
+  .then(async () => {
+    console.log('[flux] Logged in. Deploying commands...');
+    await deploySlashCommands().catch(e => console.error('[Deploy Error]', e));
+  })
+  .catch(err => {
+    console.error('[FATAL] Discord login failed:', err.message);
+    process.exit(1);
+  });
