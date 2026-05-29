@@ -96,7 +96,7 @@ const credits = {
     // Build inventory: owned themes first, then purchased roles/channels (most recent first)
     // Filter out theme-type purchases — they're already covered by ownedThemes
     const ownedThemes = db.getUserOwnedThemes(guildId, target.id);
-    const purchases   = db.getUserPurchases(guildId, target.id).filter(p => p.type !== 'theme');
+    const purchases   = db.getUserPurchases(guildId, target.id).filter(p => p.type !== 'theme' && p.type !== 'quote');
     const items = [
       ...ownedThemes.map(t => ({
         name:  t.charAt(0).toUpperCase() + t.slice(1) + ' Theme',
@@ -152,7 +152,7 @@ const credits = {
 // ── Shop helpers ──────────────────────────────────────────────────────────────
 const SHOP_COLORS  = { daily: 0xF1C40F, weekly: 0x5865F2, all: 0x9B59B6 };
 const SHOP_TITLES  = { daily: '🌅  Daily Shop', weekly: '🗓️  Weekly Shop', all: '🏪  All Items' };
-const TYPE_ICON    = { color_role: '🎨', role: '🏷️', channel: '🔓', theme: '🎴' };
+const TYPE_ICON    = { color_role: '🎨', role: '🏷️', channel: '🔓', theme: '🎴', quote: '💬' };
 const SHOP_PER_PAGE = 4;
 
 async function _buildShopEmbed(guildId, userId, tab, page, guild, author) {
@@ -330,10 +330,11 @@ const buy = {
     }
 
     // Prevent duplicate purchases
-    if (item.type === 'color_role' || item.type === 'role') {
+    if (item.type === 'color_role' || item.type === 'role' || item.type === 'quote') {
       if (db.getUserPurchase(guildId, userId, item.id)) {
+        const reequip = item.type === 'quote' ? `  Re-equip it with \`,myquotes\`.` : '';
         return message.reply({ embeds: [new EmbedBuilder().setColor(YELLOW)
-          .setDescription(`⚠️ You already own **${item.name}**!`)] });
+          .setDescription(`⚠️ You already own **${item.name}**!${reequip}`)] });
       }
     }
     if (item.type === 'theme' && item.theme_name) {
@@ -417,6 +418,26 @@ const buy = {
           )
           .setFooter({ text: 'flux credits' })
           .setTimestamp()] });
+
+      } else if (item.type === 'quote') {
+        if (!item.quote_text) {
+          db.refundCredits(guildId, userId, item.price);
+          return message.reply({ embeds: [new EmbedBuilder().setColor(RED)
+            .setDescription('❌ This quote item has no text configured. You have been refunded.')] });
+        }
+        db.setUserQuote(guildId, userId, item.quote_text);
+
+        const color = parseInt((RARITY_COLOR[item.rarity] || '#9b59b6').replace('#', ''), 16);
+        return message.reply({ embeds: [new EmbedBuilder()
+          .setColor(color)
+          .setTitle('💬 Quote Purchased!')
+          .setDescription(`Equipped on your credits card:\n> *❝ ${item.quote_text} ❞*`)
+          .addFields(
+            { name: '💳 Spent',     value: `${fmt(item.price)} cr`,                 inline: true },
+            { name: '💰 Remaining', value: `${fmt(userCr.amount - item.price)} cr`, inline: true },
+            { name: '✨ Rarity',    value: RARITY_BADGE[item.rarity] || 'Common',   inline: true },
+          )
+          .setFooter({ text: 'Run ,credits to see it  ·  ,myquotes to manage quotes' })] });
 
       } else if (item.type === 'channel') {
         const channel = message.guild.channels.cache.get(item.channel_id);
@@ -531,11 +552,12 @@ const additem = {
         .setColor(BLUE)
         .setTitle('📦 ,additem Usage')
         .addFields(
-          { name: '🎨 Color Role',   value: '`,additem Name | price | color #HEX [role name]`', inline: false },
-          { name: '🏷️ Existing Role', value: '`,additem Name | price | role @role`',             inline: false },
-          { name: '🔓 Channel Access', value: '`,additem Name | price | channel #channel`',      inline: false },
+          { name: '🎨 Color Role',    value: '`,additem Name | price | color #HEX [role name]`',   inline: false },
+          { name: '🏷️ Existing Role', value: '`,additem Name | price | role @role`',               inline: false },
+          { name: '🔓 Channel Access', value: '`,additem Name | price | channel #channel`',        inline: false },
+          { name: '💬 Quote',         value: '`,additem Name | price | quote The text here.`',     inline: false },
         )
-        .setDescription('Separate all parts with `|`. Optionally add a 5th part as a description.')
+        .setDescription('Separate all parts with `|`. Optionally add rarity (`common`/`uncommon`/`rare`/`epic`/`legendary`) and a description as extra `|` segments.')
         .setFooter({ text: 'flux credits' })] });
     }
 
@@ -598,6 +620,13 @@ const additem = {
       itemData.type       = 'channel';
       itemData.channel_id = channel.id;
 
+    } else if (typePart.startsWith('quote')) {
+      const quoteText = seg3.replace(/^quote\s*/i, '').trim() || dataPart.trim();
+      if (!quoteText) return message.reply('❌ Provide the quote text. e.g. `,additem Chosen One | 5000 | quote You were chosen.`');
+      if (quoteText.length > 80) return message.reply(`❌ Quote text too long (${quoteText.length} chars, max 80).`);
+      itemData.type       = 'quote';
+      itemData.quote_text = quoteText;
+
     } else if (typePart.startsWith('theme')) {
       // ,additem Galaxy Theme | 8000 | theme galaxy | epic | Dazzling galaxy card
       const themeName = (typePart.replace(/^theme\s*/i, '').trim() || dataPart.trim()).toLowerCase();
@@ -609,8 +638,8 @@ const additem = {
       itemData.theme_name = themeName;
 
     } else {
-      return message.reply('❌ Type must be `color`, `role`, `channel`, or `theme <name>`.\n' +
-        '**Theme example:** `,additem Galaxy Theme | 8000 | theme galaxy | epic | Dazzling galaxy card`');
+      return message.reply('❌ Type must be `color`, `role`, `channel`, `theme <name>`, or `quote <text>`.\n' +
+        '**Examples:**\n`,additem Galaxy Theme | 8000 | theme galaxy | epic`\n`,additem Chosen | 5000 | quote You were chosen. | rare`');
     }
 
     const newId    = db.addShopItem(itemData);
@@ -996,7 +1025,7 @@ const creditsetup = {
       rolecost:   { key: 'custom_role_cost',        label: 'Custom role creation cost',  emoji: '🎨', default: 800000 },
       updatecost: { key: 'custom_role_update_cost', label: 'Custom role update cost',    emoji: '✏️', default: 0      },
       slots:      { key: 'max_custom_roles',        label: 'Max custom role slots',      emoji: '🔢', default: 1      },
-      quotecost:  { key: 'custom_quote_cost',       label: 'Custom quote cost',          emoji: '💬', default: 2500  },
+      quotecost:  { key: 'custom_quote_cost',       label: 'Custom quote cost',          emoji: '💬', default: 15000 },
     };
 
     if (sub && SETTINGS[sub]) {
@@ -1577,65 +1606,98 @@ const myquotes = {
   name: 'myquotes',
   aliases: ['ownedquotes', 'quoteinventory', 'myquote'],
   async execute(message) {
-    const guildId  = message.guild.id;
-    const userId   = message.author.id;
-    const ownedIds = db.getUserOwnedQuoteIds(guildId, userId);
-    const equipped = db.getUserQuote(guildId, userId);
+    const guildId   = message.guild.id;
+    const userId    = message.author.id;
+    const ownedIds  = db.getUserOwnedQuoteIds(guildId, userId);
+    const equipped  = db.getUserQuote(guildId, userId);
+    const shopOwned = db.getUserPurchases(guildId, userId).filter(p => p.type === 'quote');
 
-    // Detect if equipped text matches a catalog quote
+    // Detect what the equipped text matches
     const equippedCatalog = QUOTE_CATALOG.find(q => q.text === equipped);
-    const hasCustom = equipped && !equippedCatalog;
+    const equippedShop    = shopOwned.find(p => p.quote_text === equipped);
+    const hasCustom       = equipped && !equippedCatalog && !equippedShop;
 
-    const owned = QUOTE_CATALOG.filter(q => ownedIds.includes(q.id));
+    const ownedCatalog = QUOTE_CATALOG.filter(q => ownedIds.includes(q.id));
 
-    if (!owned.length && !hasCustom) {
+    if (!ownedCatalog.length && !shopOwned.length && !hasCustom) {
       return message.reply({ embeds: [new EmbedBuilder().setColor(0x9B59B6)
-        .setDescription('📭 You don\'t own any quotes yet.\nBrowse the catalog with `,quotes` and buy one!') ]});
+        .setDescription('📭 You don\'t own any quotes yet.\nBrowse the catalog with `,quotes` or the shop with `,shop`.') ]});
     }
 
     const equippedLine = equipped
-      ? `*❝ ${equipped} ❞*${equippedCatalog ? ` — **${equippedCatalog.name}**` : ' — custom'}`
+      ? `*❝ ${equipped} ❞*${equippedCatalog ? ` — **${equippedCatalog.name}**` : equippedShop ? ` — **${equippedShop.name}**` : ' — custom'}`
       : 'None — run `,equipquote <id>` or `,customquote <text>`';
 
-    const catalogLines = owned.map(q => {
-      const badge    = RARITY_BADGE[q.rarity];
+    const catalogLines = ownedCatalog.map(q => {
       const isActive = q.text === equipped;
-      return `${isActive ? '**▶**' : '　'} **#${q.id}  ${q.name}**  ·  ${badge}\n　*❝ ${q.text} ❞*`;
+      return `${isActive ? '**▶**' : '　'} **#${q.id}  ${q.name}**  ·  ${RARITY_BADGE[q.rarity]}\n　*❝ ${q.text} ❞*`;
     });
 
-    const desc = [
+    const shopLines = shopOwned.map(p => {
+      const isActive = p.quote_text === equipped;
+      const badge    = RARITY_BADGE[p.rarity] || RARITY_BADGE.common;
+      return `${isActive ? '**▶**' : '　'} 💬 **${p.name}**  ·  ${badge}  ·  \`,equipquote shop:${p.item_id}\`\n　*❝ ${p.quote_text || '??'} ❞*`;
+    });
+
+    const parts = [
       `**Equipped on card:**\n${equippedLine}`,
-      '',
-      owned.length ? `**Your Quotes  (${owned.length}):**\n${catalogLines.join('\n\n')}` : null,
-      hasCustom ? `\n**Custom Quote:**\n*❝ ${equipped} ❞*` : null,
-    ].filter(Boolean).join('\n');
+    ];
+    if (ownedCatalog.length) parts.push(`\n**Catalog Quotes  (${ownedCatalog.length}):**\n${catalogLines.join('\n\n')}`);
+    if (shopLines.length)    parts.push(`\n**Shop Quotes  (${shopLines.length}):**\n${shopLines.join('\n\n')}`);
+    if (hasCustom)           parts.push(`\n**Custom Quote:**\n　*❝ ${equipped} ❞*`);
 
     await message.reply({ embeds: [new EmbedBuilder()
       .setColor(0x9B59B6)
       .setTitle('🎭  Your Quote Collection')
-      .setDescription(desc)
-      .setFooter({ text: ',equipquote <id>  ·  ,customquote <text>  ·  ,clearquote' })] });
+      .setDescription(parts.join('\n'))
+      .setFooter({ text: ',equipquote <id>  ·  ,equipquote shop:<id>  ·  ,customquote <text>  ·  ,clearquote' })] });
   },
 };
 
-// ── ,equipquote <id> ───────────────────────────────────────────────────────────
+// ── ,equipquote <id | shop:<id>> ───────────────────────────────────────────────
 const equipquote = {
   name: 'equipquote',
   aliases: ['usequote', 'selectquote'],
   async execute(message, args) {
     const guildId = message.guild.id;
     const userId  = message.author.id;
-    const id      = parseInt(args[0]);
+    const raw     = (args[0] || '').trim();
 
+    if (!raw) {
+      return message.reply({ embeds: [new EmbedBuilder().setColor(RED)
+        .setDescription('❌ Usage: `,equipquote <id>` for catalog quotes\n`,equipquote shop:<id>` for shop quotes\nSee your owned quotes with `,myquotes`.')] });
+    }
+
+    // ── Shop quote path ──────────────────────────────────────────────────────
+    if (raw.toLowerCase().startsWith('shop:')) {
+      const shopId = parseInt(raw.slice(5));
+      if (isNaN(shopId)) return message.reply('❌ Invalid shop quote ID. Use `,myquotes` to see yours.');
+
+      const purchase = db.getUserPurchases(guildId, userId).find(p => p.item_id === shopId && p.type === 'quote');
+      if (!purchase) {
+        return message.reply({ embeds: [new EmbedBuilder().setColor(RED)
+          .setDescription(`❌ You don't own shop quote #${shopId}. Check \`,myquotes\`.`)] });
+      }
+
+      db.setUserQuote(guildId, userId, purchase.quote_text || '');
+      const color = parseInt((RARITY_COLOR[purchase.rarity] || '#9b59b6').replace('#', ''), 16);
+      return message.reply({ embeds: [new EmbedBuilder()
+        .setColor(color)
+        .setDescription(`✅ Equipped **${purchase.name}** on your card!\n> *❝ ${purchase.quote_text} ❞*`)
+        .setFooter({ text: 'Run ,credits to see it' })] });
+    }
+
+    // ── Catalog quote path ───────────────────────────────────────────────────
+    const id = parseInt(raw);
     if (isNaN(id)) {
       return message.reply({ embeds: [new EmbedBuilder().setColor(RED)
-        .setDescription('❌ Usage: `,equipquote <id>`\nSee your owned quotes with `,myquotes`.')] });
+        .setDescription('❌ Usage: `,equipquote <id>` — see `,myquotes` for your quotes.')] });
     }
 
     const q = QUOTE_CATALOG.find(x => x.id === id);
     if (!q) {
       return message.reply({ embeds: [new EmbedBuilder().setColor(RED)
-        .setDescription(`❌ Quote #${id} doesn't exist.`)] });
+        .setDescription(`❌ Catalog quote #${id} doesn't exist. Use \`,quotes\` to browse.`)] });
     }
 
     if (!db.hasUserOwnedQuote(guildId, userId, id)) {
@@ -1661,7 +1723,7 @@ const customquote = {
     const guildId = message.guild.id;
     const userId  = message.author.id;
     const s       = db.getCreditSettings(guildId);
-    const cost    = s.custom_quote_cost ?? 2500;
+    const cost    = s.custom_quote_cost ?? 15000;
 
     if (!args.length) {
       return message.reply({ embeds: [new EmbedBuilder().setColor(BLUE)

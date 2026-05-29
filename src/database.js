@@ -1995,7 +1995,9 @@ function _runSchema() {
   try { db.run('UPDATE credit_settings SET custom_role_cost = 800000 WHERE custom_role_cost = 500'); } catch (_) {}
   try { db.run('ALTER TABLE credit_settings ADD COLUMN custom_role_update_cost INTEGER DEFAULT 0'); } catch (_) {}
   try { db.run('ALTER TABLE credit_settings ADD COLUMN max_custom_roles INTEGER DEFAULT 1');       } catch (_) {}
-  try { db.run('ALTER TABLE credit_settings ADD COLUMN custom_quote_cost INTEGER DEFAULT 2500');   } catch (_) {}
+  try { db.run('ALTER TABLE credit_settings ADD COLUMN custom_quote_cost INTEGER DEFAULT 15000');  } catch (_) {}
+  try { db.run('UPDATE credit_settings SET custom_quote_cost = 15000 WHERE custom_quote_cost = 2500'); } catch (_) {}
+  try { db.run("ALTER TABLE shop_items ADD COLUMN quote_text TEXT DEFAULT ''");                     } catch (_) {}
 
   db.run(`CREATE TABLE IF NOT EXISTS staff_checkin_settings (
   guild_id TEXT PRIMARY KEY,
@@ -2114,8 +2116,8 @@ function getShopItemByName(guildId, name) {
 }
 function addShopItem(data) {
   db.run(
-    'INSERT INTO shop_items (guild_id, name, description, price, type, color, role_name, role_id, channel_id, stock, sold, active, rarity, theme_name) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 1, ?, ?)',
-    [data.guild_id, data.name, data.description || '', data.price, data.type, data.color || null, data.role_name || null, data.role_id || null, data.channel_id || null, data.stock ?? -1, data.rarity || 'common', data.theme_name || null],
+    'INSERT INTO shop_items (guild_id, name, description, price, type, color, role_name, role_id, channel_id, stock, sold, active, rarity, theme_name, quote_text) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 1, ?, ?, ?)',
+    [data.guild_id, data.name, data.description || '', data.price, data.type, data.color || null, data.role_name || null, data.role_id || null, data.channel_id || null, data.stock ?? -1, data.rarity || 'common', data.theme_name || null, data.quote_text || null],
   );
   return db.get('SELECT last_insert_rowid() as id').id;
 }
@@ -2151,7 +2153,7 @@ function addUserPurchase(guildId, userId, itemId) {
 }
 function getUserPurchases(guildId, userId) {
   return db.all(
-    'SELECT p.*, s.name, s.type, s.color, s.price FROM user_shop_purchases p JOIN shop_items s ON p.item_id=s.id WHERE p.guild_id=? AND p.user_id=? ORDER BY p.bought_at DESC',
+    'SELECT p.*, s.name, s.type, s.color, s.price, s.quote_text FROM user_shop_purchases p JOIN shop_items s ON p.item_id=s.id WHERE p.guild_id=? AND p.user_id=? ORDER BY p.bought_at DESC',
     [guildId, userId],
   );
 }
