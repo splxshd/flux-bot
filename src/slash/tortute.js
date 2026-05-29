@@ -200,10 +200,10 @@ module.exports = [{
             components: buildRows(count, goal, true),
           });
 
-          // Tenor URL as content = Discord auto-embeds it as an animated GIF
           await message.reply({
-            content: `💀 ${targetUser} reached **${count}/${goal} rocks** and got kicked.\n${FINISH_GIF}`,
+            content: `💀 ${targetUser} reached **${count}/${goal} rocks** and got kicked.`,
           });
+          await message.channel.send({ content: FINISH_GIF });
 
           try {
             await targetMember.kick(`Tortute command by ${interaction.user.tag}: ${reason}`);
