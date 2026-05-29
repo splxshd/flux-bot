@@ -2280,24 +2280,35 @@ function _weekStr() {
 function generateUserDailyShop(guildId, userId) {
   const date   = _todayStr();
   const cached = db.get('SELECT item_ids FROM user_daily_shops WHERE guild_id=? AND user_id=? AND date=?', [guildId, userId, date]);
-  if (cached) return JSON.parse(cached.item_ids);
+  if (cached) {
+    const ids = JSON.parse(cached.item_ids);
+    // Don't trust a cached empty list — item pool may have grown since then
+    if (ids.length > 0) return ids;
+  }
   const items    = db.all('SELECT * FROM shop_items WHERE guild_id=? AND active=1', [guildId]);
   const selected = _weightedSelect(items, `${userId}:daily:${date}`, 4);
   const ids      = selected.map(i => i.id);
-  db.run('INSERT OR REPLACE INTO user_daily_shops (guild_id, user_id, date, item_ids) VALUES (?, ?, ?, ?)',
-    [guildId, userId, date, JSON.stringify(ids)]);
+  if (ids.length > 0) {
+    db.run('INSERT OR REPLACE INTO user_daily_shops (guild_id, user_id, date, item_ids) VALUES (?, ?, ?, ?)',
+      [guildId, userId, date, JSON.stringify(ids)]);
+  }
   return ids;
 }
 
 function generateUserWeeklyShop(guildId, userId) {
   const week   = _weekStr();
   const cached = db.get('SELECT item_ids FROM user_weekly_shops WHERE guild_id=? AND user_id=? AND week=?', [guildId, userId, week]);
-  if (cached) return JSON.parse(cached.item_ids);
+  if (cached) {
+    const ids = JSON.parse(cached.item_ids);
+    if (ids.length > 0) return ids;
+  }
   const items    = db.all('SELECT * FROM shop_items WHERE guild_id=? AND active=1', [guildId]);
   const selected = _weightedSelect(items, `${userId}:weekly:${week}`, 6);
   const ids      = selected.map(i => i.id);
-  db.run('INSERT OR REPLACE INTO user_weekly_shops (guild_id, user_id, week, item_ids) VALUES (?, ?, ?, ?)',
-    [guildId, userId, week, JSON.stringify(ids)]);
+  if (ids.length > 0) {
+    db.run('INSERT OR REPLACE INTO user_weekly_shops (guild_id, user_id, week, item_ids) VALUES (?, ?, ?, ?)',
+      [guildId, userId, week, JSON.stringify(ids)]);
+  }
   return ids;
 }
 

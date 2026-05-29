@@ -43,19 +43,24 @@ function drawCrack(ctx, sx, sy, len, angle, depth, rng) {
 }
 function sakuraTree(ctx, tx, baseY) {
   ctx.save(); ctx.strokeStyle='rgba(110,50,70,0.22)'; ctx.lineCap='round'; ctx.lineJoin='round';
-  ctx.lineWidth=11; ctx.beginPath(); ctx.moveTo(tx,baseY); ctx.quadraticCurveTo(tx+4,baseY-80,tx,baseY-165); ctx.stroke();
+  // S-curve trunk using bezier
+  ctx.lineWidth=11; ctx.beginPath(); ctx.moveTo(tx,baseY); ctx.bezierCurveTo(tx+14,baseY-55,tx-10,baseY-110,tx+4,baseY-165); ctx.stroke();
   const branches=[
-    {sx:tx,sy:baseY-70, ex:tx-55,ey:baseY-130,w:6},{sx:tx,sy:baseY-70, ex:tx+50,ey:baseY-125,w:6},
-    {sx:tx,sy:baseY-110,ex:tx-48,ey:baseY-170,w:5},{sx:tx,sy:baseY-110,ex:tx+45,ey:baseY-165,w:4},
-    {sx:tx,sy:baseY-145,ex:tx-38,ey:baseY-205,w:4},{sx:tx,sy:baseY-145,ex:tx+35,ey:baseY-200,w:3},
-    {sx:tx,sy:baseY-165,ex:tx-22,ey:baseY-225,w:3},{sx:tx,sy:baseY-165,ex:tx+20,ey:baseY-220,w:2},
+    {sx:tx,sy:baseY-70, cpx:tx-34,cpy:baseY-96, ex:tx-70,ey:baseY-118,w:6.5},
+    {sx:tx,sy:baseY-70, cpx:tx+32,cpy:baseY-93, ex:tx+64,ey:baseY-114,w:6.5},
+    {sx:tx,sy:baseY-108,cpx:tx-30,cpy:baseY-138,ex:tx-60,ey:baseY-164,w:5},
+    {sx:tx,sy:baseY-108,cpx:tx+28,cpy:baseY-136,ex:tx+54,ey:baseY-159,w:4.5},
+    {sx:tx,sy:baseY-140,cpx:tx-24,cpy:baseY-168,ex:tx-50,ey:baseY-196,w:4},
+    {sx:tx,sy:baseY-140,cpx:tx+22,cpy:baseY-166,ex:tx+46,ey:baseY-192,w:3.5},
+    {sx:tx,sy:baseY-162,cpx:tx-15,cpy:baseY-190,ex:tx-32,ey:baseY-218,w:3},
+    {sx:tx,sy:baseY-162,cpx:tx+13,cpy:baseY-188,ex:tx+28,ey:baseY-214,w:2.5},
   ];
   branches.forEach(b=>{
-    ctx.lineWidth=b.w; ctx.beginPath(); ctx.moveTo(b.sx,b.sy); ctx.lineTo(b.ex,b.ey); ctx.stroke();
-    const ang=Math.atan2(b.ey-b.sy,b.ex-b.sx), len=Math.hypot(b.ex-b.sx,b.ey-b.sy);
+    ctx.lineWidth=b.w; ctx.beginPath(); ctx.moveTo(b.sx,b.sy); ctx.quadraticCurveTo(b.cpx,b.cpy,b.ex,b.ey); ctx.stroke();
+    const ang=Math.atan2(b.ey-b.cpy,b.ex-b.cpx), len=Math.hypot(b.ex-b.sx,b.ey-b.sy)*0.36;
     ctx.lineWidth=b.w*0.5;
-    ctx.beginPath(); ctx.moveTo(b.ex,b.ey); ctx.lineTo(b.ex+Math.cos(ang-0.55)*len*0.42,b.ey+Math.sin(ang-0.55)*len*0.42); ctx.stroke();
-    ctx.beginPath(); ctx.moveTo(b.ex,b.ey); ctx.lineTo(b.ex+Math.cos(ang+0.45)*len*0.38,b.ey+Math.sin(ang+0.45)*len*0.38); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(b.ex,b.ey); ctx.lineTo(b.ex+Math.cos(ang-0.62)*len,b.ey+Math.sin(ang-0.62)*len); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(b.ex,b.ey); ctx.lineTo(b.ex+Math.cos(ang+0.52)*len,b.ey+Math.sin(ang+0.52)*len); ctx.stroke();
   });
   ctx.restore();
 }
@@ -107,7 +112,7 @@ async function generateThemedCard({ username, avatarUrl, balance, totalEarned, s
     r2.addColorStop(0,'#00ffee'); r2.addColorStop(0.33,'#ff00cc'); r2.addColorStop(0.66,'#aaff00'); r2.addColorStop(1,'#00ffee');
     x.fillStyle=r2; x.fillRect(-W,-H,W*2,H*2); x.restore();
     const sr=mkRng(12);
-    for(let i=0;i<55;i++){
+    for(let i=0;i<35;i++){
       const sx=sr()*W,sy=sr()*H,ss=sr()*1.8+0.4;
       x.save(); x.shadowColor=`hsl(${sr()*360},100%,70%)`; x.shadowBlur=6;
       x.fillStyle=`rgba(255,255,255,${sr()*0.5+0.3})`; x.beginPath(); x.arc(sx,sy,ss,0,Math.PI*2); x.fill(); x.restore();
@@ -144,8 +149,9 @@ async function generateThemedCard({ username, avatarUrl, balance, totalEarned, s
     const bg2=x.createLinearGradient(200,0,420,0);
     bg2.addColorStop(0,'#ff88cc'); bg2.addColorStop(0.5,'#88ffee'); bg2.addColorStop(1,'#aaaaff');
     x.save(); x.shadowColor='rgba(150,150,255,0.6)'; x.shadowBlur=18;
-    x.fillStyle=bg2; x.font=`bold 50px ${FB}`; x.textBaseline='top'; x.fillText(BAL,200,130); x.restore();
-    x.fillStyle='rgba(255,255,255,0.28)'; x.font=`13px ${FN}`; x.textBaseline='top'; x.fillText('credits',200+x.measureText(BAL).width+8,163);
+    x.fillStyle=bg2; x.font=`bold 48px ${FB}`; x.textBaseline='top'; x.fillText(BAL,200,128);
+    const _bw=x.measureText(BAL).width; x.restore();
+    x.fillStyle='rgba(255,255,255,0.28)'; x.font=`12px ${FN}`; x.textBaseline='top'; x.fillText('credits',200+_bw+8,156);
     x.fillStyle='rgba(255,255,255,0.1)'; x.fillRect(200,196,268,1);
     x.fillStyle='rgba(255,255,255,0.33)'; x.font=`13px ${FN}`; x.textBaseline='top'; x.fillText('TOTAL EARNED',200,202);
     x.font=`bold 13px ${FB}`; x.fillStyle='rgba(180,210,255,0.65)'; x.fillText(TOT,200+x.measureText('TOTAL EARNED ').width,202);
@@ -195,9 +201,6 @@ async function generateThemedCard({ username, avatarUrl, balance, totalEarned, s
     [{sx:300,sy:85,sw:52,sh:7,col:'#ff2288'},{sx:585,sy:66,sw:40,sh:7,col:'#00ffcc'},{sx:700,sy:106,sw:30,sh:6,col:'#ffcc00'},{sx:425,sy:54,sw:22,sh:6,col:'#44aaff'},{sx:510,sy:98,sw:16,sh:5,col:'#ff6600'},{sx:660,sy:78,sw:28,sh:6,col:'#dd44ff'}].forEach(s=>{
       x.save(); x.shadowColor=s.col; x.shadowBlur=25; x.globalAlpha=0.78; x.fillStyle=s.col; x.fillRect(s.sx,s.sy,s.sw,s.sh); x.restore();
     });
-    const rr=mkRng(55); x.save(); x.globalAlpha=0.055; x.strokeStyle='#88ccff'; x.lineWidth=1;
-    for(let i=0;i<70;i++){ const rx2=rr()*W,ry2=rr()*H,rl=rr()*18+5; x.beginPath(); x.moveTo(rx2,ry2); x.lineTo(rx2+2,ry2+rl); x.stroke(); }
-    x.restore();
     const ts=x.createLinearGradient(0,0,W,0);
     ts.addColorStop(0,'#ff2288'); ts.addColorStop(0.5,'#00ffcc'); ts.addColorStop(1,'#ff2288');
     x.fillStyle=ts; x.fillRect(0,0,W,2); x.fillRect(0,H-2,W,2);
@@ -217,8 +220,9 @@ async function generateThemedCard({ username, avatarUrl, balance, totalEarned, s
 
     x.fillStyle='rgba(0,255,200,0.42)'; x.font=`11px ${FB}`; x.textBaseline='top'; x.fillText('BALANCE',200,110);
     x.save(); x.shadowColor='#00ffcc'; x.shadowBlur=14;
-    x.fillStyle='#ffe066'; x.font=`bold 48px ${FB}`; x.textBaseline='top'; x.fillText(BAL,200,124); x.restore();
-    x.fillStyle='rgba(0,255,200,0.42)'; x.font=`13px ${FN}`; x.textBaseline='top'; x.fillText('credits',200+x.measureText(BAL).width+8,158);
+    x.fillStyle='#ffe066'; x.font=`bold 48px ${FB}`; x.textBaseline='top'; x.fillText(BAL,200,124);
+    const _bw=x.measureText(BAL).width; x.restore();
+    x.fillStyle='rgba(0,255,200,0.42)'; x.font=`12px ${FN}`; x.textBaseline='top'; x.fillText('credits',200+_bw+8,152);
     x.fillStyle='rgba(0,200,255,0.2)'; x.fillRect(200,192,268,1);
     x.fillStyle='rgba(0,255,200,0.4)'; x.font=`13px ${FN}`; x.textBaseline='top'; x.fillText('TOTAL EARNED',200,198);
     x.font=`bold 13px ${FB}`; x.fillStyle='rgba(255,220,80,0.72)'; x.fillText(TOT,200+x.measureText('TOTAL EARNED ').width,198);
@@ -246,7 +250,7 @@ async function generateThemedCard({ username, avatarUrl, balance, totalEarned, s
     const bloom=x.createRadialGradient(W*0.45,H*0.45,0,W*0.45,H*0.45,W*0.52);
     bloom.addColorStop(0,'rgba(255,190,215,0.35)'); bloom.addColorStop(1,'rgba(255,200,220,0)');
     x.fillStyle=bloom; x.fillRect(0,0,W,H);
-    sakuraTree(x,792,H+20);
+    sakuraTree(x,760,H+20);
     const pr=mkRng(88);
     for(let i=0;i<90;i++){
       x.save(); const zone=pr(); let px,py;
@@ -258,7 +262,7 @@ async function generateThemedCard({ username, avatarUrl, balance, totalEarned, s
       x.fillStyle=`rgba(255,${142+pr()*65},${160+pr()*50},${pr()*0.45+0.08})`; x.fill(); x.restore();
     }
     const br=mkRng(34);
-    [[792,60],[760,95],[820,90],[745,140],[835,135],[775,180],[815,170]].forEach(([bx2,by2])=>{
+    [[758,62],[760,90],[810,88],[712,118],[812,120],[700,158],[820,162]].forEach(([bx2,by2])=>{
       for(let i=0;i<6;i++){
         x.save(); x.shadowColor='rgba(255,150,185,0.5)'; x.shadowBlur=6;
         x.fillStyle=`rgba(255,${160+br()*60},${175+br()*45},${br()*0.4+0.35})`;
@@ -289,8 +293,9 @@ async function generateThemedCard({ username, avatarUrl, balance, totalEarned, s
     x.fillStyle='#8a2c4a'; x.font=`bold 10px ${FB}`; x.textBaseline='middle'; x.fillText('✿  SAKURA THEME',208,85);
 
     x.fillStyle='rgba(135,50,80,0.44)'; x.font=`11px ${FB}`; x.textBaseline='top'; x.fillText('BALANCE',200,110);
-    x.fillStyle='#480c24'; x.font=`bold 50px ${FB}`; x.textBaseline='top'; x.fillText(BAL,200,124);
-    x.fillStyle='rgba(155,65,95,0.4)'; x.font=`13px ${FN}`; x.textBaseline='top'; x.fillText('credits',200+x.measureText(BAL).width+8,160);
+    x.fillStyle='#480c24'; x.font=`bold 48px ${FB}`; x.textBaseline='top'; x.fillText(BAL,200,124);
+    const _bw=x.measureText(BAL).width;
+    x.fillStyle='rgba(155,65,95,0.4)'; x.font=`12px ${FN}`; x.textBaseline='top'; x.fillText('credits',200+_bw+8,152);
     x.strokeStyle='rgba(195,115,155,0.25)'; x.lineWidth=1; x.beginPath(); x.moveTo(200,194); x.lineTo(470,194); x.stroke();
     x.fillStyle='rgba(135,50,80,0.4)'; x.font=`13px ${FN}`; x.textBaseline='top'; x.fillText('TOTAL EARNED',200,200);
     x.font=`bold 13px ${FB}`; x.fillStyle='rgba(70,10,36,0.65)'; x.fillText(TOT,200+x.measureText('TOTAL EARNED ').width,200);
@@ -342,8 +347,9 @@ async function generateThemedCard({ username, avatarUrl, balance, totalEarned, s
 
     x.fillStyle='rgba(200,160,60,0.45)'; x.font=`11px ${FB}`; x.textBaseline='top'; x.fillText('TREASURY',204,116);
     x.save(); x.shadowColor='#c8972a'; x.shadowBlur=12;
-    x.fillStyle='#e8c860'; x.font=`bold 50px ${FB}`; x.textBaseline='top'; x.fillText(BAL,204,130); x.restore();
-    x.fillStyle='rgba(200,160,60,0.42)'; x.font=`13px ${FN}`; x.textBaseline='top'; x.fillText('credits',204+x.measureText(BAL).width+8,165);
+    x.fillStyle='#e8c860'; x.font=`bold 48px ${FB}`; x.textBaseline='top'; x.fillText(BAL,204,130);
+    const _bw=x.measureText(BAL).width; x.restore();
+    x.fillStyle='rgba(200,160,60,0.42)'; x.font=`12px ${FN}`; x.textBaseline='top'; x.fillText('credits',204+_bw+8,158);
     x.fillStyle='rgba(200,151,42,0.28)'; x.fillRect(204,196,268,1);
     x.fillStyle='rgba(200,160,60,0.42)'; x.font=`13px ${FN}`; x.textBaseline='top'; x.fillText('TOTAL EARNED',204,202);
     x.font=`bold 13px ${FB}`; x.fillStyle='rgba(232,200,96,0.65)'; x.fillText(TOT,204+x.measureText('TOTAL EARNED ').width,202);
@@ -386,8 +392,9 @@ async function generateThemedCard({ username, avatarUrl, balance, totalEarned, s
     x.fillStyle='#4422aa'; x.font=`bold 11px ${FB}`; x.textBaseline='middle'; x.fillText('✦ GLASS THEME',208,89);
 
     x.fillStyle='rgba(50,25,120,0.52)'; x.font=`11px ${FB}`; x.textBaseline='top'; x.fillText('BALANCE',200,114);
-    x.fillStyle='#180840'; x.font=`bold 50px ${FB}`; x.textBaseline='top'; x.fillText(BAL,200,128);
-    x.fillStyle='rgba(50,25,120,0.42)'; x.font=`13px ${FN}`; x.textBaseline='top'; x.fillText('credits',200+x.measureText(BAL).width+8,163);
+    x.fillStyle='#180840'; x.font=`bold 48px ${FB}`; x.textBaseline='top'; x.fillText(BAL,200,128);
+    const _bw=x.measureText(BAL).width;
+    x.fillStyle='rgba(50,25,120,0.42)'; x.font=`12px ${FN}`; x.textBaseline='top'; x.fillText('credits',200+_bw+8,156);
     x.fillStyle='rgba(255,255,255,0.65)'; x.fillRect(200,196,268,1);
     x.fillStyle='rgba(50,25,120,0.48)'; x.font=`13px ${FN}`; x.textBaseline='top'; x.fillText('TOTAL EARNED',200,202);
     x.font=`bold 13px ${FB}`; x.fillStyle='rgba(30,14,90,0.72)'; x.fillText(TOT,200+x.measureText('TOTAL EARNED ').width,202);
@@ -410,7 +417,7 @@ async function generateThemedCard({ username, avatarUrl, balance, totalEarned, s
     bg.addColorStop(0,'#03001a'); bg.addColorStop(0.5,'#080022'); bg.addColorStop(1,'#01030e');
     x.fillStyle=bg; x.fillRect(0,0,W,H);
     const sr=mkRng(42);
-    for(let i=0;i<300;i++){
+    for(let i=0;i<200;i++){
       const sx=sr()*W,sy=sr()*H,ss=sr()<0.92?0.6:sr()*1.8+0.8;
       x.fillStyle=`rgba(255,255,255,${sr()*0.65+0.25})`; x.beginPath(); x.arc(sx,sy,ss,0,Math.PI*2); x.fill();
     }
@@ -451,8 +458,9 @@ async function generateThemedCard({ username, avatarUrl, balance, totalEarned, s
     const bg2=x.createLinearGradient(200,0,420,0);
     bg2.addColorStop(0,'#cc88ff'); bg2.addColorStop(1,'#6699ff');
     x.save(); x.shadowColor='#8800cc'; x.shadowBlur=14;
-    x.fillStyle=bg2; x.font=`bold 50px ${FB}`; x.textBaseline='top'; x.fillText(BAL,200,130); x.restore();
-    x.fillStyle='rgba(100,150,255,0.45)'; x.font=`13px ${FN}`; x.textBaseline='top'; x.fillText('credits',200+x.measureText(BAL).width+8,166);
+    x.fillStyle=bg2; x.font=`bold 48px ${FB}`; x.textBaseline='top'; x.fillText(BAL,200,130);
+    const _bw=x.measureText(BAL).width; x.restore();
+    x.fillStyle='rgba(100,150,255,0.45)'; x.font=`12px ${FN}`; x.textBaseline='top'; x.fillText('credits',200+_bw+8,158);
     x.fillStyle='rgba(136,0,204,0.25)'; x.fillRect(200,196,268,1);
     x.fillStyle='rgba(175,135,255,0.42)'; x.font=`13px ${FN}`; x.textBaseline='top'; x.fillText('TOTAL EARNED',200,202);
     x.font=`bold 13px ${FB}`; x.fillStyle='rgba(100,150,255,0.72)'; x.fillText(TOT,200+x.measureText('TOTAL EARNED ').width,202);
@@ -501,8 +509,9 @@ async function generateThemedCard({ username, avatarUrl, balance, totalEarned, s
     x.fillStyle='#c09436'; x.font=`bold 10px ${FB}`; x.textBaseline='middle'; x.fillText('✦ ACADEMIA THEME',207,89);
 
     x.fillStyle='rgba(176,136,48,0.48)'; x.font=`11px ${FB}`; x.textBaseline='top'; x.fillText('BALANCE',200,116);
-    x.fillStyle='#d0a040'; x.font=`bold 50px ${FB}`; x.textBaseline='top'; x.fillText(BAL,200,130);
-    x.fillStyle='rgba(176,136,48,0.42)'; x.font=`13px ${FN}`; x.textBaseline='top'; x.fillText('credits',200+x.measureText(BAL).width+8,166);
+    x.fillStyle='#d0a040'; x.font=`bold 48px ${FB}`; x.textBaseline='top'; x.fillText(BAL,200,130);
+    const _bw=x.measureText(BAL).width;
+    x.fillStyle='rgba(176,136,48,0.42)'; x.font=`12px ${FN}`; x.textBaseline='top'; x.fillText('credits',200+_bw+8,158);
     x.fillStyle='rgba(176,136,48,0.2)'; x.fillRect(200,196,268,1);
     x.fillStyle='rgba(176,136,48,0.42)'; x.font=`13px ${FN}`; x.textBaseline='top'; x.fillText('TOTAL EARNED',200,202);
     x.font=`bold 13px ${FB}`; x.fillStyle='rgba(210,165,70,0.68)'; x.fillText(TOT,200+x.measureText('TOTAL EARNED ').width,202);
@@ -549,8 +558,9 @@ async function generateThemedCard({ username, avatarUrl, balance, totalEarned, s
     x.fillStyle='#5a3a1a'; x.font=`bold 10px ${FB}`; x.textBaseline='middle'; x.fillText('✦ PAPER THEME',199,89);
 
     x.fillStyle='rgba(90,58,26,0.55)'; x.font=`11px ${FB}`; x.textBaseline='top'; x.fillText('BALANCE',192,116);
-    x.fillStyle='#180c04'; x.font=`bold 50px ${FB}`; x.textBaseline='top'; x.fillText(BAL,192,130);
-    x.fillStyle='rgba(90,58,26,0.42)'; x.font=`13px ${FN}`; x.textBaseline='top'; x.fillText('credits',192+x.measureText(BAL).width+8,164);
+    x.fillStyle='#180c04'; x.font=`bold 48px ${FB}`; x.textBaseline='top'; x.fillText(BAL,192,130);
+    const _bw=x.measureText(BAL).width;
+    x.fillStyle='rgba(90,58,26,0.42)'; x.font=`12px ${FN}`; x.textBaseline='top'; x.fillText('credits',192+_bw+8,158);
     x.strokeStyle='rgba(90,58,26,0.2)'; x.lineWidth=1; x.beginPath(); x.moveTo(192,196); x.lineTo(462,196); x.stroke();
     x.fillStyle='rgba(90,58,26,0.48)'; x.font=`13px ${FN}`; x.textBaseline='top'; x.fillText('TOTAL EARNED',192,202);
     x.font=`bold 13px ${FB}`; x.fillStyle='rgba(38,20,8,0.68)'; x.fillText(TOT,192+x.measureText('TOTAL EARNED ').width,202);
