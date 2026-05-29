@@ -1010,8 +1010,50 @@ const pointhelp = {
   },
 };
 
+// ── ,previewthemes ────────────────────────────────────────────────────────────
+const previewthemes = {
+  name: 'previewthemes',
+  aliases: ['themepreviews', 'cardthemes', 'cardpreviews'],
+  async execute(message) {
+    const { generateThemedCard, THEME_NAMES } = require('../utils/themedCard');
+
+    const guildId  = message.guild.id;
+    const items    = db.getShopItems(guildId).slice(0, 8);
+    const data     = db.getCredits(guildId, message.author.id);
+    const avatarUrl = message.author.displayAvatarURL({ extension: 'png', size: 256, forceStatic: true });
+
+    const loading = await message.reply({ embeds: [new EmbedBuilder().setColor(GOLD)
+      .setDescription(`🎨 Generating **${THEME_NAMES.length}** theme previews, one sec...`)] });
+
+    const files = [];
+    for (const theme of THEME_NAMES) {
+      try {
+        const buf = await generateThemedCard({
+          username:    message.author.username,
+          avatarUrl,
+          balance:     data.amount,
+          totalEarned: data.total_earned,
+          shopItems:   items,
+          theme,
+        });
+        const { AttachmentBuilder } = require('discord.js');
+        files.push(new AttachmentBuilder(buf, { name: `theme_${theme}.png` }));
+      } catch (e) {
+        console.error(`[previewthemes:${theme}]`, e);
+      }
+    }
+
+    await loading.delete().catch(() => {});
+    await message.reply({
+      content: `🎨 **Card Theme Previews** — which one do you want? Buy them from the shop once set up.\n` +
+               THEME_NAMES.map((t, i) => `**${i+1}.** \`${t}\``).join(' • '),
+      files,
+    });
+  },
+};
+
 module.exports = [
   credits, shop, buy, inventory, creditlead,
   additem, removeitem, givecr, takecr, setcr, reseteco, shopconfig,
-  myrole, creditsetup, pointhelp,
+  myrole, creditsetup, pointhelp, previewthemes,
 ];
