@@ -692,6 +692,9 @@ const THEME_DISPLAY = {
   inferno:     '🔥 Inferno',
   synthwave:   '◈ Synthwave',
   ocean:       '🌊 Ocean',
+  void:        '🕳️ Void',
+  prismatic:   '💎 Prismatic',
+  glitch:      '⌗ Glitch',
 };
 const RARITY_BADGE_S = { common: '⬜ Common', uncommon: '🟩 Uncommon', rare: '🟦 Rare', epic: '🟪 Epic', legendary: '🟨 Legendary' };
 
