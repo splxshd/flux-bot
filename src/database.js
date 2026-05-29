@@ -49,22 +49,28 @@ function _convertFromWAL(targetPath) {
   }
 }
 
-const oldDbPath  = path.join(dataDir, 'nights.db');
-const prev2DbPath = path.join(dataDir, 'nights4.db');
+const oldDbPath   = path.join(dataDir, 'nights.db');
+const prev2DbPath = path.join(dataDir, 'nights3.db');
 
 // ─── Pre-open restore: raw file copy before ANY SQLite connection opens ───────
 // Uses a marker file so this runs exactly once even if nights4.db already has
 // schema tables (which makes it >8KB even when empty of real user data).
 (function _restoreIfEmpty() {
-  const marker = path.join(dataDir, '.restored4');
+  const marker = path.join(dataDir, '.restored5');
   if (fs.existsSync(marker)) return; // already ran once, skip
 
+  // Log everything in the data dir so we can see what's available
   try {
-    // Priority: nights3.db.bak.* → nights3.db → nights2.db.bak.* → nights2.db → nights.db.bak.* → nights.db
+    const dirContents = fs.readdirSync(dataDir);
+    console.log('[DB] data dir contents:', dirContents);
+  } catch (_) {}
+
+  try {
+    // Priority: nights4.db.bak.* → nights3.db.bak.* → nights3.db → nights2.db.bak.* → nights2.db → nights.db.bak.* → nights.db
     let src = null;
     try {
       const baks = fs.readdirSync(dataDir)
-        .filter(f => f.startsWith('nights3.db.bak.') || f.startsWith('nights2.db.bak.') || f.startsWith('nights.db.bak.'))
+        .filter(f => f.startsWith('nights4.db.bak.') || f.startsWith('nights3.db.bak.') || f.startsWith('nights2.db.bak.') || f.startsWith('nights.db.bak.'))
         .sort().reverse();
       for (const b of baks) {
         const p = path.join(dataDir, b);
@@ -83,7 +89,7 @@ const prev2DbPath = path.join(dataDir, 'nights4.db');
     }
 
     if (!src) {
-      console.log('[DB] No old database found — starting fresh.');
+      console.log('[DB] No restore source found — starting fresh.');
       fs.writeFileSync(marker, '1');
       return;
     }
