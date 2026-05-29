@@ -3,6 +3,7 @@
 const { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, PermissionFlagsBits, AttachmentBuilder } = require('discord.js');
 const db = require('../database');
 const { generateCreditsCard } = require('../utils/creditsCard');
+const { generateThemedCard, THEME_NAMES } = require('../utils/themedCard');
 
 const GREEN  = '#57F287';
 const RED    = '#ED4245';
@@ -35,14 +36,29 @@ const credits = {
     const s       = db.getCreditSettings(guildId);
     const items   = db.getShopItems(guildId);
 
+    const equippedTheme = db.getUserTheme(guildId, target.id);
+    const avatarUrl = target.displayAvatarURL({ extension: 'png', size: 256, forceStatic: true });
+
     try {
-      const buffer = await generateCreditsCard({
-        username:    target.username,
-        avatarUrl:   target.displayAvatarURL({ extension: 'png', size: 256, forceStatic: true }),
-        balance:     data.amount,
-        totalEarned: data.total_earned,
-        shopItems:   items,
-      });
+      let buffer;
+      if (equippedTheme && THEME_NAMES.includes(equippedTheme)) {
+        buffer = await generateThemedCard({
+          username:    target.username,
+          avatarUrl,
+          balance:     data.amount,
+          totalEarned: data.total_earned,
+          shopItems:   items,
+          theme:       equippedTheme,
+        });
+      } else {
+        buffer = await generateCreditsCard({
+          username:    target.username,
+          avatarUrl,
+          balance:     data.amount,
+          totalEarned: data.total_earned,
+          shopItems:   items,
+        });
+      }
       const attachment = new AttachmentBuilder(buffer, { name: 'credits.png' });
       await message.reply({ files: [attachment] });
     } catch (err) {
@@ -1015,15 +1031,13 @@ const previewthemes = {
   name: 'previewthemes',
   aliases: ['themepreviews', 'cardthemes', 'cardpreviews'],
   async execute(message) {
-    const { generateThemedCard, THEME_NAMES } = require('../utils/themedCard');
-
-    const guildId  = message.guild.id;
-    const items    = db.getShopItems(guildId).slice(0, 8);
-    const data     = db.getCredits(guildId, message.author.id);
+    const guildId   = message.guild.id;
+    const items     = db.getShopItems(guildId).slice(0, 4);
+    const data      = db.getCredits(guildId, message.author.id);
     const avatarUrl = message.author.displayAvatarURL({ extension: 'png', size: 256, forceStatic: true });
 
     const loading = await message.reply({ embeds: [new EmbedBuilder().setColor(GOLD)
-      .setDescription(`🎨 Generating **${THEME_NAMES.length}** theme previews, one sec...`)] });
+      .setDescription(`🎨 Generating **${THEME_NAMES.length}** card theme previews, one sec...`)] });
 
     const files = [];
     for (const theme of THEME_NAMES) {
@@ -1036,7 +1050,6 @@ const previewthemes = {
           shopItems:   items,
           theme,
         });
-        const { AttachmentBuilder } = require('discord.js');
         files.push(new AttachmentBuilder(buf, { name: `theme_${theme}.png` }));
       } catch (e) {
         console.error(`[previewthemes:${theme}]`, e);
@@ -1045,97 +1058,228 @@ const previewthemes = {
 
     await loading.delete().catch(() => {});
     await message.reply({
-      content: `🎨 **Card Theme Previews** — which one do you want? Buy them from the shop once set up.\n` +
+      content: `🎨 **Card Theme Previews** — buy them with \`,buytheme <name>\`\n` +
                THEME_NAMES.map((t, i) => `**${i+1}.** \`${t}\``).join(' • '),
       files,
     });
   },
 };
 
-// ── ,previewthemes2 ───────────────────────────────────────────────────────────
-const previewthemes2 = {
-  name: 'previewthemes2',
-  aliases: ['themes2', 'cardthemes2', 'newthemes'],
+// ── ,themes ───────────────────────────────────────────────────────────────────
+// Lists all 8 themes, their prices (guild-specific), and which ones you own.
+const themes = {
+  name: 'themes',
+  aliases: ['cardthemelist', 'themelist', 'mythemes'],
   async execute(message) {
-    const { generateThemedCard2, THEME_NAMES_V2 } = require('../utils/themedCard');
+    const guildId = message.guild.id;
+    const userId  = message.author.id;
 
-    const guildId   = message.guild.id;
-    const items     = db.getShopItems(guildId).slice(0, 4);
-    const data      = db.getCredits(guildId, message.author.id);
-    const avatarUrl = message.author.displayAvatarURL({ extension: 'png', size: 256, forceStatic: true });
+    const owned     = db.getUserOwnedThemes(guildId, userId);
+    const equipped  = db.getUserTheme(guildId, userId);
+    const priceRows = db.getAllThemePrices(guildId);
+    const priceMap  = Object.fromEntries(priceRows.map(r => [r.theme, r.price]));
 
-    const loading = await message.reply({ embeds: [new EmbedBuilder().setColor(GOLD)
-      .setDescription(`🎨 Generating **${THEME_NAMES_V2.length}** new theme previews, one sec...`)] });
+    const DISPLAY = {
+      holographic: '✦ Holographic',
+      city:        '🌃 Neon City',
+      sakura:      '🌸 Sakura',
+      royal:       '♛ Royal',
+      glass:       '💠 Glass',
+      galaxy:      '🌌 Galaxy',
+      academia:    '📚 Academia',
+      paper:       '📜 Paper',
+    };
 
-    const files = [];
-    for (const theme of THEME_NAMES_V2) {
-      try {
-        const buf = await generateThemedCard2({
-          username:    message.author.username,
-          avatarUrl,
-          balance:     data.amount,
-          totalEarned: data.total_earned,
-          shopItems:   items,
-          theme,
-        });
-        files.push(new AttachmentBuilder(buf, { name: `theme_${theme}.png` }));
-      } catch (e) {
-        console.error(`[previewthemes2:${theme}]`, e);
-      }
-    }
-
-    await loading.delete().catch(() => {});
-    await message.reply({
-      content: `🎨 **New Card Theme Previews** — let me know which ones you want to keep!\n` +
-               THEME_NAMES_V2.map((t, i) => `**${i+1}.** \`${t}\``).join(' • '),
-      files,
+    const lines = THEME_NAMES.map(t => {
+      const price   = priceMap[t] ?? 5000;
+      const own     = owned.includes(t) ? '✅' : '❌';
+      const equip   = equipped === t ? ' **(equipped)**' : '';
+      return `${own} **${DISPLAY[t] || t}** — \`${fmt(price)}\` cr${equip}`;
     });
+
+    const embed = new EmbedBuilder()
+      .setColor(GOLD)
+      .setTitle('🎨 Card Themes')
+      .setDescription(lines.join('\n'))
+      .addFields(
+        { name: 'How to buy',   value: '`,buytheme <name>`', inline: true },
+        { name: 'How to equip', value: '`,cardtheme <name>`', inline: true },
+      )
+      .setFooter({ text: 'Use ,previewthemes to see how each looks' });
+
+    await message.reply({ embeds: [embed] });
   },
 };
 
-// ── ,previewthemes3 ───────────────────────────────────────────────────────────
-const previewthemes3 = {
-  name: 'previewthemes3',
-  aliases: ['themes3', 'cardthemes3', 'newthemes3'],
-  async execute(message) {
-    const { generateThemedCard3, THEME_NAMES_V3 } = require('../utils/themedCard');
+// ── ,buytheme <name> ──────────────────────────────────────────────────────────
+const buytheme = {
+  name: 'buytheme',
+  aliases: ['purchasetheme', 'gettheme'],
+  async execute(message, args) {
+    const guildId = message.guild.id;
+    const userId  = message.author.id;
+    const input   = args[0]?.toLowerCase();
 
-    const guildId   = message.guild.id;
-    const items     = db.getShopItems(guildId).slice(0, 4);
-    const data      = db.getCredits(guildId, message.author.id);
-    const avatarUrl = message.author.displayAvatarURL({ extension: 'png', size: 256, forceStatic: true });
-
-    const loading = await message.reply({ embeds: [new EmbedBuilder().setColor(GOLD)
-      .setDescription(`🎨 Generating **${THEME_NAMES_V3.length}** theme previews, one sec...`)] });
-
-    const files = [];
-    for (const theme of THEME_NAMES_V3) {
-      try {
-        const buf = await generateThemedCard3({
-          username:    message.author.username,
-          avatarUrl,
-          balance:     data.amount,
-          totalEarned: data.total_earned,
-          shopItems:   items,
-          theme,
-        });
-        files.push(new AttachmentBuilder(buf, { name: `theme_${theme}.png` }));
-      } catch (e) {
-        console.error(`[previewthemes3:${theme}]`, e);
-      }
+    if (!input) {
+      return message.reply({ embeds: [new EmbedBuilder().setColor(RED)
+        .setDescription(`❌ Usage: \`,buytheme <name>\`\nThemes: ${THEME_NAMES.join(', ')}`)] });
     }
 
-    await loading.delete().catch(() => {});
-    await message.reply({
-      content: `🎨 **New Card Themes** — pick your favourites!\n` +
-               THEME_NAMES_V3.map((t, i) => `**${i+1}.** \`${t}\``).join(' • '),
-      files,
-    });
+    // Fuzzy match — "halographic" → "holographic", "academy" → "academia"
+    const ALIASES_MAP = { halographic: 'holographic', neon: 'city', 'neon city': 'city', academy: 'academia' };
+    const theme = ALIASES_MAP[input] || THEME_NAMES.find(t => t === input || t.startsWith(input)) || null;
+
+    if (!theme) {
+      return message.reply({ embeds: [new EmbedBuilder().setColor(RED)
+        .setDescription(`❌ Unknown theme \`${input}\`.\nAvailable: ${THEME_NAMES.map(t => `\`${t}\``).join(', ')}`)] });
+    }
+
+    if (db.hasTheme(guildId, userId, theme)) {
+      return message.reply({ embeds: [new EmbedBuilder().setColor(YELLOW)
+        .setDescription(`✅ You already own the **${theme}** theme! Equip it with \`,cardtheme ${theme}\`.`)] });
+    }
+
+    const price = db.getThemePrice(guildId, theme);
+    const data  = db.getCredits(guildId, userId);
+
+    if (data.amount < price) {
+      return message.reply({ embeds: [new EmbedBuilder().setColor(RED)
+        .setDescription(`❌ You need **${fmt(price)}** credits but only have **${fmt(data.amount)}**.`)] });
+    }
+
+    db.spendCredits(guildId, userId, price);
+    db.addOwnedTheme(guildId, userId, theme);
+    db.setEquippedTheme(guildId, userId, theme);
+
+    await message.reply({ embeds: [new EmbedBuilder().setColor(GREEN)
+      .setTitle('🎨 Theme Purchased!')
+      .setDescription(`You bought and equipped the **${theme}** card theme for **${fmt(price)}** credits.\nYour credits card will now use this theme!`)
+      .addFields({ name: 'Remaining balance', value: `**${fmt(data.amount - price)}** credits`, inline: true })] });
+  },
+};
+
+// ── ,cardtheme [name] ─────────────────────────────────────────────────────────
+// With name: equips an owned theme (or "none" to remove)
+// Without name: shows current equipped theme
+const cardtheme = {
+  name: 'cardtheme',
+  aliases: ['settheme', 'equiptheme', 'mytheme'],
+  async execute(message, args) {
+    const guildId = message.guild.id;
+    const userId  = message.author.id;
+    const input   = args[0]?.toLowerCase();
+
+    if (!input) {
+      const equipped = db.getUserTheme(guildId, userId);
+      const owned    = db.getUserOwnedThemes(guildId, userId);
+      return message.reply({ embeds: [new EmbedBuilder().setColor(BLUE)
+        .setTitle('🎨 Your Card Theme')
+        .addFields(
+          { name: 'Equipped', value: equipped ? `\`${equipped}\`` : 'None (default card)', inline: true },
+          { name: 'Owned',    value: owned.length ? owned.map(t => `\`${t}\``).join(', ') : 'None', inline: true },
+        )
+        .setFooter({ text: 'Use ,buytheme <name> to purchase themes' })] });
+    }
+
+    if (input === 'none' || input === 'default' || input === 'remove') {
+      db.setEquippedTheme(guildId, userId, null);
+      return message.reply({ embeds: [new EmbedBuilder().setColor(GREEN)
+        .setDescription('✅ Removed your equipped theme. Your credits card will show the default style.')] });
+    }
+
+    const ALIASES_MAP = { halographic: 'holographic', neon: 'city', 'neon city': 'city', academy: 'academia' };
+    const theme = ALIASES_MAP[input] || THEME_NAMES.find(t => t === input || t.startsWith(input)) || null;
+
+    if (!theme) {
+      return message.reply({ embeds: [new EmbedBuilder().setColor(RED)
+        .setDescription(`❌ Unknown theme \`${input}\`.\nAvailable: ${THEME_NAMES.map(t => `\`${t}\``).join(', ')}`)] });
+    }
+
+    if (!db.hasTheme(guildId, userId, theme)) {
+      const price = db.getThemePrice(guildId, theme);
+      return message.reply({ embeds: [new EmbedBuilder().setColor(RED)
+        .setDescription(`❌ You don't own the **${theme}** theme. Buy it with \`,buytheme ${theme}\` for **${fmt(price)}** credits.`)] });
+    }
+
+    db.setEquippedTheme(guildId, userId, theme);
+    await message.reply({ embeds: [new EmbedBuilder().setColor(GREEN)
+      .setDescription(`✅ Equipped the **${theme}** card theme! Your \`,credits\` card will now use it.`)] });
+  },
+};
+
+// ── ,givetheme @user <name> ───────────────────────────────────────────────────
+// Admin: give a theme to a user for free
+const givetheme = {
+  name: 'givetheme',
+  aliases: ['addtheme'],
+  async execute(message, args) {
+    if (!isAdmin(message)) {
+      return message.reply({ embeds: [new EmbedBuilder().setColor(RED)
+        .setDescription('❌ You need **Manage Server** permission to use this.')] });
+    }
+
+    const guildId = message.guild.id;
+    const target  = message.mentions.users.first();
+    const input   = args[1]?.toLowerCase() || args[0]?.toLowerCase();
+
+    if (!target || !input || message.mentions.users.size === 0) {
+      return message.reply({ embeds: [new EmbedBuilder().setColor(RED)
+        .setDescription('❌ Usage: `,givetheme @user <theme>`')] });
+    }
+
+    const ALIASES_MAP = { halographic: 'holographic', neon: 'city', academy: 'academia' };
+    const theme = ALIASES_MAP[input] || THEME_NAMES.find(t => t === input || t.startsWith(input)) || null;
+
+    if (!theme) {
+      return message.reply({ embeds: [new EmbedBuilder().setColor(RED)
+        .setDescription(`❌ Unknown theme \`${input}\`. Available: ${THEME_NAMES.join(', ')}`)] });
+    }
+
+    db.addOwnedTheme(guildId, target.id, theme);
+
+    await message.reply({ embeds: [new EmbedBuilder().setColor(GREEN)
+      .setDescription(`✅ Gave the **${theme}** card theme to ${target.toString()}. They can equip it with \`,cardtheme ${theme}\`.`)] });
+  },
+};
+
+// ── ,setthemeprice <name> <price> ─────────────────────────────────────────────
+// Admin: set the price for a theme in this guild
+const setthemeprice = {
+  name: 'setthemeprice',
+  aliases: ['themeprice', 'themesetprice'],
+  async execute(message, args) {
+    if (!isAdmin(message)) {
+      return message.reply({ embeds: [new EmbedBuilder().setColor(RED)
+        .setDescription('❌ You need **Manage Server** permission to use this.')] });
+    }
+
+    const guildId = message.guild.id;
+    const input   = args[0]?.toLowerCase();
+    const price   = parseInt(args[1]);
+
+    if (!input || isNaN(price) || price < 0) {
+      return message.reply({ embeds: [new EmbedBuilder().setColor(RED)
+        .setDescription('❌ Usage: `,setthemeprice <theme> <price>`\nExample: `,setthemeprice galaxy 8000`')] });
+    }
+
+    const ALIASES_MAP = { halographic: 'holographic', neon: 'city', academy: 'academia' };
+    const theme = ALIASES_MAP[input] || THEME_NAMES.find(t => t === input || t.startsWith(input)) || null;
+
+    if (!theme) {
+      return message.reply({ embeds: [new EmbedBuilder().setColor(RED)
+        .setDescription(`❌ Unknown theme \`${input}\`. Available: ${THEME_NAMES.join(', ')}`)] });
+    }
+
+    db.setThemePrice(guildId, theme, price);
+
+    await message.reply({ embeds: [new EmbedBuilder().setColor(GREEN)
+      .setDescription(`✅ Set **${theme}** theme price to **${fmt(price)}** credits.`)] });
   },
 };
 
 module.exports = [
   credits, shop, buy, inventory, creditlead,
   additem, removeitem, givecr, takecr, setcr, reseteco, shopconfig,
-  myrole, creditsetup, pointhelp, previewthemes, previewthemes2, previewthemes3,
+  myrole, creditsetup, pointhelp, previewthemes,
+  themes, buytheme, cardtheme, givetheme, setthemeprice,
 ];

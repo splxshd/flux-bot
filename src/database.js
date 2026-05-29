@@ -1902,6 +1902,17 @@ function _runSchema() {
   PRIMARY KEY (guild_id, user_id)
 )`);
 
+  // Theme system migrations
+  try { db.run("ALTER TABLE credits ADD COLUMN owned_themes TEXT DEFAULT ''"); } catch(_) {}
+  try { db.run("ALTER TABLE credits ADD COLUMN equipped_theme TEXT DEFAULT ''"); } catch(_) {}
+
+  db.run(`CREATE TABLE IF NOT EXISTS card_theme_prices (
+  guild_id TEXT NOT NULL,
+  theme TEXT NOT NULL,
+  price INTEGER NOT NULL DEFAULT 5000,
+  PRIMARY KEY (guild_id, theme)
+)`);
+
   db.run(`CREATE TABLE IF NOT EXISTS shop_items (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   guild_id TEXT NOT NULL,
@@ -2199,6 +2210,49 @@ function getUserActiveBids(guildId, userId) {
   );
 }
 
+// ── Card Themes ───────────────────────────────────────────────────────────────
+function getUserTheme(guildId, userId) {
+  const row = db.get('SELECT equipped_theme FROM credits WHERE guild_id=? AND user_id=?', [guildId, userId]);
+  return row?.equipped_theme || null;
+}
+
+function getUserOwnedThemes(guildId, userId) {
+  const row = db.get('SELECT owned_themes FROM credits WHERE guild_id=? AND user_id=?', [guildId, userId]);
+  if (!row || !row.owned_themes) return [];
+  return row.owned_themes.split(',').filter(Boolean);
+}
+
+function hasTheme(guildId, userId, theme) {
+  return getUserOwnedThemes(guildId, userId).includes(theme);
+}
+
+function addOwnedTheme(guildId, userId, theme) {
+  db.run('INSERT OR IGNORE INTO credits (guild_id, user_id, amount, total_earned) VALUES (?, ?, 0, 0)', [guildId, userId]);
+  const owned = getUserOwnedThemes(guildId, userId);
+  if (!owned.includes(theme)) {
+    owned.push(theme);
+    db.run("UPDATE credits SET owned_themes=? WHERE guild_id=? AND user_id=?", [owned.join(','), guildId, userId]);
+  }
+}
+
+function setEquippedTheme(guildId, userId, theme) {
+  db.run('INSERT OR IGNORE INTO credits (guild_id, user_id, amount, total_earned) VALUES (?, ?, 0, 0)', [guildId, userId]);
+  db.run("UPDATE credits SET equipped_theme=? WHERE guild_id=? AND user_id=?", [theme || '', guildId, userId]);
+}
+
+function getThemePrice(guildId, theme) {
+  const row = db.get('SELECT price FROM card_theme_prices WHERE guild_id=? AND theme=?', [guildId, theme]);
+  return row?.price ?? 5000;
+}
+
+function setThemePrice(guildId, theme, price) {
+  db.run('INSERT OR REPLACE INTO card_theme_prices (guild_id, theme, price) VALUES (?, ?, ?)', [guildId, theme, price]);
+}
+
+function getAllThemePrices(guildId) {
+  return db.all('SELECT theme, price FROM card_theme_prices WHERE guild_id=?', [guildId]);
+}
+
 // Gracefully close the database. Called on SIGTERM so Railway's zero-downtime
 // deploy releases the file lock before the new instance tries to open it.
 function closeDb() {
@@ -2275,6 +2329,8 @@ module.exports = {
   setHoneypot, getHoneypot, removeHoneypot, incrementHoneypotCount, getAllHoneypots,
   getUserCustomRoles, getUserCustomRole, addUserCustomRole, updateUserCustomRole, deleteUserCustomRole,
   getCredits, addCredits, spendCredits, refundCredits, setCreditsAmount, resetCredits, getCreditLeaderboard,
+  getUserTheme, getUserOwnedThemes, hasTheme, addOwnedTheme, setEquippedTheme,
+  getThemePrice, setThemePrice, getAllThemePrices,
   getShopItems, getShopItem, getShopItemByName, addShopItem, removeShopItem, setShopItemRoleId, incrementItemSold,
   getCreditSettings, upsertCreditSettings,
   getUserPurchase, addUserPurchase, getUserPurchases,
