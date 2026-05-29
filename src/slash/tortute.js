@@ -9,22 +9,7 @@ const {
   PermissionFlagsBits,
 } = require('discord.js');
 
-const FINISH_GIF_PAGE = 'https://tenor.com/en-GB/view/parasyte-throwing-anime-inichi-gif-12831094';
-const TENOR_POST_ID   = '12831094';
-let   FINISH_GIF_DIRECT = null;
-
-// Use Tenor API to get the real direct GIF URL (not just the thumbnail)
-(async () => {
-  try {
-    const res  = await fetch(`https://tenor.googleapis.com/v2/posts?ids=${TENOR_POST_ID}&key=LIVDSRZULELA`);
-    const data = await res.json();
-    const fmt  = data.results?.[0]?.media_formats;
-    FINISH_GIF_DIRECT = fmt?.mediumgif?.url || fmt?.gif?.url || fmt?.tinygif?.url || null;
-    if (FINISH_GIF_DIRECT) console.log('[tortute] Resolved GIF URL:', FINISH_GIF_DIRECT);
-  } catch (e) {
-    console.error('[tortute] Could not resolve Tenor GIF URL:', e.message);
-  }
-})();
+const FINISH_GIF = 'https://media.tenor.com/PdwSHgTQJtQAAAAC/parasyte-throwing.gif';
 
 function makeBar(current, goal) {
   const totalBlocks = 10;
@@ -218,11 +203,7 @@ module.exports = [{
           await message.reply({
             content: `💀 ${targetUser} reached **${count}/${goal} rocks** and got kicked.`,
           });
-          if (FINISH_GIF_DIRECT) {
-            await message.channel.send({ embeds: [new EmbedBuilder().setImage(FINISH_GIF_DIRECT)] });
-          } else {
-            await message.channel.send({ content: FINISH_GIF_PAGE });
-          }
+          await message.channel.send({ embeds: [new EmbedBuilder().setImage(FINISH_GIF)] });
 
           try {
             await targetMember.kick(`Tortute command by ${interaction.user.tag}: ${reason}`);
