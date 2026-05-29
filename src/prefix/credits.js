@@ -1,7 +1,8 @@
 'use strict';
 
-const { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, PermissionFlagsBits } = require('discord.js');
+const { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, PermissionFlagsBits, AttachmentBuilder } = require('discord.js');
 const db = require('../database');
+const { generateCreditsCard } = require('../utils/creditsCard');
 
 const GREEN  = '#57F287';
 const RED    = '#ED4245';
@@ -32,19 +33,33 @@ const credits = {
     const guildId = message.guild.id;
     const data    = db.getCredits(guildId, target.id);
     const s       = db.getCreditSettings(guildId);
+    const items   = db.getShopItems(guildId);
 
-    const embed = new EmbedBuilder()
-      .setColor(BLUE)
-      .setAuthor({ name: `${target.username}'s Credits`, iconURL: target.displayAvatarURL({ size: 64 }) })
-      .addFields(
-        { name: '💳 Balance',     value: `**${fmt(data.amount)}** credits`,       inline: true },
-        { name: '📈 Total Earned', value: `**${fmt(data.total_earned)}** credits`, inline: true },
-        { name: '💬 Earn Rate',   value: `${s.credits_per_msg} per message`,       inline: true },
-      )
-      .setFooter({ text: 'flux credits • earn by chatting' })
-      .setTimestamp();
-
-    await message.reply({ embeds: [embed] });
+    try {
+      const buffer = await generateCreditsCard({
+        username:    target.username,
+        avatarUrl:   target.displayAvatarURL({ extension: 'png', size: 256, forceStatic: true }),
+        balance:     data.amount,
+        totalEarned: data.total_earned,
+        shopItems:   items,
+      });
+      const attachment = new AttachmentBuilder(buffer, { name: 'credits.png' });
+      await message.reply({ files: [attachment] });
+    } catch (err) {
+      console.error('[credits card]', err);
+      // Fallback to embed if canvas fails
+      const embed = new EmbedBuilder()
+        .setColor(BLUE)
+        .setAuthor({ name: `${target.username}'s Credits`, iconURL: target.displayAvatarURL({ size: 64 }) })
+        .addFields(
+          { name: '💳 Balance',      value: `**${fmt(data.amount)}** credits`,       inline: true },
+          { name: '📈 Total Earned', value: `**${fmt(data.total_earned)}** credits`,  inline: true },
+          { name: '💬 Earn Rate',    value: `${s.credits_per_msg} per message`,       inline: true },
+        )
+        .setFooter({ text: 'flux credits • earn by chatting' })
+        .setTimestamp();
+      await message.reply({ embeds: [embed] });
+    }
   },
 };
 
