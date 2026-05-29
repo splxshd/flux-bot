@@ -7,9 +7,21 @@ const {
   ButtonBuilder,
   ButtonStyle,
   PermissionFlagsBits,
+  AttachmentBuilder,
 } = require('discord.js');
 
-const FINISH_GIF = 'https://media.tenor.com/PdwSHgTQJtQAAAAC/parasyte-throwing.gif';
+const FINISH_GIF_URL = 'https://media.tenor.com/PdwSHgTQJtQAAAAC/parasyte-throwing.gif';
+let   FINISH_GIF_BUFFER = null;
+
+// Cache the GIF on startup so we can send it as an attachment (no embed wrapper, no URL text)
+(async () => {
+  try {
+    const res = await fetch(FINISH_GIF_URL);
+    FINISH_GIF_BUFFER = Buffer.from(await res.arrayBuffer());
+  } catch (e) {
+    console.error('[tortute] Could not cache finish GIF:', e.message);
+  }
+})();
 
 function makeBar(current, goal) {
   const totalBlocks = 10;
@@ -203,7 +215,13 @@ module.exports = [{
           await message.reply({
             content: `💀 ${targetUser} reached **${count}/${goal} rocks** and got kicked.`,
           });
-          await message.channel.send({ embeds: [new EmbedBuilder().setImage(FINISH_GIF)] });
+          if (FINISH_GIF_BUFFER) {
+            await message.channel.send({
+              files: [new AttachmentBuilder(FINISH_GIF_BUFFER, { name: 'finish.gif' })],
+            });
+          } else {
+            await message.channel.send({ content: FINISH_GIF_URL });
+          }
 
           try {
             await targetMember.kick(`Tortute command by ${interaction.user.tag}: ${reason}`);
