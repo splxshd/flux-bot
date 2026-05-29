@@ -10,20 +10,19 @@ const {
 } = require('discord.js');
 
 const FINISH_GIF_PAGE = 'https://tenor.com/en-GB/view/parasyte-throwing-anime-inichi-gif-12831094';
-let FINISH_GIF_DIRECT = null;
+const TENOR_POST_ID   = '12831094';
+let   FINISH_GIF_DIRECT = null;
 
-// Resolve the direct GIF media URL once on startup so we can embed it cleanly
+// Use Tenor API to get the real direct GIF URL (not just the thumbnail)
 (async () => {
   try {
-    const res  = await fetch(FINISH_GIF_PAGE, { headers: { 'User-Agent': 'Mozilla/5.0' } });
-    const html = await res.text();
-    // og:image usually contains the direct GIF CDN URL
-    const m = html.match(/property="og:image"\s+content="([^"]+)"/i)
-           || html.match(/content="([^"]+)"\s+property="og:image"/i)
-           || html.match(/https:\/\/(?:media|c)\.tenor\.com\/[^\s"'<>]+\.gif/i);
-    if (m) FINISH_GIF_DIRECT = Array.isArray(m) ? m[1] || m[0] : m[0];
+    const res  = await fetch(`https://tenor.googleapis.com/v2/posts?ids=${TENOR_POST_ID}&key=LIVDSRZULELA`);
+    const data = await res.json();
+    const fmt  = data.results?.[0]?.media_formats;
+    FINISH_GIF_DIRECT = fmt?.mediumgif?.url || fmt?.gif?.url || fmt?.tinygif?.url || null;
+    if (FINISH_GIF_DIRECT) console.log('[tortute] Resolved GIF URL:', FINISH_GIF_DIRECT);
   } catch (e) {
-    console.error('[tortute] Could not resolve Tenor direct URL:', e.message);
+    console.error('[tortute] Could not resolve Tenor GIF URL:', e.message);
   }
 })();
 
