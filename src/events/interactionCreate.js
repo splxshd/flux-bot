@@ -335,6 +335,32 @@ module.exports = (client) => {
           });
         }
 
+        // Staff daily check-in button
+        if (id.startsWith('staff_checkin:')) {
+          const parts   = id.split(':');
+          const guildId = parts[1];
+          const date    = parts[2];
+
+          if (interaction.guildId !== guildId)
+            return interaction.reply({ content: '❌ Wrong server.', ephemeral: true });
+
+          const s = db.getStaffCheckinSettings(guildId);
+          if (!s?.staff_role_id)
+            return interaction.reply({ content: '❌ Check-in is not configured.', ephemeral: true });
+
+          if (!interaction.member?.roles?.cache?.has(s.staff_role_id))
+            return interaction.reply({ content: '❌ You are not a staff member.', ephemeral: true });
+
+          if (db.hasStaffCheckedIn(guildId, date, interaction.user.id))
+            return interaction.reply({ content: '✅ You have already checked in today!', ephemeral: true });
+
+          db.recordStaffCheckin(guildId, date, interaction.user.id);
+          return interaction.reply({
+            content: `✅ **${interaction.user.username}** has checked in! See you tomorrow 👋`,
+            ephemeral: true,
+          });
+        }
+
         // Autoping clear confirm
         if (id === 'autoping_clear_yes') {
           db.clearAutopings(interaction.guild.id);

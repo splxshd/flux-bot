@@ -1930,6 +1930,29 @@ function _runSchema() {
   try { db.run('ALTER TABLE credit_settings ADD COLUMN custom_role_cost INTEGER DEFAULT 500');     } catch (_) {}
   try { db.run('ALTER TABLE credit_settings ADD COLUMN custom_role_update_cost INTEGER DEFAULT 0'); } catch (_) {}
   try { db.run('ALTER TABLE credit_settings ADD COLUMN max_custom_roles INTEGER DEFAULT 1');       } catch (_) {}
+
+  db.run(`CREATE TABLE IF NOT EXISTS staff_checkin_settings (
+  guild_id TEXT PRIMARY KEY,
+  staff_role_id TEXT,
+  alert_role_id TEXT,
+  staff_channel_id TEXT,
+  alert_channel_id TEXT,
+  checkin_hour INTEGER DEFAULT 9,
+  checkin_minute INTEGER DEFAULT 0,
+  deadline_hours INTEGER DEFAULT 4,
+  enabled INTEGER DEFAULT 0,
+  last_checkin_date TEXT DEFAULT '',
+  last_alert_date TEXT DEFAULT ''
+)`);
+
+  db.run(`CREATE TABLE IF NOT EXISTS staff_checkins (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  guild_id TEXT NOT NULL,
+  date TEXT NOT NULL,
+  user_id TEXT NOT NULL,
+  checked_in_at TEXT NOT NULL,
+  UNIQUE(guild_id, date, user_id)
+)`);
 }
 
 // ── User Custom Roles ─────────────────────────────────────────────────────────
@@ -2036,6 +2059,40 @@ function getUserPurchases(guildId, userId) {
   );
 }
 
+// ── Staff Check-in ────────────────────────────────────────────────────────────
+function getStaffCheckinSettings(guildId) {
+  return db.get('SELECT * FROM staff_checkin_settings WHERE guild_id=?', [guildId]);
+}
+
+function upsertStaffCheckinSettings(guildId, fields) {
+  const existing = getStaffCheckinSettings(guildId);
+  if (!existing) {
+    db.run('INSERT INTO staff_checkin_settings (guild_id) VALUES (?)', [guildId]);
+  }
+  for (const [key, val] of Object.entries(fields)) {
+    db.run(`UPDATE staff_checkin_settings SET ${key}=? WHERE guild_id=?`, [val, guildId]);
+  }
+}
+
+function getAllEnabledStaffCheckin() {
+  return db.all('SELECT * FROM staff_checkin_settings WHERE enabled=1', []);
+}
+
+function recordStaffCheckin(guildId, date, userId) {
+  db.run(
+    'INSERT OR IGNORE INTO staff_checkins (guild_id, date, user_id, checked_in_at) VALUES (?, ?, ?, ?)',
+    [guildId, date, userId, new Date().toISOString()],
+  );
+}
+
+function getStaffCheckins(guildId, date) {
+  return db.all('SELECT * FROM staff_checkins WHERE guild_id=? AND date=?', [guildId, date]);
+}
+
+function hasStaffCheckedIn(guildId, date, userId) {
+  return !!db.get('SELECT 1 FROM staff_checkins WHERE guild_id=? AND date=? AND user_id=?', [guildId, date, userId]);
+}
+
 module.exports = {
   _dbReady,
   get, all, run,
@@ -2106,4 +2163,6 @@ module.exports = {
   getShopItems, getShopItem, getShopItemByName, addShopItem, removeShopItem, setShopItemRoleId, incrementItemSold,
   getCreditSettings, upsertCreditSettings,
   getUserPurchase, addUserPurchase, getUserPurchases,
+  getStaffCheckinSettings, upsertStaffCheckinSettings, getAllEnabledStaffCheckin,
+  recordStaffCheckin, getStaffCheckins, hasStaffCheckedIn,
 };

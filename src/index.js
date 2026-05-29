@@ -4,7 +4,8 @@ require('dotenv').config();
 
 const fs = require('fs');
 const path = require('path');
-const { Client, GatewayIntentBits, Partials, Collection, REST, Routes } = require('discord.js');
+const { Client, GatewayIntentBits, Partials, Collection, REST, Routes,
+        EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
 const cron = require('node-cron');
 
 process.on('unhandledRejection', err => console.error('[UnhandledRejection]', err));
@@ -148,6 +149,99 @@ function startCrons() {
           await channel.send(`😢 No valid entrants for **${giveaway.prize}**. The giveaway has ended.`);
         }
       } catch (e) { console.error('[Cron:giveaway]', e); }
+    }
+  });
+
+  // Every 1 minute: staff daily check-in
+  cron.schedule('* * * * *', async () => {
+    const settings = db.getAllEnabledStaffCheckin();
+    if (!settings.length) return;
+
+    const now   = new Date();
+    const today = now.toISOString().slice(0, 10); // YYYY-MM-DD
+    const HH    = now.getHours();
+    const MM    = now.getMinutes();
+    const pad   = n => String(n).padStart(2, '0');
+
+    for (const s of settings) {
+      try {
+        // ── Send daily check-in message ──────────────────────────────────
+        const cH = s.checkin_hour ?? 9;
+        const cM = s.checkin_minute ?? 0;
+        if (HH === cH && MM === cM && s.last_checkin_date !== today) {
+          const ch = client.channels.cache.get(s.staff_channel_id);
+          if (!ch) continue;
+
+          const dl    = s.deadline_hours ?? 4;
+          const greet = HH < 12 ? 'morning' : HH < 18 ? 'afternoon' : 'evening';
+          const row   = new ActionRowBuilder().addComponents(
+            new ButtonBuilder()
+              .setCustomId(`staff_checkin:${s.guild_id}:${today}`)
+              .setLabel('Check In')
+              .setStyle(ButtonStyle.Success)
+              .setEmoji('✅'),
+          );
+          const embed = new EmbedBuilder()
+            .setColor('#5865F2')
+            .setTitle('📋 Daily Staff Check-in')
+            .setDescription(`Good ${greet}! Please confirm your attendance for today.\nClick the button below to check in.`)
+            .setTimestamp()
+            .setFooter({ text: `You have ${dl} hour${dl !== 1 ? 's' : ''} to check in` });
+
+          await ch.send({
+            content: `<@&${s.staff_role_id}>`,
+            embeds: [embed],
+            components: [row],
+            allowedMentions: { roles: [s.staff_role_id] },
+          });
+          db.upsertStaffCheckinSettings(s.guild_id, { last_checkin_date: today });
+        }
+
+        // ── Send missed-checkin alert ────────────────────────────────────
+        const alertTotal = (s.checkin_hour ?? 9) * 60 + (s.checkin_minute ?? 0) + (s.deadline_hours ?? 4) * 60;
+        const alertH = Math.floor(alertTotal / 60) % 24;
+        const alertM = alertTotal % 60;
+
+        if (HH === alertH && MM === alertM && s.last_checkin_date === today && s.last_alert_date !== today) {
+          // Mark alert sent first to prevent double-send on any error
+          db.upsertStaffCheckinSettings(s.guild_id, { last_alert_date: today });
+
+          const guild = client.guilds.cache.get(s.guild_id);
+          if (!guild) continue;
+          const staffRole = guild.roles.cache.get(s.staff_role_id);
+          if (!staffRole) continue;
+
+          await guild.members.fetch().catch(() => {});
+          const checkins     = db.getStaffCheckins(s.guild_id, today);
+          const checkedInIds = new Set(checkins.map(c => c.user_id));
+          const missing      = staffRole.members.filter(m => !m.user.bot && !checkedInIds.has(m.id));
+          if (!missing.size) continue;
+
+          const alertCh = client.channels.cache.get(s.alert_channel_id);
+          if (!alertCh) continue;
+
+          const mentionList = missing.map(m => `<@${m.id}>`).join('\n');
+          const checkedIn   = checkins.length;
+          const total       = staffRole.members.filter(m => !m.user.bot).size;
+
+          const embed = new EmbedBuilder()
+            .setColor('#ED4245')
+            .setTitle('⚠️ Staff Check-in Alert')
+            .setDescription(
+              `**${missing.size}** staff member${missing.size !== 1 ? 's have' : ' has'} not checked in today.\n` +
+              `*(${checkedIn}/${total} checked in)*`,
+            )
+            .addFields({ name: 'Missing', value: mentionList.slice(0, 1024), inline: false })
+            .setTimestamp()
+            .setFooter({ text: `Check-in was at ${pad(s.checkin_hour ?? 9)}:${pad(s.checkin_minute ?? 0)}` });
+
+          await alertCh.send({
+            content: s.alert_role_id ? `<@&${s.alert_role_id}>` : undefined,
+            embeds: [embed],
+            allowedMentions: s.alert_role_id ? { roles: [s.alert_role_id] } : { parse: [] },
+          });
+        }
+      } catch (e) { console.error('[Cron:staffcheckin]', e); }
     }
   });
 
