@@ -1980,6 +1980,14 @@ function _runSchema() {
   created_at INTEGER DEFAULT (strftime('%s','now'))
 )`);
 
+  db.run(`CREATE TABLE IF NOT EXISTS user_owned_quotes (
+  guild_id TEXT NOT NULL,
+  user_id  TEXT NOT NULL,
+  quote_id INTEGER NOT NULL,
+  bought_at INTEGER DEFAULT (strftime('%s','now')),
+  PRIMARY KEY (guild_id, user_id, quote_id)
+)`);
+
   // Migrate: add new columns to credit_settings if they don't exist yet
   try { db.run('ALTER TABLE credit_settings ADD COLUMN invite_credits INTEGER DEFAULT 0');        } catch (_) {}
   try { db.run('ALTER TABLE credit_settings ADD COLUMN voice_credits INTEGER DEFAULT 0');          } catch (_) {}
@@ -2371,6 +2379,20 @@ function setUserQuote(guildId, userId, text) {
     [guildId, userId, text]);
 }
 
+// ── Owned Quotes (catalog) ────────────────────────────────────────────────────
+function getUserOwnedQuoteIds(guildId, userId) {
+  return db.all('SELECT quote_id FROM user_owned_quotes WHERE guild_id=? AND user_id=?', [guildId, userId])
+    .map(r => r.quote_id);
+}
+function addUserOwnedQuote(guildId, userId, quoteId) {
+  db.run('INSERT OR IGNORE INTO user_owned_quotes (guild_id, user_id, quote_id) VALUES (?, ?, ?)',
+    [guildId, userId, quoteId]);
+}
+function hasUserOwnedQuote(guildId, userId, quoteId) {
+  return !!db.get('SELECT 1 FROM user_owned_quotes WHERE guild_id=? AND user_id=? AND quote_id=?',
+    [guildId, userId, quoteId]);
+}
+
 // Gracefully close the database. Called on SIGTERM so Railway's zero-downtime
 // deploy releases the file lock before the new instance tries to open it.
 function closeDb() {
@@ -2450,6 +2472,7 @@ module.exports = {
   getUserTheme, getUserOwnedThemes, hasTheme, addOwnedTheme, setEquippedTheme,
   getThemePrice, setThemePrice, getAllThemePrices,
   getUserQuote, setUserQuote,
+  getUserOwnedQuoteIds, addUserOwnedQuote, hasUserOwnedQuote,
   getShopItems, getShopItem, getShopItemByName, addShopItem, removeShopItem, setShopItemRoleId, incrementItemSold,
   generateUserDailyShop, generateUserWeeklyShop, getShopItemsByIds,
   getCreditSettings, upsertCreditSettings,

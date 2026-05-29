@@ -18,6 +18,35 @@ const RARITIES = ['common', 'uncommon', 'rare', 'epic', 'legendary'];
 const RARITY_BADGE = { common: '★☆☆☆☆  Common', uncommon: '★★☆☆☆  Uncommon', rare: '★★★☆☆  Rare', epic: '★★★★☆  Epic', legendary: '★★★★★  Legendary' };
 const RARITY_COLOR = { common: '#95a5a6', uncommon: '#2ecc71', rare: '#3498db', epic: '#9b59b6', legendary: '#f1c40f' };
 
+// ── Aura Quote Catalog ────────────────────────────────────────────────────────
+const QUOTE_CATALOG = [
+  // ── Common ──────────────────────────────────────────────────────────────
+  { id:  1, name: 'Built Different',      text: 'Built different.',                          rarity: 'common',    price:    400 },
+  { id:  2, name: 'Rare Breed',           text: 'Rare breed.',                               rarity: 'common',    price:    500 },
+  { id:  3, name: 'Main Character',       text: 'Main character energy.',                    rarity: 'common',    price:    600 },
+  { id:  4, name: 'Different Wavelength', text: 'Different wavelength entirely.',            rarity: 'common',    price:    750 },
+  // ── Uncommon ────────────────────────────────────────────────────────────
+  { id:  5, name: 'Silent Aura',          text: 'Stay silent. Your aura speaks.',            rarity: 'uncommon',  price:  1_200 },
+  { id:  6, name: 'Not For Everyone',     text: "Not for everyone, and that's the point.",   rarity: 'uncommon',  price:  1_500 },
+  { id:  7, name: 'The Shift',            text: 'They can feel the shift when I walk in.',   rarity: 'uncommon',  price:  1_800 },
+  { id:  8, name: 'Trendsetter',          text: "I don't follow trends. I set them.",        rarity: 'uncommon',  price:  2_500 },
+  // ── Rare ────────────────────────────────────────────────────────────────
+  { id:  9, name: 'Cold Energy',          text: 'Magnetic aura, cold energy.',               rarity: 'rare',      price:  3_000 },
+  { id: 10, name: 'Silent Moves',         text: 'I move in silence, let results make noise.',rarity: 'rare',      price:  3_500 },
+  { id: 11, name: 'Golden Touch',         text: 'Everything I touch turns to gold.',         rarity: 'rare',      price:  4_500 },
+  { id: 12, name: 'Universal Pull',       text: 'The universe rearranges itself for me.',    rarity: 'rare',      price:  6_000 },
+  // ── Epic ────────────────────────────────────────────────────────────────
+  { id: 13, name: 'Walking Art',          text: 'Walking artwork.',                           rarity: 'epic',      price:  7_500 },
+  { id: 14, name: 'Loud Aura',            text: 'My aura does the talking.',                 rarity: 'epic',      price:  8_500 },
+  { id: 15, name: 'Born To Outlast',      text: 'Born to outlast everything against me.',    rarity: 'epic',      price: 10_000 },
+  { id: 16, name: 'Presence',             text: 'My presence alone shifts the energy.',      rarity: 'epic',      price: 12_000 },
+  // ── Legendary ───────────────────────────────────────────────────────────
+  { id: 17, name: 'The Energy',           text: 'I am the energy in the room.',              rarity: 'legendary', price: 15_000 },
+  { id: 18, name: 'Divine Focus',         text: 'Divinely guided, ungodly focused.',         rarity: 'legendary', price: 18_000 },
+  { id: 19, name: 'Timeless',             text: 'Timeless. Untouchable. Rare.',               rarity: 'legendary', price: 22_000 },
+  { id: 20, name: 'The Standard',         text: "I don't compete. I am the standard.",       rarity: 'legendary', price: 25_000 },
+];
+
 function _msTilMidnightUTC() {
   const now = Date.now();
   const midnight = new Date();
@@ -1430,37 +1459,237 @@ const setthemeprice = {
   },
 };
 
-// ── ,setquote [text] ──────────────────────────────────────────────────────────
-// Sets (or clears) the custom quote shown on your credits card.
-const setquote = {
-  name: 'setquote',
-  aliases: ['quote', 'myquote', 'cardquote'],
+// ── Quote helpers ──────────────────────────────────────────────────────────────
+const QUOTES_PER_PAGE = 5;
+
+function _buildQuotesEmbed(guildId, userId, page) {
+  const userCr   = db.getCredits(guildId, userId);
+  const ownedIds = db.getUserOwnedQuoteIds(guildId, userId);
+  const total    = Math.ceil(QUOTE_CATALOG.length / QUOTES_PER_PAGE);
+  page = Math.min(Math.max(page, 0), total - 1);
+  const slice = QUOTE_CATALOG.slice(page * QUOTES_PER_PAGE, (page + 1) * QUOTES_PER_PAGE);
+
+  const lines = slice.map(q => {
+    const badge  = RARITY_BADGE[q.rarity] || RARITY_BADGE.common;
+    const owned  = ownedIds.includes(q.id);
+    const status = owned ? '✅ owned' : `❌  ${fmt(q.price)} cr`;
+    return `**${badge}  ·  #${q.id}  ${q.name}**\n*❝ ${q.text} ❞*\n-# ${status}`;
+  }).join('\n\n');
+
+  const embed = new EmbedBuilder()
+    .setColor(0x9B59B6)
+    .setTitle('🌟  Aura Quote Catalog')
+    .setDescription(`💳  **${fmt(userCr.amount)} cr** in wallet\n\n${lines}`)
+    .setFooter({ text: `Page ${page + 1}/${total}  ·  ,buyquote <id> to purchase  ·  flux credits` })
+    .setTimestamp();
+
+  return { embed, total, page };
+}
+
+function _quotePageButtons(page, total, userId) {
+  return new ActionRowBuilder().addComponents(
+    new ButtonBuilder().setCustomId(`qp_prev_${userId}`).setLabel('◀ Prev').setStyle(ButtonStyle.Secondary).setDisabled(page <= 0),
+    new ButtonBuilder().setCustomId(`qp_pg_${userId}`).setLabel(`${page + 1} / ${total}`).setStyle(ButtonStyle.Secondary).setDisabled(true),
+    new ButtonBuilder().setCustomId(`qp_next_${userId}`).setLabel('Next ▶').setStyle(ButtonStyle.Secondary).setDisabled(page >= total - 1),
+  );
+}
+
+// ── ,quotes [page] ─────────────────────────────────────────────────────────────
+const quotes = {
+  name: 'quotes',
+  aliases: ['quoteshop', 'quotecatalog', 'auraquotes'],
+  async execute(message, args) {
+    const guildId = message.guild.id;
+    const userId  = message.author.id;
+    let page = Math.max(0, (parseInt(args[0]) || 1) - 1);
+
+    const { embed, total, page: p } = _buildQuotesEmbed(guildId, userId, page);
+    page = p;
+    const row = _quotePageButtons(page, total, userId);
+    const msg = await message.reply({ embeds: [embed], components: [row] });
+
+    const col = msg.createMessageComponentCollector({
+      filter: i => i.user.id === userId && i.customId.endsWith(`_${userId}`),
+      time: 120_000,
+    });
+    col.on('collect', async i => {
+      if (i.customId === `qp_prev_${userId}`) page = Math.max(0, page - 1);
+      else if (i.customId === `qp_next_${userId}`) page = Math.min(total - 1, page + 1);
+      const { embed: e, total: t, page: np } = _buildQuotesEmbed(guildId, userId, page);
+      page = np;
+      await i.update({ embeds: [e], components: [_quotePageButtons(page, t, userId)] });
+    });
+    col.on('end', () => msg.edit({ components: [] }).catch(() => {}));
+  },
+};
+
+// ── ,buyquote <id> ─────────────────────────────────────────────────────────────
+const buyquote = {
+  name: 'buyquote',
+  aliases: ['purchasequote', 'getquote'],
+  async execute(message, args) {
+    const guildId = message.guild.id;
+    const userId  = message.author.id;
+    const id      = parseInt(args[0]);
+
+    if (isNaN(id)) {
+      return message.reply({ embeds: [new EmbedBuilder().setColor(RED)
+        .setDescription('❌ Usage: `,buyquote <id>`\nBrowse the catalog with `,quotes`.')] });
+    }
+
+    const q = QUOTE_CATALOG.find(x => x.id === id);
+    if (!q) {
+      return message.reply({ embeds: [new EmbedBuilder().setColor(RED)
+        .setDescription(`❌ Quote #${id} doesn't exist. Check \`,quotes\` for valid IDs.`)] });
+    }
+
+    if (db.hasUserOwnedQuote(guildId, userId, id)) {
+      return message.reply({ embeds: [new EmbedBuilder().setColor(YELLOW)
+        .setDescription(`✨ You already own **${q.name}**! Equip it with \`,equipquote ${id}\`.`)] });
+    }
+
+    const cr = db.getCredits(guildId, userId);
+    if (cr.amount < q.price) {
+      return message.reply({ embeds: [new EmbedBuilder().setColor(RED)
+        .setDescription(`❌ **${q.name}** costs **${fmt(q.price)} cr** — you only have **${fmt(cr.amount)} cr**.\nKeep chatting to earn more!`)] });
+    }
+
+    db.spendCredits(guildId, userId, q.price);
+    db.addUserOwnedQuote(guildId, userId, id);
+    db.setUserQuote(guildId, userId, q.text); // auto-equip
+
+    const color = parseInt((RARITY_COLOR[q.rarity] || '#9b59b6').replace('#', ''), 16);
+    await message.reply({ embeds: [new EmbedBuilder()
+      .setColor(color)
+      .setTitle(`${RARITY_BADGE[q.rarity]}  —  ${q.name}`)
+      .setDescription(`> *❝ ${q.text} ❞*\n\nQuote purchased and equipped on your credits card!`)
+      .addFields(
+        { name: '💳 Spent',     value: `${fmt(q.price)} cr`,             inline: true },
+        { name: '💰 Remaining', value: `${fmt(cr.amount - q.price)} cr`, inline: true },
+      )
+      .setFooter({ text: 'Run ,credits to see it  ·  ,myquotes to manage your quotes' })] });
+  },
+};
+
+// ── ,myquotes ──────────────────────────────────────────────────────────────────
+const myquotes = {
+  name: 'myquotes',
+  aliases: ['ownedquotes', 'quoteinventory', 'myquote'],
+  async execute(message) {
+    const guildId  = message.guild.id;
+    const userId   = message.author.id;
+    const ownedIds = db.getUserOwnedQuoteIds(guildId, userId);
+    const equipped = db.getUserQuote(guildId, userId);
+
+    // Detect if equipped text matches a catalog quote
+    const equippedCatalog = QUOTE_CATALOG.find(q => q.text === equipped);
+    const hasCustom = equipped && !equippedCatalog;
+
+    const owned = QUOTE_CATALOG.filter(q => ownedIds.includes(q.id));
+
+    if (!owned.length && !hasCustom) {
+      return message.reply({ embeds: [new EmbedBuilder().setColor(0x9B59B6)
+        .setDescription('📭 You don\'t own any quotes yet.\nBrowse the catalog with `,quotes` and buy one!') ]});
+    }
+
+    const equippedLine = equipped
+      ? `*❝ ${equipped} ❞*${equippedCatalog ? ` — **${equippedCatalog.name}**` : ' — custom'}`
+      : 'None — run `,equipquote <id>` or `,customquote <text>`';
+
+    const catalogLines = owned.map(q => {
+      const badge    = RARITY_BADGE[q.rarity];
+      const isActive = q.text === equipped;
+      return `${isActive ? '**▶**' : '　'} **#${q.id}  ${q.name}**  ·  ${badge}\n　*❝ ${q.text} ❞*`;
+    });
+
+    const desc = [
+      `**Equipped on card:**\n${equippedLine}`,
+      '',
+      owned.length ? `**Your Quotes  (${owned.length}):**\n${catalogLines.join('\n\n')}` : null,
+      hasCustom ? `\n**Custom Quote:**\n*❝ ${equipped} ❞*` : null,
+    ].filter(Boolean).join('\n');
+
+    await message.reply({ embeds: [new EmbedBuilder()
+      .setColor(0x9B59B6)
+      .setTitle('🎭  Your Quote Collection')
+      .setDescription(desc)
+      .setFooter({ text: ',equipquote <id>  ·  ,customquote <text>  ·  ,clearquote' })] });
+  },
+};
+
+// ── ,equipquote <id> ───────────────────────────────────────────────────────────
+const equipquote = {
+  name: 'equipquote',
+  aliases: ['usequote', 'selectquote'],
+  async execute(message, args) {
+    const guildId = message.guild.id;
+    const userId  = message.author.id;
+    const id      = parseInt(args[0]);
+
+    if (isNaN(id)) {
+      return message.reply({ embeds: [new EmbedBuilder().setColor(RED)
+        .setDescription('❌ Usage: `,equipquote <id>`\nSee your owned quotes with `,myquotes`.')] });
+    }
+
+    const q = QUOTE_CATALOG.find(x => x.id === id);
+    if (!q) {
+      return message.reply({ embeds: [new EmbedBuilder().setColor(RED)
+        .setDescription(`❌ Quote #${id} doesn't exist.`)] });
+    }
+
+    if (!db.hasUserOwnedQuote(guildId, userId, id)) {
+      return message.reply({ embeds: [new EmbedBuilder().setColor(RED)
+        .setDescription(`❌ You don't own **${q.name}** yet. Buy it for **${fmt(q.price)} cr** with \`,buyquote ${id}\`.`)] });
+    }
+
+    db.setUserQuote(guildId, userId, q.text);
+
+    const color = parseInt((RARITY_COLOR[q.rarity] || '#9b59b6').replace('#', ''), 16);
+    await message.reply({ embeds: [new EmbedBuilder()
+      .setColor(color)
+      .setDescription(`✅ Equipped **${q.name}** on your card!\n> *❝ ${q.text} ❞*`)
+      .setFooter({ text: 'Run ,credits to see it' })] });
+  },
+};
+
+// ── ,customquote <text> ────────────────────────────────────────────────────────
+// Free — lets users write their own quote for the card.
+const customquote = {
+  name: 'customquote',
+  aliases: ['setquote', 'cardquote'],
   async execute(message, args) {
     const guildId = message.guild.id;
     const userId  = message.author.id;
 
-    // No args = clear the quote
     if (!args.length) {
-      db.setUserQuote(guildId, userId, '');
-      return message.reply({ embeds: [new EmbedBuilder()
-        .setColor(YELLOW)
-        .setDescription('🗑️ Your card quote has been cleared.')] });
+      return message.reply({ embeds: [new EmbedBuilder().setColor(BLUE)
+        .setDescription('Usage: `,customquote <your text>`\nMax 80 characters. Shows on your credits card.\nUse `,clearquote` to remove it.')] });
     }
 
     const text = args.join(' ').trim();
     if (text.length > 80) {
-      return message.reply({ embeds: [new EmbedBuilder()
-        .setColor(RED)
-        .setDescription(`❌ Quote is too long (**${text.length}** chars). Keep it under **80** characters.`)] });
+      return message.reply({ embeds: [new EmbedBuilder().setColor(RED)
+        .setDescription(`❌ Too long (**${text.length}** chars). Keep it under **80** characters.`)] });
     }
 
     db.setUserQuote(guildId, userId, text);
 
     await message.reply({ embeds: [new EmbedBuilder()
       .setColor(GREEN)
-      .setTitle('✅ Card Quote Set!')
-      .setDescription(`Your credits card will now show:\n> *❝ ${text} ❞*`)
-      .setFooter({ text: 'Run ,credits to preview it • ,setquote with no text to clear' })] });
+      .setTitle('✅  Custom Quote Set')
+      .setDescription(`> *❝ ${text} ❞*`)
+      .setFooter({ text: 'Run ,credits to preview  ·  ,clearquote to remove' })] });
+  },
+};
+
+// ── ,clearquote ────────────────────────────────────────────────────────────────
+const clearquote = {
+  name: 'clearquote',
+  aliases: ['removequote', 'noquote', 'deletequote'],
+  async execute(message) {
+    db.setUserQuote(message.guild.id, message.author.id, '');
+    await message.reply({ embeds: [new EmbedBuilder().setColor(YELLOW)
+      .setDescription('🗑️ Quote removed from your credits card.')] });
   },
 };
 
@@ -1469,5 +1698,5 @@ module.exports = [
   additem, removeitem, givecr, takecr, setcr, reseteco, shopconfig,
   myrole, creditsetup, pointhelp, previewthemes,
   themes, buytheme, cardtheme, givetheme, setthemeprice,
-  setquote,
+  quotes, buyquote, myquotes, equipquote, customquote, clearquote,
 ];
