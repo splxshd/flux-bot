@@ -1975,6 +1975,7 @@ function _runSchema() {
 )`);
 
   try { db.run(`ALTER TABLE staff_checkin_settings ADD COLUMN timezone TEXT DEFAULT 'UTC'`); } catch (_) {}
+  try { db.run(`ALTER TABLE staff_checkin_settings ADD COLUMN last_message_id TEXT DEFAULT NULL`); } catch (_) {}
 
   db.run(`CREATE TABLE IF NOT EXISTS auctions (
   id INTEGER PRIMARY KEY AUTOINCREMENT,

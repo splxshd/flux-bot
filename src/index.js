@@ -215,13 +215,19 @@ function startCrons() {
             .setTimestamp()
             .setFooter({ text: `You have ${dl} hour${dl !== 1 ? 's' : ''} to check in` });
 
-          await ch.send({
+          // Delete previous check-in message if exists
+          if (s.last_message_id) {
+            const old = await ch.messages.fetch(s.last_message_id).catch(() => null);
+            if (old) await old.delete().catch(() => {});
+          }
+
+          const sent = await ch.send({
             content: `<@&${s.staff_role_id}>`,
             embeds: [embed],
             components: [row],
             allowedMentions: { roles: [s.staff_role_id] },
           });
-          db.upsertStaffCheckinSettings(s.guild_id, { last_checkin_date: today });
+          db.upsertStaffCheckinSettings(s.guild_id, { last_checkin_date: today, last_message_id: sent.id });
         }
 
         // ── Send missed-checkin alert ────────────────────────────────────

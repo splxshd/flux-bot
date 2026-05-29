@@ -214,8 +214,8 @@ const staffsetup = {
 
       const today = new Date().toISOString().slice(0, 10);
       const dl    = s.deadline_hours ?? 4;
-      await ch.send(buildCheckinMessage(guildId, s.staff_role_id, dl, today));
-      db.upsertStaffCheckinSettings(guildId, { last_checkin_date: today });
+      const sent  = await ch.send(buildCheckinMessage(guildId, s.staff_role_id, dl, today));
+      db.upsertStaffCheckinSettings(guildId, { last_checkin_date: today, last_message_id: sent.id });
 
       return message.reply({ embeds: [new EmbedBuilder().setColor(GREEN)
         .setDescription(`✅ Test check-in message sent to ${ch}!`)] });
@@ -339,4 +339,51 @@ const checkins = {
   },
 };
 
-module.exports = [staffsetup, checkins];
+// ── ,sendcheckin — manual on-demand check-in message ─────────────────────────
+const sendcheckin = {
+  name: 'sendcheckin',
+  aliases: ['postcheckin', 'checkinpost'],
+  async execute(message, args) {
+    if (!isAdmin(message)) {
+      return message.reply({ embeds: [new EmbedBuilder().setColor(RED).setDescription('❌ Admin only.')] });
+    }
+
+    const guildId = message.guild.id;
+    const s       = db.getStaffCheckinSettings(guildId);
+
+    if (!s?.staff_channel_id || !s?.staff_role_id) {
+      return message.reply('❌ Set up staff check-in first with `,staffsetup`.');
+    }
+
+    const ch = message.guild.channels.cache.get(s.staff_channel_id);
+    if (!ch) return message.reply('❌ Check-in channel not found — re-set it with `,staffsetup channel #ch`.');
+
+    // Delete the previous check-in message if it exists
+    if (s.last_message_id) {
+      const old = await ch.messages.fetch(s.last_message_id).catch(() => null);
+      if (old) await old.delete().catch(() => {});
+    }
+
+    // Get today's date in the guild's timezone
+    let today;
+    try {
+      const parts = new Intl.DateTimeFormat('en-US', {
+        timeZone: s.timezone || 'UTC',
+        year: 'numeric', month: '2-digit', day: '2-digit',
+      }).formatToParts(new Date());
+      const get = t => parts.find(p => p.type === t)?.value ?? '00';
+      today = `${get('year')}-${get('month')}-${get('day')}`;
+    } catch {
+      today = new Date().toISOString().slice(0, 10);
+    }
+
+    const dl   = s.deadline_hours ?? 4;
+    const sent = await ch.send(buildCheckinMessage(guildId, s.staff_role_id, dl, today));
+    db.upsertStaffCheckinSettings(guildId, { last_checkin_date: today, last_message_id: sent.id });
+
+    // Delete the invoking command message for a clean channel
+    await message.delete().catch(() => {});
+  },
+};
+
+module.exports = [staffsetup, checkins, sendcheckin];
