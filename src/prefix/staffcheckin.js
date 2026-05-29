@@ -225,4 +225,118 @@ const staffsetup = {
   },
 };
 
-module.exports = [staffsetup];
+// ── ,checkins [date] ──────────────────────────────────────────────────────────
+const checkins = {
+  name: 'checkins',
+  aliases: ['staffcheckins', 'attendance', 'whoCheckedIn'],
+  async execute(message, args) {
+    if (!isAdmin(message)) {
+      return message.reply({ embeds: [new EmbedBuilder().setColor(RED).setDescription('❌ Admin only.')] });
+    }
+
+    const guildId = message.guild.id;
+    const s       = db.getStaffCheckinSettings(guildId);
+
+    if (!s?.staff_role_id) {
+      return message.reply({ embeds: [new EmbedBuilder().setColor(RED)
+        .setDescription('❌ Staff check-in is not set up. Run `,staffsetup` first.')] });
+    }
+
+    // Resolve date — default to today in guild's timezone
+    let date;
+    if (args[0]) {
+      if (/^\d{4}-\d{2}-\d{2}$/.test(args[0])) {
+        date = args[0];
+      } else {
+        return message.reply('❌ Date must be `YYYY-MM-DD`, e.g. `,checkins 2026-05-29`');
+      }
+    } else {
+      // Get "today" in the guild's configured timezone
+      try {
+        const parts = new Intl.DateTimeFormat('en-US', {
+          timeZone: s.timezone || 'UTC',
+          year: 'numeric', month: '2-digit', day: '2-digit',
+        }).formatToParts(new Date());
+        const get = t => parts.find(p => p.type === t)?.value ?? '00';
+        date = `${get('year')}-${get('month')}-${get('day')}`;
+      } catch {
+        date = new Date().toISOString().slice(0, 10);
+      }
+    }
+
+    // Fetch staff role members
+    const staffRole = message.guild.roles.cache.get(s.staff_role_id);
+    if (!staffRole) {
+      return message.reply({ embeds: [new EmbedBuilder().setColor(RED)
+        .setDescription('❌ Configured staff role no longer exists.')] });
+    }
+
+    await message.guild.members.fetch().catch(() => {});
+    const staffMembers = staffRole.members.filter(m => !m.user.bot);
+
+    // Get check-in records for the date
+    const records      = db.getStaffCheckins(guildId, date);
+    const checkedInMap = new Map(records.map(r => [r.user_id, r.checked_in_at]));
+
+    const inList  = [];
+    const outList = [];
+
+    for (const [, member] of staffMembers) {
+      if (checkedInMap.has(member.id)) {
+        // Format time in guild's timezone
+        let timeStr = '—';
+        try {
+          const raw = checkedInMap.get(member.id);
+          timeStr = new Intl.DateTimeFormat('en-US', {
+            timeZone: s.timezone || 'UTC',
+            hour: '2-digit', minute: '2-digit', hour12: false,
+          }).format(new Date(raw));
+        } catch {}
+        inList.push(`<@${member.id}> — \`${timeStr}\``);
+      } else {
+        outList.push(`<@${member.id}>`);
+      }
+    }
+
+    // Sort checked-in by time (already stored in order), missing alphabetically
+    inList.sort();
+    outList.sort();
+
+    const total   = staffMembers.size;
+    const inCount = inList.length;
+    const outCount = outList.length;
+    const pct     = total > 0 ? Math.round((inCount / total) * 100) : 0;
+    const bar     = '█'.repeat(Math.round(pct / 10)) + '░'.repeat(10 - Math.round(pct / 10));
+
+    const embed = new EmbedBuilder()
+      .setColor(outCount === 0 ? GREEN : outCount === total ? RED : YELLOW)
+      .setTitle(`📋 Staff Attendance — ${date}`)
+      .setDescription(`**${inCount}/${total}** checked in  \`${bar}\` ${pct}%`)
+      .setFooter({ text: `Timezone: ${s.timezone || 'UTC'}` })
+      .setTimestamp();
+
+    if (inList.length) {
+      embed.addFields({
+        name: `✅ Checked In (${inCount})`,
+        value: inList.join('\n').slice(0, 1024),
+        inline: false,
+      });
+    }
+
+    if (outList.length) {
+      embed.addFields({
+        name: `❌ Not Checked In (${outCount})`,
+        value: outList.join('\n').slice(0, 1024),
+        inline: false,
+      });
+    }
+
+    if (!inList.length && !outList.length) {
+      embed.setDescription('No staff members found with that role.');
+    }
+
+    await message.reply({ embeds: [embed] });
+  },
+};
+
+module.exports = [staffsetup, checkins];
