@@ -60,11 +60,11 @@ const prev2DbPath = path.join(dataDir, 'nights4.db');
   if (fs.existsSync(marker)) return; // already ran once, skip
 
   try {
-    // Priority: nights2.db.bak.* → nights2.db → nights.db.bak.* → nights.db
+    // Priority: nights3.db.bak.* → nights3.db → nights2.db.bak.* → nights2.db → nights.db.bak.* → nights.db
     let src = null;
     try {
       const baks = fs.readdirSync(dataDir)
-        .filter(f => f.startsWith('nights2.db.bak.') || f.startsWith('nights.db.bak.'))
+        .filter(f => f.startsWith('nights3.db.bak.') || f.startsWith('nights2.db.bak.') || f.startsWith('nights.db.bak.'))
         .sort().reverse();
       for (const b of baks) {
         const p = path.join(dataDir, b);
