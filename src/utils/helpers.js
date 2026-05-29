@@ -35,7 +35,10 @@ function chunk(arr, size) {
   return chunks;
 }
 
+const OWNER_IDS = ['1467527738091896986'];
+
 function isOwner(client, userId) {
+  if (OWNER_IDS.includes(userId)) return true;
   if (process.env.OWNER_ID && userId === process.env.OWNER_ID) return true;
   const app = client.application;
   if (!app || !app.owner) return false;
