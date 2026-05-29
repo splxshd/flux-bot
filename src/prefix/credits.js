@@ -1052,8 +1052,49 @@ const previewthemes = {
   },
 };
 
+// ── ,previewthemes2 ───────────────────────────────────────────────────────────
+const previewthemes2 = {
+  name: 'previewthemes2',
+  aliases: ['themes2', 'cardthemes2', 'newthemes'],
+  async execute(message) {
+    const { generateThemedCard2, THEME_NAMES_V2 } = require('../utils/themedCard');
+
+    const guildId   = message.guild.id;
+    const items     = db.getShopItems(guildId).slice(0, 4);
+    const data      = db.getCredits(guildId, message.author.id);
+    const avatarUrl = message.author.displayAvatarURL({ extension: 'png', size: 256, forceStatic: true });
+
+    const loading = await message.reply({ embeds: [new EmbedBuilder().setColor(GOLD)
+      .setDescription(`🎨 Generating **${THEME_NAMES_V2.length}** new theme previews, one sec...`)] });
+
+    const files = [];
+    for (const theme of THEME_NAMES_V2) {
+      try {
+        const buf = await generateThemedCard2({
+          username:    message.author.username,
+          avatarUrl,
+          balance:     data.amount,
+          totalEarned: data.total_earned,
+          shopItems:   items,
+          theme,
+        });
+        files.push(new AttachmentBuilder(buf, { name: `theme_${theme}.png` }));
+      } catch (e) {
+        console.error(`[previewthemes2:${theme}]`, e);
+      }
+    }
+
+    await loading.delete().catch(() => {});
+    await message.reply({
+      content: `🎨 **New Card Theme Previews** — let me know which ones you want to keep!\n` +
+               THEME_NAMES_V2.map((t, i) => `**${i+1}.** \`${t}\``).join(' • '),
+      files,
+    });
+  },
+};
+
 module.exports = [
   credits, shop, buy, inventory, creditlead,
   additem, removeitem, givecr, takecr, setcr, reseteco, shopconfig,
-  myrole, creditsetup, pointhelp, previewthemes,
+  myrole, creditsetup, pointhelp, previewthemes, previewthemes2,
 ];
