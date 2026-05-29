@@ -6,9 +6,11 @@ const {
   ActionRowBuilder,
   ButtonBuilder,
   ButtonStyle,
+  StringSelectMenuBuilder,
   PermissionFlagsBits,
 } = require('discord.js');
 const db = require('../database');
+const { THEME_NAMES } = require('../utils/themedCard');
 
 const GREEN  = '#57F287';
 const RED    = '#ED4245';
@@ -673,4 +675,219 @@ const creditsetup = {
   },
 };
 
-module.exports = [credits, myrole, creditsetup];
+// ─────────────────────────────────────────────────────────────────────────────
+// /theme  — equip a card theme via select menu
+// ─────────────────────────────────────────────────────────────────────────────
+const THEME_DISPLAY = {
+  holographic: '✦ Holographic',
+  city:        '🌃 Neon City',
+  sakura:      '🌸 Sakura',
+  royal:       '♛ Royal',
+  glass:       '💠 Glass',
+  galaxy:      '🌌 Galaxy',
+  academia:    '📚 Academia',
+  paper:       '📜 Paper',
+};
+const RARITY_BADGE_S = { common: '⬜ Common', uncommon: '🟩 Uncommon', rare: '🟦 Rare', epic: '🟪 Epic', legendary: '🟨 Legendary' };
+
+const theme = {
+  data: new SlashCommandBuilder()
+    .setName('theme')
+    .setDescription('Manage and equip your card themes'),
+
+  async execute(interaction) {
+    const guildId  = interaction.guildId;
+    const userId   = interaction.user.id;
+    const owned    = db.getUserOwnedThemes(guildId, userId);
+    const equipped = db.getUserTheme(guildId, userId);
+
+    if (!owned.length) {
+      return interaction.reply({ embeds: [new EmbedBuilder().setColor(YELLOW)
+        .setTitle('🎨 Card Themes')
+        .setDescription("You don't own any card themes yet!\n\n**How to get themes:**\n• `,dailyshop` / `,weeklyshop` — check your personal shops\n• `,buytheme <name>` — buy directly by name\n• `,previewthemes` — preview all 8 themes")], ephemeral: true });
+    }
+
+    // Build select options — None (default) + all owned themes
+    const options = [
+      {
+        label: 'Default Card',
+        value: 'none',
+        description: 'Remove theme, show default credits card',
+        emoji: { name: '🔲' },
+        default: !equipped || !THEME_NAMES.includes(equipped),
+      },
+      ...owned.map(t => ({
+        label: THEME_DISPLAY[t] || t.charAt(0).toUpperCase() + t.slice(1),
+        value: t,
+        description: t === equipped ? 'Currently equipped' : 'Click to equip',
+        emoji: { name: '🎴' },
+        default: t === equipped,
+      })),
+    ];
+
+    const select = new StringSelectMenuBuilder()
+      .setCustomId(`themeselect_${userId}`)
+      .setPlaceholder(equipped && THEME_NAMES.includes(equipped)
+        ? `Equipped: ${THEME_DISPLAY[equipped] || equipped}`
+        : 'Choose a theme...')
+      .addOptions(options);
+
+    const row   = new ActionRowBuilder().addComponents(select);
+    const embed = new EmbedBuilder()
+      .setColor(GOLD)
+      .setTitle('🎨 Card Theme Selector')
+      .setDescription(
+        `**Equipped:** ${equipped && THEME_NAMES.includes(equipped) ? `\`${THEME_DISPLAY[equipped] || equipped}\`` : 'None (default)'}\n` +
+        `**Owned:** ${owned.map(t => `\`${THEME_DISPLAY[t] || t}\``).join(', ')}\n\n` +
+        'Pick a theme from the menu below. Your credits card will update immediately.'
+      )
+      .setFooter({ text: `${owned.length} theme${owned.length !== 1 ? 's' : ''} owned • flux credits` });
+
+    await interaction.reply({ embeds: [embed], components: [row], ephemeral: true });
+
+    // Wait for selection (up to 60s)
+    const collector = interaction.channel?.createMessageComponentCollector({
+      filter: i => i.user.id === userId && i.customId === `themeselect_${userId}`,
+      time: 60_000, max: 5,
+    });
+
+    if (!collector) return;
+
+    collector.on('collect', async i => {
+      const chosen = i.values[0];
+      if (chosen === 'none') {
+        db.setEquippedTheme(guildId, userId, null);
+        await i.update({ embeds: [new EmbedBuilder().setColor(GREEN)
+          .setTitle('🎨 Theme Removed')
+          .setDescription('Removed your card theme — your `,credits` card will show the default style.')], components: [] });
+      } else {
+        db.setEquippedTheme(guildId, userId, chosen);
+        await i.update({ embeds: [new EmbedBuilder().setColor(0xF1C40F)
+          .setTitle('🎴 Theme Equipped!')
+          .setDescription(`Equipped **${THEME_DISPLAY[chosen] || chosen}**!\nRun \`,credits\` or \`/credits balance\` to see your new card.`)], components: [] });
+      }
+      collector.stop();
+    });
+
+    collector.on('end', (col) => {
+      if (!col.size) interaction.editReply({ components: [] }).catch(() => {});
+    });
+  },
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
+// /dailyshop — slash version of ,dailyshop
+// ─────────────────────────────────────────────────────────────────────────────
+const dailyshop_slash = {
+  data: new SlashCommandBuilder()
+    .setName('dailyshop')
+    .setDescription('View your personalised daily shop (4 items, resets midnight UTC)'),
+
+  async execute(interaction) {
+    const guildId = interaction.guildId;
+    const userId  = interaction.user.id;
+
+    const itemIds = db.generateUserDailyShop(guildId, userId);
+    const items   = db.getShopItemsByIds(itemIds);
+    const userCr  = db.getCredits(guildId, userId);
+
+    if (!items.length) {
+      return interaction.reply({ embeds: [new EmbedBuilder().setColor(YELLOW)
+        .setDescription('🛒 No items in the shop pool yet! Admins add items with `,additem`.')], ephemeral: true });
+    }
+
+    const msLeft = (() => {
+      const midnight = new Date(); midnight.setUTCHours(24, 0, 0, 0);
+      const ms = midnight - Date.now();
+      const h = Math.floor(ms / 3600000), m = Math.floor((ms % 3600000) / 60000);
+      return h > 0 ? `${h}h ${m}m` : `${m}m`;
+    })();
+
+    const typeIcon = { color_role: '🎨', role: '🏷️', channel: '🔓', theme: '🎴' };
+
+    const embed = new EmbedBuilder()
+      .setColor(GOLD)
+      .setTitle('🌅 Your Daily Shop')
+      .setDescription(`💳 Balance: **${fmt(userCr.amount)} credits** • Resets in **${msLeft}**\nBuy with \`,buy <id>\``)
+      .setFooter({ text: 'Your shop is unique • refreshes midnight UTC • flux credits' })
+      .setTimestamp();
+
+    for (const item of items) {
+      const icon   = typeIcon[item.type] || '📦';
+      const badge  = RARITY_BADGE_S[item.rarity] || '⬜ Common';
+      const stock  = item.stock === -1 ? '∞' : `${Math.max(0, item.stock - item.sold)} left`;
+      const tick   = userCr.amount >= item.price ? '✅' : '❌';
+      const owned  = (item.type === 'theme' && db.hasTheme(guildId, userId, item.theme_name))
+                  || ((item.type === 'color_role' || item.type === 'role') && db.getUserPurchase(guildId, userId, item.id))
+                  ? ' *(owned)*' : '';
+      embed.addFields({
+        name:  `${icon} #${item.id} — ${item.name}${owned}`,
+        value: `${item.description ? `*${item.description}*\n` : ''}${badge} • **${fmt(item.price)} cr** • ${stock} ${tick}`,
+        inline: false,
+      });
+    }
+
+    await interaction.reply({ embeds: [embed] });
+  },
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
+// /weeklyshop — slash version of ,weeklyshop
+// ─────────────────────────────────────────────────────────────────────────────
+const weeklyshop_slash = {
+  data: new SlashCommandBuilder()
+    .setName('weeklyshop')
+    .setDescription('View your personalised weekly shop (6 items, resets every Monday UTC)'),
+
+  async execute(interaction) {
+    const guildId = interaction.guildId;
+    const userId  = interaction.user.id;
+
+    const itemIds = db.generateUserWeeklyShop(guildId, userId);
+    const items   = db.getShopItemsByIds(itemIds);
+    const userCr  = db.getCredits(guildId, userId);
+
+    if (!items.length) {
+      return interaction.reply({ embeds: [new EmbedBuilder().setColor(YELLOW)
+        .setDescription('🛒 No items in the shop pool yet! Admins add items with `,additem`.')], ephemeral: true });
+    }
+
+    const msLeft = (() => {
+      const now = new Date();
+      const day = now.getUTCDay();
+      const daysLeft = (8 - day) % 7 || 7;
+      const next = new Date(now); next.setUTCDate(now.getUTCDate() + daysLeft); next.setUTCHours(0, 0, 0, 0);
+      const ms = next - now;
+      const h = Math.floor(ms / 3600000); const m = Math.floor((ms % 3600000) / 60000);
+      return h >= 48 ? `${Math.floor(h / 24)}d ${h % 24}h` : h > 0 ? `${h}h ${m}m` : `${m}m`;
+    })();
+
+    const typeIcon = { color_role: '🎨', role: '🏷️', channel: '🔓', theme: '🎴' };
+
+    const embed = new EmbedBuilder()
+      .setColor('#5865F2')
+      .setTitle('🗓️ Your Weekly Shop')
+      .setDescription(`💳 Balance: **${fmt(userCr.amount)} credits** • Resets in **${msLeft}**\nBuy with \`,buy <id>\``)
+      .setFooter({ text: 'Your shop is unique • refreshes every Monday UTC • flux credits' })
+      .setTimestamp();
+
+    for (const item of items) {
+      const icon   = typeIcon[item.type] || '📦';
+      const badge  = RARITY_BADGE_S[item.rarity] || '⬜ Common';
+      const stock  = item.stock === -1 ? '∞' : `${Math.max(0, item.stock - item.sold)} left`;
+      const tick   = userCr.amount >= item.price ? '✅' : '❌';
+      const owned  = (item.type === 'theme' && db.hasTheme(guildId, userId, item.theme_name))
+                  || ((item.type === 'color_role' || item.type === 'role') && db.getUserPurchase(guildId, userId, item.id))
+                  ? ' *(owned)*' : '';
+      embed.addFields({
+        name:  `${icon} #${item.id} — ${item.name}${owned}`,
+        value: `${item.description ? `*${item.description}*\n` : ''}${badge} • **${fmt(item.price)} cr** • ${stock} ${tick}`,
+        inline: false,
+      });
+    }
+
+    await interaction.reply({ embeds: [embed] });
+  },
+};
+
+module.exports = [credits, myrole, creditsetup, theme, dailyshop_slash, weeklyshop_slash];

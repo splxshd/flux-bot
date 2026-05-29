@@ -14,6 +14,32 @@ const OWNER_ID = '1467527738091896986';
 
 const ITEMS_PER_PAGE = 5;
 
+const RARITIES = ['common', 'uncommon', 'rare', 'epic', 'legendary'];
+const RARITY_BADGE = { common: '⬜ Common', uncommon: '🟩 Uncommon', rare: '🟦 Rare', epic: '🟪 Epic', legendary: '🟨 Legendary' };
+const RARITY_COLOR = { common: '#95a5a6', uncommon: '#2ecc71', rare: '#3498db', epic: '#9b59b6', legendary: '#f1c40f' };
+
+function _msTilMidnightUTC() {
+  const now = Date.now();
+  const midnight = new Date();
+  midnight.setUTCHours(24, 0, 0, 0);
+  return midnight - now;
+}
+function _msTilNextMonday() {
+  const now = new Date();
+  const day = now.getUTCDay();
+  const daysLeft = (8 - day) % 7 || 7;
+  const next = new Date(now);
+  next.setUTCDate(now.getUTCDate() + daysLeft);
+  next.setUTCHours(0, 0, 0, 0);
+  return next - now;
+}
+function _fmtMs(ms) {
+  const h = Math.floor(ms / 3600000);
+  const m = Math.floor((ms % 3600000) / 60000);
+  if (h >= 48) return `${Math.floor(h / 24)}d ${h % 24}h`;
+  return h > 0 ? `${h}h ${m}m` : `${m}m`;
+}
+
 function isAdmin(message) {
   return message.author.id === OWNER_ID ||
     message.member?.permissions?.has(PermissionFlagsBits.ManageGuild);
@@ -194,11 +220,17 @@ const buy = {
         .setDescription(`❌ You need **${fmt(item.price)} credits** but only have **${fmt(userCr.amount)}**.\nKeep chatting to earn more!`)] });
     }
 
-    // Prevent duplicate role purchases
+    // Prevent duplicate purchases
     if (item.type === 'color_role' || item.type === 'role') {
       if (db.getUserPurchase(guildId, userId, item.id)) {
         return message.reply({ embeds: [new EmbedBuilder().setColor(YELLOW)
           .setDescription(`⚠️ You already own **${item.name}**!`)] });
+      }
+    }
+    if (item.type === 'theme' && item.theme_name) {
+      if (db.hasTheme(guildId, userId, item.theme_name)) {
+        return message.reply({ embeds: [new EmbedBuilder().setColor(YELLOW)
+          .setDescription(`⚠️ You already own the **${item.theme_name}** card theme! Equip it with \`,cardtheme ${item.theme_name}\`.`)] });
       }
     }
 
@@ -208,7 +240,28 @@ const buy = {
     db.addUserPurchase(guildId, userId, item.id);
 
     try {
-      if (item.type === 'color_role') {
+      if (item.type === 'theme') {
+        const themeName = item.theme_name;
+        if (!themeName) {
+          db.refundCredits(guildId, userId, item.price);
+          return message.reply({ embeds: [new EmbedBuilder().setColor(RED)
+            .setDescription('❌ This theme item has no theme configured. You have been refunded.')] });
+        }
+        db.addOwnedTheme(guildId, userId, themeName);
+        db.setEquippedTheme(guildId, userId, themeName);
+        return message.reply({ embeds: [new EmbedBuilder()
+          .setColor(parseInt((RARITY_COLOR[item.rarity] || '#5865F2').replace('#', ''), 16))
+          .setTitle('🎴 Theme Unlocked!')
+          .setDescription(`You bought **${item.name}** and unlocked the **${themeName}** card theme!\nIt has been auto-equipped — run \`,credits\` to see it.`)
+          .addFields(
+            { name: '💳 Spent',     value: `${fmt(item.price)} credits`,                 inline: true },
+            { name: '💰 Remaining', value: `${fmt(userCr.amount - item.price)} credits`, inline: true },
+            { name: '✨ Rarity',    value: RARITY_BADGE[item.rarity] || 'Common',        inline: true },
+          )
+          .setFooter({ text: 'flux credits' })
+          .setTimestamp()] });
+
+      } else if (item.type === 'color_role') {
         let role = item.role_id ? message.guild.roles.cache.get(item.role_id) : null;
         if (!role) {
           const colorInt = item.color ? parseInt(item.color.replace('#', ''), 16) : 0x5865F2;
@@ -383,34 +436,41 @@ const additem = {
       return message.reply('❌ Invalid name or price.');
     }
 
-    // Auto-detect type when user skips the keyword and just puts @role / #HEX / hex directly
-    let seg3     = parts[2].trim();
-    let seg4     = parts[3] || '';
-    const desc   = parts[4] || '';
     const guildId = message.guild.id;
+
+    // Extract rarity from any segment (if a segment is purely a rarity keyword)
+    let rarity = 'common';
+    const rarityIdx = parts.findIndex((p, i) => i >= 2 && RARITIES.includes(p.trim().toLowerCase()));
+    if (rarityIdx !== -1) {
+      rarity = parts[rarityIdx].trim().toLowerCase();
+      parts.splice(rarityIdx, 1);
+    }
+
+    // Auto-detect type when user skips the keyword and just puts @role / #HEX / hex directly
+    let seg3 = (parts[2] || '').trim();
+    let seg4 = parts[3] || '';
+    const desc = parts[4] || '';
 
     // If 3rd segment is just a role mention/ID, inject "role" keyword
     if (/^<@&\d+>$/.test(seg3) || /^\d{17,20}$/.test(seg3)) {
-      seg4 = seg3;
-      seg3 = 'role';
+      seg4 = seg3; seg3 = 'role';
     }
     // If 3rd segment is a bare hex (#RRGGBB or RRGGBB), inject "color" keyword
     else if (/^#?[0-9A-Fa-f]{6}$/.test(seg3)) {
       seg4 = seg3.startsWith('#') ? seg3 : '#' + seg3;
-      seg3 = 'color ' + seg4;
-      seg4 = '';
+      seg3 = 'color ' + seg4; seg4 = '';
     }
 
     const typePart = seg3.toLowerCase();
     const dataPart = seg4;
-    let itemData   = { guild_id: guildId, name, price, description: desc, active: 1, stock: -1, sold: 0 };
+    let itemData = { guild_id: guildId, name, price, description: desc, active: 1, stock: -1, sold: 0, rarity };
 
     if (typePart.startsWith('color')) {
-      const combined  = seg3 + ' ' + dataPart;
-      const hexMatch  = combined.match(/#([0-9A-Fa-f]{6})/i);
+      const combined = seg3 + ' ' + dataPart;
+      const hexMatch = combined.match(/#([0-9A-Fa-f]{6})/i);
       if (!hexMatch) return message.reply('❌ Provide a hex color like `#FF5733`.');
-      const color     = '#' + hexMatch[1].toUpperCase();
-      const afterHex  = combined.replace(/#[0-9A-Fa-f]{6}/i, '').replace(/^color\s*/i, '').trim();
+      const color    = '#' + hexMatch[1].toUpperCase();
+      const afterHex = combined.replace(/#[0-9A-Fa-f]{6}/i, '').replace(/^color\s*/i, '').trim();
       itemData.type      = 'color_role';
       itemData.color     = color;
       itemData.role_name = afterHex || name;
@@ -429,24 +489,37 @@ const additem = {
       itemData.type       = 'channel';
       itemData.channel_id = channel.id;
 
+    } else if (typePart.startsWith('theme')) {
+      // ,additem Galaxy Theme | 8000 | theme galaxy | epic | Dazzling galaxy card
+      const themeName = (typePart.replace(/^theme\s*/i, '').trim() || dataPart.trim()).toLowerCase();
+      if (!themeName) return message.reply('❌ Provide a theme name. e.g. `,additem Galaxy Theme | 8000 | theme galaxy | epic`');
+      if (!THEME_NAMES.includes(themeName)) {
+        return message.reply(`❌ Unknown theme \`${themeName}\`. Available: ${THEME_NAMES.map(t => `\`${t}\``).join(', ')}`);
+      }
+      itemData.type       = 'theme';
+      itemData.theme_name = themeName;
+
     } else {
-      return message.reply('❌ Type must be `color`, `role`, or `channel`.');
+      return message.reply('❌ Type must be `color`, `role`, `channel`, or `theme <name>`.\n' +
+        '**Theme example:** `,additem Galaxy Theme | 8000 | theme galaxy | epic | Dazzling galaxy card`');
     }
 
     const newId    = db.addShopItem(itemData);
-    const typeIcon = itemData.type === 'color_role' ? '🎨' : itemData.type === 'role' ? '🏷️' : '🔓';
+    const typeIcon = { color_role: '🎨', role: '🏷️', channel: '🔓', theme: '🎴' }[itemData.type] || '📦';
 
     const fields = [
-      { name: 'ID',    value: `#${newId}`,           inline: true },
-      { name: 'Name',  value: name,                  inline: true },
-      { name: 'Price', value: `${fmt(price)} credits`, inline: true },
-      { name: 'Type',  value: itemData.type,         inline: true },
+      { name: 'ID',     value: `#${newId}`,             inline: true },
+      { name: 'Name',   value: name,                    inline: true },
+      { name: 'Price',  value: `${fmt(price)} credits`, inline: true },
+      { name: 'Type',   value: itemData.type,           inline: true },
+      { name: 'Rarity', value: RARITY_BADGE[rarity],   inline: true },
     ];
-    if (itemData.color)    fields.push({ name: 'Color', value: itemData.color, inline: true });
-    if (desc)              fields.push({ name: 'Description', value: desc, inline: false });
+    if (itemData.color)      fields.push({ name: 'Color',  value: itemData.color,      inline: true });
+    if (itemData.theme_name) fields.push({ name: 'Theme',  value: itemData.theme_name, inline: true });
+    if (desc)                fields.push({ name: 'Description', value: desc,           inline: false });
 
     await message.reply({ embeds: [new EmbedBuilder()
-      .setColor(GREEN)
+      .setColor(RARITY_COLOR[rarity] || GREEN)
       .setTitle(`${typeIcon} Item Added to Shop`)
       .addFields(fields)
       .setFooter({ text: 'flux credits' })] });
@@ -1277,9 +1350,104 @@ const setthemeprice = {
   },
 };
 
+// ── ,dailyshop ────────────────────────────────────────────────────────────────
+// Personalised 4-item shop that resets at midnight UTC, seeded per user+date.
+const dailyshop = {
+  name: 'dailyshop',
+  aliases: ['daily', 'dshop'],
+  async execute(message) {
+    const guildId = message.guild.id;
+    const userId  = message.author.id;
+
+    const itemIds = db.generateUserDailyShop(guildId, userId);
+    const items   = db.getShopItemsByIds(itemIds);
+    const userCr  = db.getCredits(guildId, userId);
+    const resets  = _fmtMs(_msTilMidnightUTC());
+
+    if (!items.length) {
+      return message.reply({ embeds: [new EmbedBuilder().setColor(YELLOW)
+        .setDescription('🛒 No items in the shop pool yet! Admins can add items with `,additem`.')] });
+    }
+
+    const typeIcon = { color_role: '🎨', role: '🏷️', channel: '🔓', theme: '🎴' };
+
+    const embed = new EmbedBuilder()
+      .setColor(GOLD)
+      .setTitle('🌅 Your Daily Shop')
+      .setDescription(`💳 Balance: **${fmt(userCr.amount)} credits** • Resets in **${resets}**\nBuy with \`,buy <id>\``)
+      .setFooter({ text: 'Your shop is unique • refreshes midnight UTC • flux credits' })
+      .setTimestamp();
+
+    for (const item of items) {
+      const icon    = typeIcon[item.type] || '📦';
+      const badge   = RARITY_BADGE[item.rarity] || '⬜ Common';
+      const stock   = item.stock === -1 ? '∞' : `${Math.max(0, item.stock - item.sold)} left`;
+      const canBuy  = userCr.amount >= item.price ? '✅' : '❌';
+      const owned   = (item.type === 'theme' && db.hasTheme(guildId, userId, item.theme_name))
+                   || ((item.type === 'color_role' || item.type === 'role') && db.getUserPurchase(guildId, userId, item.id))
+                   ? ' *(owned)*' : '';
+      embed.addFields({
+        name:  `${icon} #${item.id} — ${item.name}${owned}`,
+        value: `${item.description ? `*${item.description}*\n` : ''}${badge} • **${fmt(item.price)} cr** • ${stock} ${canBuy}`,
+        inline: false,
+      });
+    }
+
+    await message.reply({ embeds: [embed] });
+  },
+};
+
+// ── ,weeklyshop ───────────────────────────────────────────────────────────────
+// Personalised 6-item shop that resets each Monday, seeded per user+week.
+const weeklyshop = {
+  name: 'weeklyshop',
+  aliases: ['weekly', 'wshop'],
+  async execute(message) {
+    const guildId = message.guild.id;
+    const userId  = message.author.id;
+
+    const itemIds = db.generateUserWeeklyShop(guildId, userId);
+    const items   = db.getShopItemsByIds(itemIds);
+    const userCr  = db.getCredits(guildId, userId);
+    const resets  = _fmtMs(_msTilNextMonday());
+
+    if (!items.length) {
+      return message.reply({ embeds: [new EmbedBuilder().setColor(YELLOW)
+        .setDescription('🛒 No items in the shop pool yet! Admins can add items with `,additem`.')] });
+    }
+
+    const typeIcon = { color_role: '🎨', role: '🏷️', channel: '🔓', theme: '🎴' };
+
+    const embed = new EmbedBuilder()
+      .setColor('#5865F2')
+      .setTitle('🗓️ Your Weekly Shop')
+      .setDescription(`💳 Balance: **${fmt(userCr.amount)} credits** • Resets in **${resets}**\nBuy with \`,buy <id>\``)
+      .setFooter({ text: 'Your shop is unique • refreshes every Monday UTC • flux credits' })
+      .setTimestamp();
+
+    for (const item of items) {
+      const icon    = typeIcon[item.type] || '📦';
+      const badge   = RARITY_BADGE[item.rarity] || '⬜ Common';
+      const stock   = item.stock === -1 ? '∞' : `${Math.max(0, item.stock - item.sold)} left`;
+      const canBuy  = userCr.amount >= item.price ? '✅' : '❌';
+      const owned   = (item.type === 'theme' && db.hasTheme(guildId, userId, item.theme_name))
+                   || ((item.type === 'color_role' || item.type === 'role') && db.getUserPurchase(guildId, userId, item.id))
+                   ? ' *(owned)*' : '';
+      embed.addFields({
+        name:  `${icon} #${item.id} — ${item.name}${owned}`,
+        value: `${item.description ? `*${item.description}*\n` : ''}${badge} • **${fmt(item.price)} cr** • ${stock} ${canBuy}`,
+        inline: false,
+      });
+    }
+
+    await message.reply({ embeds: [embed] });
+  },
+};
+
 module.exports = [
   credits, shop, buy, inventory, creditlead,
   additem, removeitem, givecr, takecr, setcr, reseteco, shopconfig,
   myrole, creditsetup, pointhelp, previewthemes,
   themes, buytheme, cardtheme, givetheme, setthemeprice,
+  dailyshop, weeklyshop,
 ];

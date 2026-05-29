@@ -1926,7 +1926,31 @@ function _runSchema() {
   channel_id TEXT,
   stock INTEGER DEFAULT -1,
   sold INTEGER DEFAULT 0,
-  active INTEGER DEFAULT 1
+  active INTEGER DEFAULT 1,
+  rarity TEXT DEFAULT 'common',
+  theme_name TEXT
+)`);
+
+  // Shop item new columns
+  try { db.run("ALTER TABLE shop_items ADD COLUMN rarity TEXT DEFAULT 'common'"); } catch(_) {}
+  try { db.run("ALTER TABLE shop_items ADD COLUMN theme_name TEXT"); } catch(_) {}
+
+  // Per-user personalised daily shop cache
+  db.run(`CREATE TABLE IF NOT EXISTS user_daily_shops (
+  guild_id TEXT NOT NULL,
+  user_id TEXT NOT NULL,
+  date TEXT NOT NULL,
+  item_ids TEXT NOT NULL DEFAULT '[]',
+  PRIMARY KEY (guild_id, user_id, date)
+)`);
+
+  // Per-user personalised weekly shop cache
+  db.run(`CREATE TABLE IF NOT EXISTS user_weekly_shops (
+  guild_id TEXT NOT NULL,
+  user_id TEXT NOT NULL,
+  week TEXT NOT NULL,
+  item_ids TEXT NOT NULL DEFAULT '[]',
+  PRIMARY KEY (guild_id, user_id, week)
 )`);
 
   db.run(`CREATE TABLE IF NOT EXISTS credit_settings (
@@ -2080,8 +2104,8 @@ function getShopItemByName(guildId, name) {
 }
 function addShopItem(data) {
   db.run(
-    'INSERT INTO shop_items (guild_id, name, description, price, type, color, role_name, role_id, channel_id, stock, sold, active) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 1)',
-    [data.guild_id, data.name, data.description || '', data.price, data.type, data.color || null, data.role_name || null, data.role_id || null, data.channel_id || null, data.stock ?? -1],
+    'INSERT INTO shop_items (guild_id, name, description, price, type, color, role_name, role_id, channel_id, stock, sold, active, rarity, theme_name) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 1, ?, ?)',
+    [data.guild_id, data.name, data.description || '', data.price, data.type, data.color || null, data.role_name || null, data.role_id || null, data.channel_id || null, data.stock ?? -1, data.rarity || 'common', data.theme_name || null],
   );
   return db.get('SELECT last_insert_rowid() as id').id;
 }
@@ -2210,6 +2234,78 @@ function getUserActiveBids(guildId, userId) {
   );
 }
 
+// ── Daily / Weekly Shop Generation ───────────────────────────────────────────
+const _RARITY_WEIGHTS = { common: 50, uncommon: 28, rare: 14, epic: 6, legendary: 2 };
+
+function _hashStr(str) {
+  let h = 5381;
+  for (let i = 0; i < str.length; i++) h = (Math.imul(h, 31) + str.charCodeAt(i)) >>> 0;
+  return h || 1;
+}
+
+function _shopRng(seed) {
+  let s = _hashStr(seed);
+  return () => { s = (s * 1664525 + 1013904223) >>> 0; return s / 0xFFFFFFFF; };
+}
+
+function _weightedSelect(items, seed, count) {
+  if (!items.length) return [];
+  const rng = _shopRng(seed);
+  const pool = [...items];
+  const out  = [];
+  count = Math.min(count, pool.length);
+  while (out.length < count && pool.length > 0) {
+    const total = pool.reduce((s, i) => s + (_RARITY_WEIGHTS[i.rarity] || 50), 0);
+    let roll = rng() * total;
+    let idx = 0;
+    for (let i = 0; i < pool.length; i++) {
+      roll -= (_RARITY_WEIGHTS[pool[i].rarity] || 50);
+      if (roll <= 0) { idx = i; break; }
+    }
+    out.push(pool[idx]);
+    pool.splice(idx, 1);
+  }
+  return out;
+}
+
+function _todayStr() { return new Date().toISOString().slice(0, 10); }
+
+function _weekStr() {
+  const d = new Date();
+  const startOfYear = new Date(d.getFullYear(), 0, 1);
+  const weekNum = Math.ceil(((d - startOfYear) / 86400000 + startOfYear.getDay() + 1) / 7);
+  return `${d.getFullYear()}-W${String(weekNum).padStart(2, '0')}`;
+}
+
+function generateUserDailyShop(guildId, userId) {
+  const date   = _todayStr();
+  const cached = db.get('SELECT item_ids FROM user_daily_shops WHERE guild_id=? AND user_id=? AND date=?', [guildId, userId, date]);
+  if (cached) return JSON.parse(cached.item_ids);
+  const items    = db.all('SELECT * FROM shop_items WHERE guild_id=? AND active=1', [guildId]);
+  const selected = _weightedSelect(items, `${userId}:daily:${date}`, 4);
+  const ids      = selected.map(i => i.id);
+  db.run('INSERT OR REPLACE INTO user_daily_shops (guild_id, user_id, date, item_ids) VALUES (?, ?, ?, ?)',
+    [guildId, userId, date, JSON.stringify(ids)]);
+  return ids;
+}
+
+function generateUserWeeklyShop(guildId, userId) {
+  const week   = _weekStr();
+  const cached = db.get('SELECT item_ids FROM user_weekly_shops WHERE guild_id=? AND user_id=? AND week=?', [guildId, userId, week]);
+  if (cached) return JSON.parse(cached.item_ids);
+  const items    = db.all('SELECT * FROM shop_items WHERE guild_id=? AND active=1', [guildId]);
+  const selected = _weightedSelect(items, `${userId}:weekly:${week}`, 6);
+  const ids      = selected.map(i => i.id);
+  db.run('INSERT OR REPLACE INTO user_weekly_shops (guild_id, user_id, week, item_ids) VALUES (?, ?, ?, ?)',
+    [guildId, userId, week, JSON.stringify(ids)]);
+  return ids;
+}
+
+function getShopItemsByIds(ids) {
+  if (!ids.length) return [];
+  return ids.map(id => db.get('SELECT * FROM shop_items WHERE id=?', [id])).filter(Boolean);
+}
+
 // ── Card Themes ───────────────────────────────────────────────────────────────
 function getUserTheme(guildId, userId) {
   const row = db.get('SELECT equipped_theme FROM credits WHERE guild_id=? AND user_id=?', [guildId, userId]);
@@ -2332,6 +2428,7 @@ module.exports = {
   getUserTheme, getUserOwnedThemes, hasTheme, addOwnedTheme, setEquippedTheme,
   getThemePrice, setThemePrice, getAllThemePrices,
   getShopItems, getShopItem, getShopItemByName, addShopItem, removeShopItem, setShopItemRoleId, incrementItemSold,
+  generateUserDailyShop, generateUserWeeklyShop, getShopItemsByIds,
   getCreditSettings, upsertCreditSettings,
   getUserPurchase, addUserPurchase, getUserPurchases,
   getStaffCheckinSettings, upsertStaffCheckinSettings, getAllEnabledStaffCheckin,
