@@ -1381,6 +1381,7 @@ const fish = {
 
 // ── ,cf / ,duel ───────────────────────────────────────────────────────────────
 const pendingDuels = new Map(); // `${guildId}-${challengerId}` -> true (prevent spam)
+const CF_CD = 60; // 60-second cooldown between completed flips (in seconds)
 
 const cf = {
   name: 'cf',
@@ -1398,6 +1399,15 @@ const cf = {
 
     const s       = db.getEcoSettings(guildId);
     const chalEco = db.getEco(guildId, challenger.id);
+
+    // ── Cooldown check ────────────────────────────────────────────────────────
+    const now = Math.floor(Date.now() / 1000);
+    if (chalEco.cf_at && now - chalEco.cf_at < CF_CD) {
+      const left = (chalEco.cf_at + CF_CD - now);
+      return message.reply({ embeds: [new EmbedBuilder()
+        .setColor(RED)
+        .setDescription(`⏳ You're on cooldown. Try again in **${left}s**.`)] });
+    }
 
     if (chalEco.wallet < amt)
       return message.reply({ embeds: [new EmbedBuilder()
@@ -1465,6 +1475,11 @@ const cf = {
 
       db.addWallet(guildId, loser.id,  -amt);
       db.addWallet(guildId, winner.id,  amt);
+
+      // Set cooldown for both players so neither can flip immediately again
+      const tsNow = Math.floor(Date.now() / 1000);
+      db.setCfAt(guildId, challenger.id, tsNow);
+      db.setCfAt(guildId, target.id,     tsNow);
 
       const winnerEco = db.getEco(guildId, winner.id);
 

@@ -1199,6 +1199,10 @@ function setScratchAt(guildId, userId, ts) {
   ensureEco(guildId, userId);
   db.run('UPDATE economy SET scratch_at=? WHERE guild_id=? AND user_id=?', [ts, guildId, userId]);
 }
+function setCfAt(guildId, userId, ts) {
+  ensureEco(guildId, userId);
+  db.run('UPDATE economy SET cf_at=? WHERE guild_id=? AND user_id=?', [ts, guildId, userId]);
+}
 function getEcoSettings(guildId) {
   return db.get('SELECT * FROM economy_settings WHERE guild_id=?', [guildId])
     ?? { guild_id: guildId, currency_name: 'coins', currency_emoji: '🪙', daily_amount: 500, work_min: 150, work_max: 450 };
@@ -1877,6 +1881,7 @@ function _runSchema() {
   try { db.run('ALTER TABLE economy ADD COLUMN hunt_at INTEGER DEFAULT 0');    } catch {}
   try { db.run('ALTER TABLE economy ADD COLUMN mine_at INTEGER DEFAULT 0');    } catch {}
   try { db.run('ALTER TABLE economy ADD COLUMN scratch_at INTEGER DEFAULT 0'); } catch {}
+  try { db.run('ALTER TABLE economy ADD COLUMN cf_at INTEGER DEFAULT 0');      } catch {}
 
   db.run(`CREATE TABLE IF NOT EXISTS economy_settings (
   guild_id TEXT PRIMARY KEY,
@@ -2481,7 +2486,7 @@ module.exports = {
   getLevelSettings, upsertLevelSettings, getLevelRewards, setLevelReward, removeLevelReward,
   getAutoroles, addAutorole, removeAutorole, clearAutoroles,
   getEco, addWallet, setWallet, deposit, withdraw, transfer,
-  getEcoLeaderboard, setDailyAt, setWorkAt, setRobAt, setCrimeAt, setBegAt, setInvestAt, setFishAt, setHuntAt, setMineAt, setScratchAt,
+  getEcoLeaderboard, setDailyAt, setWorkAt, setRobAt, setCrimeAt, setBegAt, setInvestAt, setFishAt, setHuntAt, setMineAt, setScratchAt, setCfAt,
   getEcoSettings, upsertEcoSettings,
   setBoostRole, getBoostRole, removeBoostRole, getAllBoostRoles,
   createBet, getBet, getActiveBets, updateBetStatus, updateBetMessage, setBetWinner,
