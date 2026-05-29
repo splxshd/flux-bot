@@ -811,6 +811,25 @@ const creditsetup = {
   },
 };
 
+// ── ,reseteco @user ───────────────────────────────────────────────────────────
+const reseteco = {
+  name: 'reseteco',
+  aliases: ['resetcredits', 'resetbal', 'wipecredits'],
+  async execute(message, args) {
+    if (!isAdmin(message)) {
+      return message.reply({ embeds: [new EmbedBuilder().setColor(RED).setDescription('❌ Admin only.')] });
+    }
+    const target = message.mentions.users.first();
+    if (!target) return message.reply('Usage: `,reseteco @user`');
+
+    db.resetCredits(message.guild.id, target.id);
+
+    await message.reply({ embeds: [new EmbedBuilder()
+      .setColor(YELLOW)
+      .setDescription(`🗑️ Reset **${target.username}**'s balance and total earned to **0**.`)] });
+  },
+};
+
 // ── ,pointhelp ────────────────────────────────────────────────────────────────
 const pointhelp = {
   name: 'pointhelp',
@@ -880,6 +899,6 @@ const pointhelp = {
 
 module.exports = [
   credits, shop, buy, inventory, creditlead,
-  additem, removeitem, givecr, takecr, setcr, shopconfig,
+  additem, removeitem, givecr, takecr, setcr, reseteco, shopconfig,
   myrole, creditsetup, pointhelp,
 ];

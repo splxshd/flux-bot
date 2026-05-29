@@ -1955,6 +1955,9 @@ function setCreditsAmount(guildId, userId, amount) {
   db.run('INSERT OR IGNORE INTO credits (guild_id, user_id, amount, total_earned) VALUES (?, ?, 0, 0)', [guildId, userId]);
   db.run('UPDATE credits SET amount=? WHERE guild_id=? AND user_id=?', [amount, guildId, userId]);
 }
+function resetCredits(guildId, userId) {
+  db.run('UPDATE credits SET amount=0, total_earned=0 WHERE guild_id=? AND user_id=?', [guildId, userId]);
+}
 function getCreditLeaderboard(guildId, limit = 10) {
   return db.all('SELECT * FROM credits WHERE guild_id=? ORDER BY amount DESC LIMIT ?', [guildId, limit]);
 }
@@ -2079,7 +2082,7 @@ module.exports = {
   addBetEntry, removeBetEntry, getBetEntries, getUserBetEntry, getBetTotals, getBetBettorCounts,
   setHoneypot, getHoneypot, removeHoneypot, incrementHoneypotCount, getAllHoneypots,
   getUserCustomRoles, getUserCustomRole, addUserCustomRole, updateUserCustomRole, deleteUserCustomRole,
-  getCredits, addCredits, spendCredits, refundCredits, setCreditsAmount, getCreditLeaderboard,
+  getCredits, addCredits, spendCredits, refundCredits, setCreditsAmount, resetCredits, getCreditLeaderboard,
   getShopItems, getShopItem, getShopItemByName, addShopItem, removeShopItem, setShopItemRoleId, incrementItemSold,
   getCreditSettings, upsertCreditSettings,
   getUserPurchase, addUserPurchase, getUserPurchases,
