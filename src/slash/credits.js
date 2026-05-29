@@ -157,6 +157,12 @@ const credits = {
       if (item.stock !== -1 && item.sold >= item.stock)
         return interaction.reply({ content: '❌ This item is out of stock.', ephemeral: true });
 
+      // Only purchasable when in the user's daily or weekly rotation
+      const dailyIds  = db.generateUserDailyShop(guildId, userId);
+      const weeklyIds = db.generateUserWeeklyShop(guildId, userId);
+      if (!dailyIds.includes(item.id) && !weeklyIds.includes(item.id))
+        return interaction.reply({ content: `⚠️ **${item.name}** isn't in your shop right now. Check \`/credits shop\` daily or weekly.`, ephemeral: true });
+
       const userCr = db.getCredits(guildId, userId);
       if (userCr.amount < item.price)
         return interaction.reply({ content: `❌ You need **${fmt(item.price)} credits** but only have **${fmt(userCr.amount)}**.`, ephemeral: true });
@@ -689,7 +695,7 @@ const THEME_DISPLAY = {
   academia:    '📚 Academia',
   paper:       '📜 Paper',
   aurora:      '🌌 Aurora',
-  inferno:     '🔥 Inferno',
+  eclipse:     '◎ Eclipse',
   synthwave:   '◈ Synthwave',
   ocean:       '🌊 Ocean',
   void:        '🕳️ Void',

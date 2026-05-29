@@ -81,7 +81,7 @@ function fmt(n) {
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 const W = 860, H = 260;
-const THEME_NAMES = ['holographic','city','sakura','royal','glass','galaxy','academia','paper','aurora','inferno','synthwave','ocean','void','prismatic','glitch'];
+const THEME_NAMES = ['holographic','city','sakura','royal','glass','galaxy','academia','paper','aurora','eclipse','synthwave','ocean','void','prismatic','glitch'];
 
 // ─── Main renderer ────────────────────────────────────────────────────────────
 async function generateThemedCard({ username, avatarUrl, balance, totalEarned, shopItems = [], theme = 'holographic', quote = '' }) {
@@ -655,66 +655,130 @@ async function generateThemedCard({ username, avatarUrl, balance, totalEarned, s
   }
 
   // ── INFERNO ───────────────────────────────────────────────────────────────────
-  if (theme === 'inferno') {
-    x.fillStyle='#080100'; x.fillRect(0,0,W,H);
-    const ir=mkRng(88);
-    [[80,H],[220,H],[380,H],[520,H],[680,H],[820,H],[160,0],[500,0],[740,0]].forEach(([sx,sy])=>{
-      const ang=sy>=H ? -Math.PI/2 : Math.PI/2;
-      drawCrack(x,sx,sy,60+ir()*45,ang+(ir()-0.5)*0.7,4,ir);
-    });
-    [[100,H],[300,H],[500,H],[700,H],[430,H]].forEach(([gx,gy])=>{
-      const gg=x.createRadialGradient(gx,gy,0,gx,gy,90);
-      gg.addColorStop(0,'rgba(255,80,0,0.22)'); gg.addColorStop(1,'rgba(255,40,0,0)');
-      x.fillStyle=gg; x.fillRect(0,0,W,H);
-    });
-    const fr=mkRng(33);
-    for(let i=0;i<60;i++){
-      const px=fr()*W,py=fr()*H,ps=fr()*2.8+0.5;
-      const heat=fr();
-      const col=heat>0.7?`rgba(255,${200+fr()*55},50,${fr()*0.6+0.3})`:heat>0.4?`rgba(255,${80+fr()*80},0,${fr()*0.5+0.25})`:`rgba(255,${30+fr()*40},0,${fr()*0.4+0.2})`;
-      x.save(); x.shadowColor='rgba(255,80,0,0.8)'; x.shadowBlur=7; x.fillStyle=col; x.beginPath(); x.arc(px,py,ps,0,Math.PI*2); x.fill(); x.restore();
+  if (theme === 'eclipse') {
+    // Deep space background — slightly warmer toward upper right (eclipse side)
+    const bg=x.createLinearGradient(0,0,W,0);
+    bg.addColorStop(0,'#020408'); bg.addColorStop(0.55,'#050810'); bg.addColorStop(1,'#0a0b0e');
+    x.fillStyle=bg; x.fillRect(0,0,W,H);
+
+    // Stars — sparse near eclipse (right side), denser in shadow (left)
+    const rng=mkRng(67);
+    for(let i=0;i<80;i++){
+      const sx=rng()*W, sy=rng()*H;
+      const distToEclipse=Math.hypot(sx-740,sy-(-15));
+      if(distToEclipse<120) continue; // washed out by corona
+      const sz=rng()*1.3+0.25, al=(0.2+rng()*0.8)*(sx<300?1:0.55);
+      x.save(); x.globalAlpha=al; x.fillStyle=rng()>0.9?'#ffe8a0':'#ffffff';
+      x.beginPath(); x.arc(sx,sy,sz,0,Math.PI*2); x.fill(); x.restore();
     }
-    rrect(x,5,5,W-10,H-10,16);
-    const bord=x.createLinearGradient(0,0,W,H);
-    bord.addColorStop(0,'rgba(255,80,0,0.7)'); bord.addColorStop(0.5,'rgba(255,160,0,0.5)'); bord.addColorStop(1,'rgba(255,60,0,0.7)');
-    x.strokeStyle=bord; x.lineWidth=2; x.stroke();
-    rrect(x,9,9,W-18,H-18,13); x.strokeStyle='rgba(255,80,0,0.08)'; x.lineWidth=1; x.stroke();
-    const lb=x.createLinearGradient(0,0,0,H);
-    lb.addColorStop(0,'rgba(255,80,0,0)'); lb.addColorStop(0.3,'#ff5500'); lb.addColorStop(0.7,'#ff2200'); lb.addColorStop(1,'rgba(255,20,0,0)');
-    x.fillStyle=lb; x.fillRect(0,0,4,H);
 
+    // Eclipse: sun partially behind moon, centered at (740, -15) — top-right
+    const ECX=740, ECY=-15, ECR=72;
+
+    // Outer corona — large warm glow
+    const cog=x.createRadialGradient(ECX,ECY,ECR,ECX,ECY,ECR+240);
+    cog.addColorStop(0,'rgba(255,190,60,0.28)'); cog.addColorStop(0.3,'rgba(255,160,30,0.10)');
+    cog.addColorStop(0.65,'rgba(255,120,10,0.04)'); cog.addColorStop(1,'rgba(255,80,0,0)');
+    x.fillStyle=cog; x.fillRect(0,0,W,H);
+
+    // Mid corona — tighter bright ring
+    const cmg=x.createRadialGradient(ECX,ECY,ECR,ECX,ECY,ECR+90);
+    cmg.addColorStop(0,'rgba(255,230,140,0.45)'); cmg.addColorStop(0.4,'rgba(255,200,60,0.15)');
+    cmg.addColorStop(1,'rgba(255,180,20,0)');
+    x.fillStyle=cmg; x.fillRect(0,0,W,H);
+
+    // Corona rays — 30 thin triangular streamers
+    x.save();
+    for(let r=0;r<30;r++){
+      const angle=(r/30)*Math.PI*2;
+      const rayLen=70+rng()*130, rayW=0.012+rng()*0.018;
+      const al=0.06+rng()*0.14;
+      const rg=x.createLinearGradient(ECX,ECY,ECX+Math.cos(angle)*rayLen,ECY+Math.sin(angle)*rayLen);
+      rg.addColorStop(0,`rgba(255,220,100,${al*1.8})`);
+      rg.addColorStop(0.5,`rgba(255,190,40,${al})`);
+      rg.addColorStop(1,'rgba(255,150,0,0)');
+      x.fillStyle=rg;
+      x.beginPath();
+      x.moveTo(ECX+Math.cos(angle-rayW)*ECR, ECY+Math.sin(angle-rayW)*ECR);
+      x.lineTo(ECX+Math.cos(angle+rayW)*ECR, ECY+Math.sin(angle+rayW)*ECR);
+      x.lineTo(ECX+Math.cos(angle)*(ECR+rayLen), ECY+Math.sin(angle)*(ECR+rayLen));
+      x.closePath(); x.fill();
+    }
+    x.restore();
+
+    // Inner chromosphere glow ring
+    const cig=x.createRadialGradient(ECX,ECY,ECR-2,ECX,ECY,ECR+12);
+    cig.addColorStop(0,'rgba(255,240,180,0)'); cig.addColorStop(0.5,'rgba(255,245,200,0.92)');
+    cig.addColorStop(1,'rgba(255,200,60,0)');
+    x.fillStyle=cig; x.beginPath(); x.arc(ECX,ECY,ECR+12,0,Math.PI*2); x.fill();
+
+    // Solar disc (dark — moon blocking)
+    x.fillStyle='#010204'; x.beginPath(); x.arc(ECX,ECY,ECR,0,Math.PI*2); x.fill();
+
+    // Diamond ring — single bright burst on disc edge (lower-left of disc, ~215°)
+    const drAngle=215*Math.PI/180;
+    const drX=ECX+Math.cos(drAngle)*ECR, drY=ECY+Math.sin(drAngle)*ECR;
+    const drg=x.createRadialGradient(drX,drY,0,drX,drY,18);
+    drg.addColorStop(0,'rgba(255,255,255,1)'); drg.addColorStop(0.15,'rgba(255,240,180,0.85)');
+    drg.addColorStop(0.5,'rgba(255,200,60,0.3)'); drg.addColorStop(1,'rgba(255,160,0,0)');
+    x.fillStyle=drg; x.beginPath(); x.arc(drX,drY,18,0,Math.PI*2); x.fill();
+    // Diamond ring spikes
+    x.save(); x.strokeStyle='rgba(255,255,255,0.7)'; x.lineWidth=1;
+    x.shadowColor='rgba(255,240,180,0.9)'; x.shadowBlur=8;
+    for(const a of [0,90,180,270]){
+      const ar=a*Math.PI/180;
+      x.beginPath(); x.moveTo(drX,drY); x.lineTo(drX+Math.cos(ar)*14,drY+Math.sin(ar)*14); x.stroke();
+    }
+    x.restore();
+
+    // Umbra shadow vignette on left — subtle darkening
+    const umb=x.createLinearGradient(0,0,W*0.6,0);
+    umb.addColorStop(0,'rgba(0,0,4,0.35)'); umb.addColorStop(1,'rgba(0,0,0,0)');
+    x.fillStyle=umb; x.fillRect(0,0,W,H);
+
+    // Card border & left bar
+    rrect(x,4,4,W-8,H-8,16);
+    const ebord=x.createLinearGradient(0,0,W,H);
+    ebord.addColorStop(0,'rgba(180,120,20,0.6)'); ebord.addColorStop(0.5,'rgba(255,200,80,0.8)'); ebord.addColorStop(1,'rgba(180,120,20,0.6)');
+    x.strokeStyle=ebord; x.lineWidth=2; x.stroke();
+    const elb=x.createLinearGradient(0,0,0,H);
+    elb.addColorStop(0,'rgba(200,140,0,0)'); elb.addColorStop(0.3,'#c8960a'); elb.addColorStop(0.7,'#e8b820'); elb.addColorStop(1,'rgba(200,140,0,0)');
+    x.fillStyle=elb; x.fillRect(0,0,4,H);
+
+    // Avatar ring (warm gold)
     const AX=110,AY=130,AR=65;
-    x.save(); x.shadowColor='#ff5500'; x.shadowBlur=30; x.strokeStyle='#ff5500'; x.lineWidth=3;
-    x.beginPath(); x.arc(AX,AY,AR+7,0,Math.PI*2); x.stroke();
-    x.shadowBlur=0; x.strokeStyle='rgba(255,80,0,0.22)'; x.lineWidth=7;
-    x.beginPath(); x.arc(AX,AY,AR+1,0,Math.PI*2); x.stroke(); x.restore();
-    await drawAvatar(AX,AY,AR,'#0e0100');
+    const eag=x.createLinearGradient(AX-AR,AY-AR,AX+AR,AY+AR);
+    eag.addColorStop(0,'#c8960a'); eag.addColorStop(0.5,'#f5d060'); eag.addColorStop(1,'#c8960a');
+    x.save(); x.shadowColor='rgba(200,150,10,0.85)'; x.shadowBlur=20; x.strokeStyle=eag; x.lineWidth=3;
+    x.beginPath(); x.arc(AX,AY,AR+7,0,Math.PI*2); x.stroke(); x.restore();
+    await drawAvatar(AX,AY,AR,'#020408');
 
-    x.save(); x.shadowColor='#ff5500'; x.shadowBlur=15;
-    x.fillStyle='#ffd060'; x.font=`bold 30px ${FB}`; x.textAlign='left'; x.textBaseline='top'; x.fillText(UNAME,200,34); x.restore();
-    rrect(x,200,78,118,22,4); x.fillStyle='rgba(255,80,0,0.18)'; x.fill(); x.strokeStyle='rgba(255,80,0,0.55)'; x.lineWidth=1; x.stroke();
-    x.fillStyle='#ff8844'; x.font=`bold 10px ${FB}`; x.textBaseline='middle'; x.fillText('🔥 INFERNO THEME',207,89);
+    // Left panel text
+    x.save(); x.shadowColor='rgba(200,160,20,0.7)'; x.shadowBlur=12;
+    x.fillStyle='#f0d880'; x.font=`bold 30px ${FB}`; x.textAlign='left'; x.textBaseline='top'; x.fillText(UNAME,200,34); x.restore();
+    rrect(x,200,78,122,22,4); x.fillStyle='rgba(200,150,10,0.16)'; x.fill(); x.strokeStyle='rgba(220,170,20,0.5)'; x.lineWidth=1; x.stroke();
+    x.fillStyle='#d4aa30'; x.font=`bold 10px ${FB}`; x.textBaseline='middle'; x.fillText('◎ ECLIPSE THEME',207,89);
 
-    x.fillStyle='rgba(255,140,50,0.45)'; x.font=`11px ${FB}`; x.textBaseline='top'; x.fillText('BALANCE',200,116);
-    const fg=x.createLinearGradient(200,0,420,0); fg.addColorStop(0,'#ffd060'); fg.addColorStop(1,'#ff8020');
-    x.save(); x.shadowColor='#ff5500'; x.shadowBlur=14; x.fillStyle=fg; x.font=`bold 48px ${FB}`; x.textBaseline='top'; x.fillText(BAL,200,130);
+    x.fillStyle='rgba(210,170,50,0.48)'; x.font=`11px ${FB}`; x.textBaseline='top'; x.fillText('BALANCE',200,116);
+    const efg=x.createLinearGradient(200,0,420,0); efg.addColorStop(0,'#f0d880'); efg.addColorStop(1,'#e0a020');
+    x.save(); x.shadowColor='rgba(200,150,10,0.7)'; x.shadowBlur=14; x.fillStyle=efg; x.font=`bold 48px ${FB}`; x.textBaseline='top'; x.fillText(BAL,200,130);
     const _bw=x.measureText(BAL).width; x.restore();
-    x.fillStyle='rgba(255,140,50,0.42)'; x.font=`12px ${FN}`; x.textBaseline='top'; x.fillText('credits',200+_bw+8,158);
-    x.fillStyle='rgba(255,80,0,0.25)'; x.fillRect(200,196,268,1);
-    x.fillStyle='rgba(255,140,50,0.42)'; x.font=`13px ${FN}`; x.textBaseline='top'; x.fillText('TOTAL EARNED',200,202);
-    x.font=`bold 13px ${FB}`; x.fillStyle='rgba(255,200,80,0.72)'; x.fillText(TOT,200+x.measureText('TOTAL EARNED ').width,202);
+    x.fillStyle='rgba(200,160,40,0.42)'; x.font=`12px ${FN}`; x.textBaseline='top'; x.fillText('credits',200+_bw+8,158);
+    x.fillStyle='rgba(200,150,10,0.22)'; x.fillRect(200,196,268,1);
+    x.fillStyle='rgba(210,170,50,0.42)'; x.font=`13px ${FN}`; x.textBaseline='top'; x.fillText('TOTAL EARNED',200,202);
+    x.font=`bold 13px ${FB}`; x.fillStyle='rgba(240,210,100,0.75)'; x.fillText(TOT,200+x.measureText('TOTAL EARNED ').width,202);
 
-    const vd=x.createLinearGradient(0,0,0,H);
-    vd.addColorStop(0,'rgba(255,80,0,0)'); vd.addColorStop(0.5,'rgba(255,80,0,0.3)'); vd.addColorStop(1,'rgba(255,80,0,0)');
-    x.strokeStyle=vd; x.lineWidth=1; x.beginPath(); x.moveTo(487,20); x.lineTo(487,H-20); x.stroke();
-    x.save(); x.shadowColor='#ff5500'; x.shadowBlur=8; x.fillStyle='#ff8844'; x.font=`bold 11px ${FB}`; x.textBaseline='top'; x.fillText('🔥  INVENTORY',500,28); x.restore();
-    if (!ROLES.length) { x.fillStyle='rgba(255,100,30,0.38)'; x.font=`12px ${FN}`; x.fillText('Nothing owned yet',500,48); }
+    const evd=x.createLinearGradient(0,0,0,H);
+    evd.addColorStop(0,'rgba(200,150,10,0)'); evd.addColorStop(0.5,'rgba(200,150,10,0.28)'); evd.addColorStop(1,'rgba(200,150,10,0)');
+    x.strokeStyle=evd; x.lineWidth=1; x.beginPath(); x.moveTo(487,20); x.lineTo(487,H-20); x.stroke();
+    x.save(); x.shadowColor='rgba(200,150,10,0.7)'; x.shadowBlur=8; x.fillStyle='#d4aa30'; x.font=`bold 11px ${FB}`; x.textBaseline='top'; x.fillText('◎  INVENTORY',500,28); x.restore();
+    if(!ROLES.length){x.fillStyle='rgba(210,170,50,0.38)'; x.font=`12px ${FN}`; x.fillText('Nothing owned yet',500,48);}
     ROLES.forEach(({name,color,type},i)=>{
-      const rx=500,ry=44+i*44; const clr=/^#[0-9A-Fa-f]{6}$/.test(color||'')?color:'#5865F2'; const subLabel=type==='color_role'&&color?color.toLowerCase():type==='theme'?'theme':type==='channel'?'channel':'role';
-      x.fillStyle='rgba(255,80,0,0.1)'; rrect(x,rx,ry,342,38,6); x.fill(); x.strokeStyle='rgba(255,80,0,0.28)'; x.lineWidth=1; rrect(x,rx,ry,342,38,6); x.stroke();
+      const rx=500,ry=44+i*44; const clr=/^#[0-9A-Fa-f]{6}$/.test(color||'')?color:'#c8960a'; const subLabel=type==='color_role'&&color?color.toLowerCase():type==='theme'?'theme':type==='channel'?'channel':'role';
+      x.fillStyle='rgba(200,150,10,0.08)'; rrect(x,rx,ry,342,38,6); x.fill(); x.strokeStyle='rgba(220,170,20,0.26)'; x.lineWidth=1; rrect(x,rx,ry,342,38,6); x.stroke();
       x.fillStyle=clr; x.fillRect(rx,ry,3,38);
-      x.fillStyle='#ffd060'; x.font=`bold 12px ${FB}`; x.textBaseline='top'; x.fillText((name||'Item').slice(0,26),rx+10,ry+8);
-      x.fillStyle='rgba(255,140,50,0.62)'; x.font=`11px ${FN}`; x.fillText(subLabel,rx+10,ry+22);
+      x.fillStyle='#f0d880'; x.font=`bold 12px ${FB}`; x.textBaseline='top'; x.fillText((name||'Item').slice(0,26),rx+10,ry+8);
+      x.fillStyle='rgba(210,170,50,0.62)'; x.font=`11px ${FN}`; x.fillText(subLabel,rx+10,ry+22);
     });
   }
 
@@ -1198,7 +1262,7 @@ async function generateThemedCard({ username, avatarUrl, balance, totalEarned, s
       academia:    '#d2a444',
       paper:       '#4a2c10',
       aurora:      '#80ffd8',
-      inferno:     '#ffd060',
+      eclipse:     '#f0d880',
       synthwave:   '#ff88ff',
       ocean:       '#80e8ff',
       void:        '#e8c0ff',
@@ -1215,7 +1279,7 @@ async function generateThemedCard({ username, avatarUrl, balance, totalEarned, s
       academia:    'rgba(0,0,0,0.45)',
       paper:       'rgba(0,0,0,0.28)',
       aurora:      'rgba(0,200,130,0.75)',
-      inferno:     'rgba(255,80,0,0.80)',
+      eclipse:     'rgba(210,160,10,0.85)',
       synthwave:   'rgba(255,45,120,0.75)',
       ocean:       'rgba(0,150,255,0.75)',
       void:        'rgba(120,0,255,0.85)',
@@ -1232,7 +1296,7 @@ async function generateThemedCard({ username, avatarUrl, balance, totalEarned, s
       academia:    'rgba(176,136,48,0.20)',
       paper:       'rgba(90,58,26,0.18)',
       aurora:      'rgba(0,210,130,0.25)',
-      inferno:     'rgba(255,80,0,0.25)',
+      eclipse:     'rgba(200,150,10,0.24)',
       synthwave:   'rgba(255,45,120,0.25)',
       ocean:       'rgba(0,150,255,0.25)',
       void:        'rgba(100,0,255,0.28)',

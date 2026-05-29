@@ -170,7 +170,7 @@ async function _buildShopEmbed(guildId, userId, tab, page, guild, author) {
   } else {
     items   = db.getShopItems(guildId);
     subicon = '📦';
-    subline = `**${items.length}** item${items.length !== 1 ? 's' : ''} in the pool`;
+    subline = `**${items.length}** item${items.length !== 1 ? 's' : ''} in the pool  ·  view only`;
   }
 
   const totalPages = Math.max(1, Math.ceil(items.length / SHOP_PER_PAGE));
@@ -185,7 +185,7 @@ async function _buildShopEmbed(guildId, userId, tab, page, guild, author) {
     .setDescription(
       `💳  **${fmt(userCr.amount)} cr** in your wallet\n` +
       `${subicon}  ${subline}\n` +
-      `-# ,buy <id> to purchase`
+      (tab === 'all' ? `-# Browse only — items must appear in your daily or weekly shop to purchase` : `-# ,buy <id> to purchase`)
     )
     .setFooter({ text: `Page ${page + 1} / ${totalPages}  ·  flux credits` })
     .setTimestamp();
@@ -321,6 +321,14 @@ const buy = {
     if (item.stock !== -1 && item.sold >= item.stock) {
       return message.reply({ embeds: [new EmbedBuilder().setColor(RED)
         .setDescription('❌ This item is **out of stock**.')] });
+    }
+
+    // Only allow buying items currently in the user's daily or weekly rotation
+    const dailyIds  = db.generateUserDailyShop(guildId, userId);
+    const weeklyIds = db.generateUserWeeklyShop(guildId, userId);
+    if (!dailyIds.includes(item.id) && !weeklyIds.includes(item.id)) {
+      return message.reply({ embeds: [new EmbedBuilder().setColor(YELLOW)
+        .setDescription(`⚠️ **${item.name}** isn't in your shop right now.\nCheck \`,shop daily\` or \`,shop weekly\` — items rotate in and out.`)] });
     }
 
     const userCr = db.getCredits(guildId, userId);
