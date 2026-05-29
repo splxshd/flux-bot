@@ -103,35 +103,13 @@ _convertFromWAL(dbPath);
 
 // ─── Non-blocking async DB init ───────────────────────────────────────────────
 function _tryOpenDb(resolve, reject, attempt) {
-  // Before every attempt: wipe stale journal / WAL / SHM files.
-  // These are safe to delete when we're the only writer — they only exist because
-  // a previous process crashed mid-transaction. Leaving them causes SQLite to
-  // attempt recovery and re-acquire locks that no longer exist, creating an
-  // infinite SQLITE_BUSY loop even on an otherwise healthy file.
-  for (const suf of ['-journal', '-wal', '-shm']) {
-    try { fs.unlinkSync(dbPath + suf); } catch (_) {}
-  }
-
-  // At 30 retries (~60 s): back up the stuck file and restart the process.
-  // Railway will bring up a fresh instance; the new instance will restore from
-  // the backup on next boot via _restoreIfEmpty(). This is cleaner than letting
-  // a zombie process grind through 150 retries while occupying the volume lock.
-  if (attempt === 30) {
-    console.warn('[DB] Persistent lock after 30 retries — backing up and restarting process...');
-    for (const suf of ['', '-wal', '-shm', '-journal']) {
-      const f = dbPath + suf;
-      try {
-        if (fs.existsSync(f)) {
-          fs.renameSync(f, f + '.bak.' + Date.now());
-          console.warn(`[DB] Backed up: ${f}`);
-        }
-      } catch (_) {
-        try { fs.unlinkSync(f); } catch (_) {}
-      }
+  // Only on the very first attempt: clean up leftover files from a previous
+  // crashed process. Do NOT do this on retries — if the old instance is still
+  // running those files are live and deleting them corrupts the database.
+  if (attempt === 0) {
+    for (const suf of ['-journal', '-wal', '-shm']) {
+      try { fs.unlinkSync(dbPath + suf); } catch (_) {}
     }
-    // Exit so Railway restarts us with a clean slate.
-    // (If two instances were running, only one will survive the restart.)
-    process.exit(1);
   }
 
   let conn;
@@ -141,21 +119,19 @@ function _tryOpenDb(resolve, reject, attempt) {
     conn.run('PRAGMA foreign_keys = ON');
     db = conn;
 
-    // Patch db.get / db.all at the source so EVERY caller (including functions
-    // that call db.get / db.all directly) gets BigInt → Number normalisation.
     const _rawGet = db.get.bind(db);
     const _rawAll = db.all.bind(db);
     db.get = (...a) => _normalizeRow(_rawGet(...a));
     db.all = (...a) => { const r = _rawAll(...a); return Array.isArray(r) ? r.map(_normalizeRow) : r; };
 
     _runSchema();
-    // Keep busy_timeout at 15000 permanently — any query that hits a lock will
-    // wait up to 15s before throwing, covering Railway's rolling-restart overlap.
     resolve();
   } catch (e) {
     if (conn) { try { conn.close(); } catch (_) {} db = null; }
     if (attempt >= 150) { reject(e); return; }
-    console.warn(`[DB] Locked, retry ${attempt + 1}/150 in 2s...`);
+    // Railway sends SIGTERM to the old instance which closes the DB via closeDb().
+    // Just wait — the lock will release within ~10-30s without touching the file.
+    if (attempt % 10 === 0) console.warn(`[DB] Waiting for lock… retry ${attempt + 1}/150`);
     setTimeout(() => _tryOpenDb(resolve, reject, attempt + 1), 2000);
   }
 }
