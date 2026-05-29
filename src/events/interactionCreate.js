@@ -70,6 +70,14 @@ module.exports = (client) => {
           return interaction.reply({ content: text, ephemeral: true });
         }
 
+        // Ticket category dropdown (panel)
+        if (interaction.customId === 'ticket_category') {
+          const categoryName = interaction.values[0];
+          const ticketCmd = client.commands.get('ticket');
+          if (ticketCmd?.buildOpenModal) return interaction.showModal(ticketCmd.buildOpenModal(categoryName));
+          return;
+        }
+
         // Tag menu
         if (interaction.customId === 'tag:menu') {
           const name = interaction.values[0];
@@ -134,18 +142,15 @@ module.exports = (client) => {
         // Ticket buttons
         if (id === 'open_ticket') {
           const ticketCmd = client.commands.get('ticket');
-          if (ticketCmd) await ticketCmd.execute(interaction, client);
+          if (ticketCmd?.buildOpenModal) return interaction.showModal(ticketCmd.buildOpenModal(''));
           return;
         }
 
-        // Category panel button (ticket_open:CategoryName)
+        // Category panel button (ticket_open:CategoryName) — legacy / from /ticket ephemeral
         if (id.startsWith('ticket_open:')) {
           const categoryName = id.slice(12);
-          await interaction.deferReply({ ephemeral: true });
           const ticketCmd = client.commands.get('ticket');
-          if (ticketCmd?.openTicket) {
-            await ticketCmd.openTicket(interaction, client, categoryName);
-          }
+          if (ticketCmd?.buildOpenModal) return interaction.showModal(ticketCmd.buildOpenModal(categoryName));
           return;
         }
 
@@ -471,6 +476,18 @@ module.exports = (client) => {
       }
       // ── Modal submits ────────────────────────────────────────────────────────
       if (interaction.isModalSubmit()) {
+        // Ticket open modal (from category select / open_ticket button)
+        if (interaction.customId.startsWith('ticket_open_modal:')) {
+          const categoryName = interaction.customId.slice('ticket_open_modal:'.length) || null;
+          const helpAnswer   = interaction.fields.getTextInputValue('help_answer').trim() || null;
+          await interaction.deferReply({ ephemeral: true });
+          const ticketCmd = client.commands.get('ticket');
+          if (ticketCmd?.openTicket) {
+            await ticketCmd.openTicket(interaction, client, categoryName || null, helpAnswer);
+          }
+          return;
+        }
+
         // Ticket close modal
         if (interaction.customId === 'ticket_close_modal') {
           const reason = (interaction.fields.getTextInputValue('close_reason') || '').trim() || 'No reason provided';

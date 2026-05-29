@@ -5,6 +5,8 @@ const {
   SlashCommandBuilder, EmbedBuilder, PermissionFlagsBits,
   ActionRowBuilder, ButtonBuilder, ButtonStyle,
   ChannelType,
+  StringSelectMenuBuilder,
+  ModalBuilder, TextInputBuilder, TextInputStyle,
 } = require('discord.js');
 const db = require('../database');
 
@@ -56,9 +58,47 @@ function buildCategoryButtons(categories) {
   return rows;
 }
 
+// Returns a single ActionRow with a category select menu (for panels)
+function buildCategorySelect(categories) {
+  const select = new StringSelectMenuBuilder()
+    .setCustomId('ticket_category')
+    .setPlaceholder('Select a ticket category...')
+    .addOptions(
+      categories.slice(0, 25).map(c => {
+        const opt = {
+          label: c.name.slice(0, 25),
+          value: c.name.slice(0, 100),
+        };
+        if (c.description) opt.description = c.description.slice(0, 50);
+        if (c.emoji) {
+          const isCustomId = /^\d{17,20}$/.test(c.emoji.trim());
+          opt.emoji = isCustomId ? { id: c.emoji.trim() } : { name: c.emoji.trim() };
+        }
+        return opt;
+      })
+    );
+  return [new ActionRowBuilder().addComponents(select)];
+}
+
+// Helper: build the "How can we help you?" modal
+function buildOpenModal(categoryName) {
+  return new ModalBuilder()
+    .setCustomId(`ticket_open_modal:${categoryName}`)
+    .setTitle('Open a Ticket')
+    .addComponents(new ActionRowBuilder().addComponents(
+      new TextInputBuilder()
+        .setCustomId('help_answer')
+        .setLabel('How can we help you?')
+        .setStyle(TextInputStyle.Paragraph)
+        .setPlaceholder('Describe your issue...')
+        .setRequired(true)
+        .setMaxLength(1000)
+    ));
+}
+
 // ─── Core: open a ticket ──────────────────────────────────────────────────────
 
-async function openTicket(interaction, client, categoryName) {
+async function openTicket(interaction, client, categoryName, helpAnswer = null) {
   const guildId = interaction.guildId;
 
   const settings = db.getTicketSettings(guildId);
@@ -132,23 +172,25 @@ async function openTicket(interaction, client, categoryName) {
 
   db.createTicketFull(guildId, channel.id, interaction.user.id, ticketNumber, catLabel);
 
-  const titleStr = catLabel ? `${catLabel} — Ticket #${padded}` : `Ticket #${padded}`;
+  const titleStr = catLabel ? `${catLabel} Ticket` : 'Support Ticket';
 
   const embed = new EmbedBuilder()
-    .setTitle(`🎫 ${titleStr}`)
-    .setDescription(settings.open_message || 'Welcome! Our support team will be with you shortly.\nPlease describe your issue in as much detail as possible.')
+    .setTitle(titleStr)
+    .setDescription(settings.open_message || 'Please wait until one of our support team members can help you.\n**Response time may vary due to many factors, so please be patient.**')
     .setColor(0x23272A)
     .addFields(
-      { name: 'Ticket',         value: `\`#${padded}\``,            inline: true },
-      { name: 'Opened by',      value: `<@${interaction.user.id}>`, inline: true },
-      { name: 'Assigned Staff', value: 'Unassigned',                 inline: true },
-    )
-    .setFooter({ text: 'nights bot' })
-    .setTimestamp();
+      { name: 'Ticket #',      value: `${ticketNumber}`,                                           inline: false },
+      { name: 'Opened by',     value: `<@${interaction.user.id}> ( ${interaction.user.id} )`,      inline: false },
+      { name: 'Assigned staff', value: 'Unassigned',                                                inline: false },
+    );
+
+  if (helpAnswer) {
+    embed.addFields({ name: 'How can we help you?', value: `\`\`\`${helpAnswer.slice(0, 990)}\`\`\``, inline: false });
+  }
 
   const row = new ActionRowBuilder().addComponents(
-    new ButtonBuilder().setCustomId('ticket_close').setLabel('Close Ticket').setStyle(ButtonStyle.Danger).setEmoji('🔒'),
-    new ButtonBuilder().setCustomId('ticket_claim').setLabel('Assign me').setStyle(ButtonStyle.Success).setEmoji('✋'),
+    new ButtonBuilder().setCustomId('ticket_close').setLabel('Close Ticket').setStyle(ButtonStyle.Danger),
+    new ButtonBuilder().setCustomId('ticket_claim').setLabel('Assign me').setStyle(ButtonStyle.Success),
   );
 
   const mention = supportRoles.map(r => `${r}`).join(' ');
@@ -220,12 +262,12 @@ async function executeClose(interaction, client, reason) {
   // Per-user message counts
   const participantCounts = {};
   messages.filter(m => !m.author.bot).forEach(m => {
-    if (!participantCounts[m.author.id]) participantCounts[m.author.id] = { id: m.author.id, count: 0 };
+    if (!participantCounts[m.author.id]) participantCounts[m.author.id] = { id: m.author.id, username: m.author.username, count: 0 };
     participantCounts[m.author.id].count++;
   });
   const participantsArr   = Object.values(participantCounts).sort((a, b) => b.count - a.count);
   const participantsValue = participantsArr.length
-    ? participantsArr.slice(0, 15).map(p => `<@${p.id}> — ${p.count} msg${p.count !== 1 ? 's' : ''}`).join('\n')
+    ? participantsArr.slice(0, 15).map(p => `<@${p.id}> \`${p.username}\` — ${p.count} msg${p.count !== 1 ? 's' : ''}`).join('\n')
     : 'None';
   const totalMsgs = messages.filter(m => !m.author.bot).length;
 
@@ -288,8 +330,11 @@ async function executeClose(interaction, client, reason) {
 
   const transcriptRow = new ActionRowBuilder().addComponents(
     new ButtonBuilder()
-      .setLabel('View Transcript').setStyle(ButtonStyle.Link).setURL(transcriptUrl).setEmoji('📄'),
+      .setLabel('View Transcript').setStyle(ButtonStyle.Link).setURL(transcriptUrl),
   );
+
+  const closedByValue  = `<@${interaction.user.id}> \`${interaction.user.username}\``;
+  const claimedByValue = claimer ? `<@${claimer.id}> \`${claimer.username}\`` : 'Nobody';
 
   // ── In-channel: simple closing notice ──────────────────────────────────────
   await channel.send({
@@ -305,30 +350,29 @@ async function executeClose(interaction, client, reason) {
   if (settings?.log_channel) {
     const logCh = interaction.guild.channels.cache.get(settings.log_channel);
     if (logCh) {
+      const openerValue = opener ? `<@${opener.id}> \`${opener.username}\`` : `\`${t.user_id}\``;
       await logCh.send({
         embeds: [new EmbedBuilder()
           .setColor(0x23272A)
-          .setTitle('🔒 Ticket Closed')
-          .setDescription(`A ticket was closed in **${interaction.guild.name}**.`)
+          .setTitle('Ticket Closed')
+          .setDescription(`Thank you for opening a support ticket. We appreciate you reaching out to us. If you need any further assistance or have additional questions, please don't hesitate to open another ticket and we'll be happy to help.`)
           .setThumbnail(interaction.guild.iconURL())
           .addFields(
             {
-              name: '📋 Ticket Details',
+              name: 'Ticket Details',
               value: [
                 `Ticket: \`#${ticketNum}\``,
-                `Category: \`${t.category_name || 'General'}\``,
+                `Category: \`${t.category_name || 'General Support'}\``,
                 `Channel: \`#${channel.name}\``,
-                `Opened by: \`${opener?.tag || t.user_id}\``,
-                `Closed by: \`${interaction.user.tag}\``,
-                `Claimed by: \`${claimedByName}\``,
-                `Reason: \`${reason || 'No reason provided'}\``,
-                `Total: \`${totalMsgs} message${totalMsgs !== 1 ? 's' : ''}\``,
+                `Opened by: ${openerValue}`,
+                `Closed by: ${closedByValue}`,
+                `Claimed by: ${claimedByValue}`,
+                `Close Reason: \`${reason || 'No reason provided'}\``,
+                `Total Messages: \`${totalMsgs}\``,
               ].join('\n'),
             },
-            { name: '👥 Participants', value: participantsValue },
-          )
-          .setFooter({ text: 'nights bot' })
-          .setTimestamp()],
+            { name: 'Participants', value: participantsValue },
+          )],
         components: [transcriptRow],
       }).catch(() => {});
     }
@@ -339,24 +383,22 @@ async function executeClose(interaction, client, reason) {
     await opener.send({
       embeds: [new EmbedBuilder()
         .setColor(0x23272A)
-        .setTitle('🔒 Ticket Closed')
-        .setDescription(`Thank you for contacting support in **${interaction.guild.name}**.\nYour ticket has been reviewed and closed.`)
+        .setTitle('Ticket Closed')
+        .setDescription(`Thank you for opening a support ticket. We appreciate you reaching out to us. If you need any further assistance or have additional questions, please don't hesitate to open another ticket and we'll be happy to help.`)
         .setThumbnail(interaction.guild.iconURL())
         .addFields(
           {
-            name: '📋 Ticket Details',
+            name: 'Ticket Details',
             value: [
-              `Category: \`${t.category_name || 'General'}\``,
-              `Reason: \`${reason || 'No reason provided'}\``,
-              `Closed by: \`${interaction.user.username}\``,
-              `Claimed by: \`${claimedByName}\``,
-              `Total: \`${totalMsgs} message${totalMsgs !== 1 ? 's' : ''}\``,
+              `Category: \`${t.category_name || 'General Support'}\``,
+              `Close Reason: \`${reason || 'No reason provided'}\``,
+              `Closed by: ${closedByValue}`,
+              `Claimed by: ${claimedByValue}`,
+              `Total Messages: \`${totalMsgs}\``,
             ].join('\n'),
           },
-          { name: '👥 Participants', value: participantsValue },
-        )
-        .setFooter({ text: `Ticket #${ticketNum} • nights bot` })
-        .setTimestamp()],
+          { name: 'Participants', value: participantsValue },
+        )],
       components: [transcriptRow],
     }).catch(() => {});
   }
@@ -380,8 +422,8 @@ async function executeClaim(interaction, client) {
       if (msg?.embeds?.[0]) {
         const embed = EmbedBuilder.from(msg.embeds[0]);
         const fields = (embed.data.fields || []).map(f =>
-          f.name === '🛡️ Assigned Staff'
-            ? { ...f, value: isClaimer ? 'Unassigned' : `<@${interaction.user.id}>` }
+          f.name === 'Assigned staff'
+            ? { ...f, value: isClaimer ? 'Unassigned' : `<@${interaction.user.id}> ( ${interaction.user.id} )` }
             : f
         );
         embed.setFields(fields);
@@ -413,15 +455,15 @@ const ticket = {
     if (categories.length > 0) {
       return interaction.reply({
         content: '**Select a category below to open a ticket:**',
-        components: buildCategoryButtons(categories),
+        components: buildCategorySelect(categories),
         ephemeral: true,
       });
     }
-    await interaction.deferReply({ ephemeral: true });
-    return openTicket(interaction, client, null);
+    return interaction.showModal(buildOpenModal(''));
   },
 
   openTicket,
+  buildOpenModal,
 };
 
 // ─── /ticketsetup ─────────────────────────────────────────────────────────────
@@ -549,25 +591,23 @@ const ticketsetup = {
       const image     = interaction.options.getString('image');
       const title     = interaction.options.getString('title')       || 'Support Tickets';
       const desc      = interaction.options.getString('description') ||
-        'Need help? Click a button below to open a support ticket.\nA staff member will assist you as soon as possible.';
+        'If you need help, click on the option corresponding to the type of ticket you want to open.\n**Response time may vary due to many factors, so please be patient.**';
       const thumbnail = interaction.options.getString('thumbnail');
 
       const categories = db.getTicketCategories(interaction.guild.id);
 
       const embed = new EmbedBuilder()
-        .setTitle(`🎫 ${title}`)
+        .setTitle(title)
         .setDescription(desc)
         .setColor(BLUE)
-        .setThumbnail(thumbnail || interaction.guild.iconURL())
-        .setFooter({ text: interaction.guild.name })
-        .setTimestamp();
+        .setThumbnail(thumbnail || interaction.guild.iconURL());
       if (image) embed.setImage(image);
 
-      // Buttons: one per category, or a single Open Ticket button if none configured
+      // Dropdown: one option per category, or a single Open Ticket button if none configured
       const components = categories.length > 0
-        ? buildCategoryButtons(categories)
+        ? buildCategorySelect(categories)
         : [new ActionRowBuilder().addComponents(
-            new ButtonBuilder().setCustomId('open_ticket').setLabel('Open Ticket').setStyle(ButtonStyle.Primary).setEmoji('🎫')
+            new ButtonBuilder().setCustomId('open_ticket').setLabel('Open Ticket').setStyle(ButtonStyle.Primary)
           )];
 
       await ch.send({ embeds: [embed], components });
