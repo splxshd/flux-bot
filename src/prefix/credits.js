@@ -864,67 +864,149 @@ const reseteco = {
 // ── ,pointhelp ────────────────────────────────────────────────────────────────
 const pointhelp = {
   name: 'pointhelp',
-  aliases: ['creditshelp', 'crhelp', 'shophelp', 'pointshelp'],
+  aliases: ['creditshelp', 'crhelp', 'shophelp', 'pointshelp', 'credithelp'],
   async execute(message) {
-    const s = db.getCreditSettings(message.guild.id);
+    const s    = db.getCreditSettings(message.guild.id);
+    const rate = s.credits_per_msg ?? 1;
+    const cd   = s.cooldown_sec ?? 30;
 
-    const embed = new EmbedBuilder()
-      .setColor(GOLD)
-      .setAuthor({ name: 'Credits & Shop Help', iconURL: message.client.user.displayAvatarURL() })
-      .setDescription(
-        `Earn credits by chatting (**${s.credits_per_msg ?? 1}** per message, **${s.cooldown_sec ?? 30}s** cooldown)` +
-        (s.invite_credits ? `, **${s.invite_credits}** per invite` : '') +
-        (s.voice_credits  ? `, **${s.voice_credits}** per VC minute` : '') +
-        '. Spend them in the shop or on custom roles.'
-      )
-      .addFields(
-        {
-          name: '💳 Points',
-          value: [
-            '`,credits [@user]` — check your balance',
-            '`,creditlead` — top earners leaderboard',
-          ].join('\n'),
-          inline: false,
-        },
-        {
-          name: '🛒 Shop',
-          value: [
-            '`,shop [page]` — browse all items',
-            '`,buy <id>` — purchase an item by ID',
-            '`,inventory [@user]` — view owned items',
-          ].join('\n'),
-          inline: false,
-        },
-        {
-          name: '🎨 Custom Roles',
-          value: [
-            '`,myrole` — view your current roles',
-            '`,myrole create <name> <#hex>` — create a custom role (costs **' + fmt(s.custom_role_cost ?? 0) + '** cr)',
-            '`,myrole color [slot] <#hex>` — change color',
-            '`,myrole rename [slot] <name>` — rename',
-            '`,myrole delete [slot]` — delete',
-          ].join('\n'),
-          inline: false,
-        },
-        {
-          name: '⚙️ Admin Only',
-          value: [
-            '`,additem Name | price | color #HEX` — add color role',
-            '`,additem Name | price | role @role` — add role item',
-            '`,additem Name | price | channel #ch` — add channel access',
-            '`,removeitem <id>` — remove a shop item',
-            '`,givecr @user <amount>` — give credits',
-            '`,takecr @user <amount>` — take credits',
-            '`,setcr @user <amount>` — set balance',
-            '`,creditsetup` — configure earn rates & costs',
-          ].join('\n'),
-          inline: false,
-        },
-      )
-      .setFooter({ text: 'flux credits • earn by chatting' })
-      .setTimestamp();
+    // Build earn description dynamically
+    const earnParts = [`💬 **${rate} cr** per message (${cd}s cooldown)`];
+    if (s.invite_credits) earnParts.push(`📨 **${s.invite_credits} cr** per invite`);
+    if (s.voice_credits)  earnParts.push(`🎙️ **${s.voice_credits} cr** per VC minute`);
 
-    await message.reply({ embeds: [embed] });
+    const embeds = [
+      // ── Page 1: user commands ──────────────────────────────────────────────
+      new EmbedBuilder()
+        .setColor(GOLD)
+        .setAuthor({ name: 'Credits & Shop — User Commands', iconURL: message.client.user.displayAvatarURL() })
+        .setDescription(
+          `**How to earn credits:**\n${earnParts.join('\n')}\n\n` +
+          `Spend them in the shop, bid in auctions, or create custom roles.`
+        )
+        .addFields(
+          {
+            name: '💳 Balance',
+            value: [
+              '`,credits [@user]` — view your credits card',
+              '`,creditlead` — top earners leaderboard',
+            ].join('\n'),
+            inline: false,
+          },
+          {
+            name: '🛒 Shop',
+            value: [
+              '`,shop [page]` — browse all items for sale',
+              '`,buy <id>` — purchase an item by ID',
+              '`,inventory [@user]` — view owned items',
+            ].join('\n'),
+            inline: false,
+          },
+          {
+            name: '🔨 Auctions',
+            value: [
+              '`,auction list` — see all active auctions',
+              '`,auction info <id>` — detailed view + bid history',
+              '`,bid <amount>` — place a bid (credits held in escrow)',
+              '`,mybids` — see every auction you\'re bidding on',
+              '',
+              '*Bidding in the last 2 min extends the auction by 2 min.*',
+              '*You\'re refunded instantly if someone outbids you.*',
+            ].join('\n'),
+            inline: false,
+          },
+          {
+            name: '🎨 Custom Roles',
+            value: [
+              '`,myrole` — view your custom roles',
+              '`,myrole create <name> <#hex>` — create a role (**' + fmt(s.custom_role_cost ?? 0) + ' cr**)',
+              '`,myrole color [slot] <#hex>` — change the color',
+              '`,myrole rename [slot] <name>` — rename it',
+              '`,myrole delete [slot]` — delete it',
+            ].join('\n'),
+            inline: false,
+          },
+        )
+        .setFooter({ text: 'Credits System • Page 1/2 — Admin commands on page 2' })
+        .setTimestamp(),
+
+      // ── Page 2: admin commands ─────────────────────────────────────────────
+      new EmbedBuilder()
+        .setColor(GOLD)
+        .setAuthor({ name: 'Credits & Shop — Admin Commands', iconURL: message.client.user.displayAvatarURL() })
+        .setDescription('These commands require **Manage Server** permission.')
+        .addFields(
+          {
+            name: '🏪 Shop Management',
+            value: [
+              '`,additem Name | price | color #HEX` — add a color role item',
+              '`,additem Name | price | role @role` — add an existing role item',
+              '`,additem Name | price | channel #ch` — add channel access item',
+              '`,removeitem <id>` — remove an item from the shop',
+            ].join('\n'),
+            inline: false,
+          },
+          {
+            name: '🔨 Auction Management',
+            value: [
+              '`,auction create <item> | <start bid> | <duration>` — start an auction',
+              '  Optional: `| <desc> | <image url> | <min increment>`',
+              '  Duration examples: `30m`, `1h`, `6h`, `24h`, `3d`',
+              '`,auction end <id>` — force-end an auction early',
+              '`,auction cancel <id>` — cancel + refund highest bidder',
+            ].join('\n'),
+            inline: false,
+          },
+          {
+            name: '💰 Credit Management',
+            value: [
+              '`,givecr @user <amount>` — give credits to a user',
+              '`,takecr @user <amount>` — remove credits from a user',
+              '`,setcr @user <amount>` — set a user\'s balance',
+              '`,reseteco @user` — wipe balance + total earned to 0',
+            ].join('\n'),
+            inline: false,
+          },
+          {
+            name: '⚙️ Configuration',
+            value: [
+              '`,creditsetup` — configure earn rates, VC credits, custom role costs',
+              '  `messages <n>` `cooldown <s>` `invites <n>` `voice <n>`',
+              '  `rolecost <n>` `updatecost <n>` `slots <n>` `enable/disable`',
+            ].join('\n'),
+            inline: false,
+          },
+        )
+        .setFooter({ text: 'Credits System • Page 2/2' })
+        .setTimestamp(),
+    ];
+
+    // Send page 1 with navigation buttons
+    const { ActionRowBuilder: ARB, ButtonBuilder: BB, ButtonStyle: BS } = require('discord.js');
+    let page = 0;
+
+    function row(p) {
+      return new ARB().addComponents(
+        new BB().setCustomId(`crhelp_prev_${message.author.id}`).setLabel('◀ Back').setStyle(BS.Secondary).setDisabled(p === 0),
+        new BB().setCustomId(`crhelp_next_${message.author.id}`).setLabel('Next ▶').setStyle(BS.Secondary).setDisabled(p === embeds.length - 1),
+      );
+    }
+
+    const sent = await message.reply({ embeds: [embeds[page]], components: [row(page)] });
+
+    const col = sent.createMessageComponentCollector({
+      filter: i => i.user.id === message.author.id &&
+        (i.customId === `crhelp_prev_${message.author.id}` || i.customId === `crhelp_next_${message.author.id}`),
+      time: 120_000,
+    });
+
+    col.on('collect', async i => {
+      if (i.customId === `crhelp_next_${message.author.id}`) page++;
+      else page--;
+      await i.update({ embeds: [embeds[page]], components: [row(page)] });
+    });
+
+    col.on('end', () => sent.edit({ components: [] }).catch(() => {}));
   },
 };
 
