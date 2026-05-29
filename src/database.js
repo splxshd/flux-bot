@@ -1953,6 +1953,8 @@ function _runSchema() {
   checked_in_at TEXT NOT NULL,
   UNIQUE(guild_id, date, user_id)
 )`);
+
+  try { db.run(`ALTER TABLE staff_checkin_settings ADD COLUMN timezone TEXT DEFAULT 'UTC'`); } catch (_) {}
 }
 
 // ── User Custom Roles ─────────────────────────────────────────────────────────

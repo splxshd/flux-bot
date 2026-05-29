@@ -157,13 +157,30 @@ function startCrons() {
     const settings = db.getAllEnabledStaffCheckin();
     if (!settings.length) return;
 
-    const now   = new Date();
-    const today = now.toISOString().slice(0, 10); // YYYY-MM-DD
-    const HH    = now.getHours();
-    const MM    = now.getMinutes();
-    const pad   = n => String(n).padStart(2, '0');
+    // Returns {hour, minute, today} in a given IANA timezone
+    function tzTime(tz) {
+      try {
+        const parts = new Intl.DateTimeFormat('en-US', {
+          timeZone: tz || 'UTC',
+          hour: 'numeric', minute: 'numeric',
+          year: 'numeric', month: '2-digit', day: '2-digit',
+          hour12: false,
+        }).formatToParts(new Date());
+        const get  = t => parts.find(p => p.type === t)?.value ?? '0';
+        let hour   = parseInt(get('hour'));
+        if (hour === 24) hour = 0; // Intl can return 24 for midnight
+        const minute = parseInt(get('minute'));
+        const today  = `${get('year')}-${get('month')}-${get('day')}`;
+        return { hour, minute, today };
+      } catch {
+        const n = new Date();
+        return { hour: n.getUTCHours(), minute: n.getUTCMinutes(), today: n.toISOString().slice(0, 10) };
+      }
+    }
 
     for (const s of settings) {
+      const { hour: HH, minute: MM, today } = tzTime(s.timezone || 'UTC');
+      const pad = n => String(n).padStart(2, '0');
       try {
         // ── Send daily check-in message ──────────────────────────────────
         const cH = s.checkin_hour ?? 9;

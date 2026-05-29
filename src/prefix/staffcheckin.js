@@ -72,6 +72,7 @@ const staffsetup = {
           { name: '🔘 Status',           value: s.enabled ? '✅ Enabled' : '❌ Disabled',                   inline: true },
           { name: '⏰ Check-in Time',    value: `${pad(h)}:${pad(m)} (24h)`,                                inline: true },
           { name: '⌛ Alert After',      value: `${dl} hour${dl !== 1 ? 's' : ''}`,                         inline: true },
+          { name: '🌍 Timezone',         value: s.timezone || 'UTC',                                        inline: true },
           { name: '👥 Staff Role',       value: s.staff_role_id ? `<@&${s.staff_role_id}>` : 'Not set',     inline: true },
           { name: '🔔 Alert Ping Role',  value: s.alert_role_id ? `<@&${s.alert_role_id}>` : 'Not set',     inline: true },
           { name: '​',              value: '​',                                                    inline: true },
@@ -87,6 +88,7 @@ const staffsetup = {
               '`,staffsetup alertchannel #ch` — where missed-checkin alert goes',
               '`,staffsetup time HH:MM` — daily time (24h, e.g. `09:00`)',
               '`,staffsetup deadline <hours>` — hours before alert fires (1–23)',
+              '`,staffsetup timezone <tz>` — e.g. `America/New_York`, `UTC`',
               '`,staffsetup enable` / `disable`',
               '`,staffsetup test` — send check-in message now',
             ].join('\n'),
@@ -144,6 +146,24 @@ const staffsetup = {
       db.upsertStaffCheckinSettings(guildId, { checkin_hour: h, checkin_minute: m });
       return message.reply({ embeds: [new EmbedBuilder().setColor(GREEN)
         .setDescription(`✅ Daily check-in will post at **${pad(h)}:${pad(m)}** every day.`)] });
+    }
+
+    // ── timezone ─────────────────────────────────────────────────────────────
+    if (sub === 'timezone' || sub === 'tz') {
+      const tz = args[1];
+      if (!tz) {
+        return message.reply([
+          '❌ Usage: `,staffsetup timezone <timezone>`',
+          'Examples: `UTC`, `America/New_York`, `America/Los_Angeles`, `Europe/London`, `Asia/Tokyo`',
+          'Full list: <https://en.wikipedia.org/wiki/List_of_tz_database_time_zones>',
+        ].join('\n'));
+      }
+      try { new Intl.DateTimeFormat('en-US', { timeZone: tz }); } catch {
+        return message.reply(`❌ **${tz}** is not a valid timezone. Use an IANA name like \`America/New_York\` or \`Europe/London\`.`);
+      }
+      db.upsertStaffCheckinSettings(guildId, { timezone: tz });
+      return message.reply({ embeds: [new EmbedBuilder().setColor(GREEN)
+        .setDescription(`✅ Timezone set to **${tz}**. Check-in times will now use that timezone.`)] });
     }
 
     // ── deadline ─────────────────────────────────────────────────────────────
