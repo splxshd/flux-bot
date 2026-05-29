@@ -160,16 +160,16 @@ async function generateThemedCard({ username, avatarUrl, balance, totalEarned, s
     const pBg=x.createLinearGradient(490,0,W,0);
     pBg.addColorStop(0,'rgba(255,255,255,0.07)'); pBg.addColorStop(1,'rgba(255,255,255,0.02)');
     x.fillStyle=pBg; x.fill(); x.strokeStyle='rgba(255,255,255,0.13)'; x.lineWidth=1; x.stroke();
-    x.fillStyle='rgba(255,255,255,0.75)'; x.font=`bold 11px ${FB}`; x.textBaseline='top'; x.fillText('✦  SHOP ROLES',506,30);
-    if (!ROLES.length) { x.fillStyle='rgba(255,255,255,0.28)'; x.font=`12px ${FN}`; x.fillText('No items yet',506,52); }
-    ROLES.forEach(({name,color,price},i)=>{
-      const rx=506+(i%2)*174,ry=46+Math.floor(i/2)*50; const clr=/^#[0-9A-Fa-f]{6}$/.test(color||'')?color:'#5865F2';
+    x.fillStyle='rgba(255,255,255,0.75)'; x.font=`bold 11px ${FB}`; x.textBaseline='top'; x.fillText('✦  INVENTORY',506,30);
+    if (!ROLES.length) { x.fillStyle='rgba(255,255,255,0.28)'; x.font=`12px ${FN}`; x.fillText('Nothing owned yet',506,52); }
+    ROLES.forEach(({name,color,type},i)=>{
+      const rx=506+(i%2)*174,ry=46+Math.floor(i/2)*50; const clr=/^#[0-9A-Fa-f]{6}$/.test(color||'')?color:'#5865F2'; const subLabel=type==='color_role'&&color?color.toLowerCase():type==='theme'?'theme':type==='channel'?'channel':'role';
       rrect(x,rx,ry,162,42,8);
       const p2=x.createLinearGradient(rx,0,rx+162,0); p2.addColorStop(0,'rgba(255,255,255,0.09)'); p2.addColorStop(1,'rgba(255,255,255,0.03)');
       x.fillStyle=p2; x.fill(); x.strokeStyle='rgba(255,255,255,0.17)'; x.lineWidth=1; x.stroke();
       x.fillStyle=clr; x.fillRect(rx,ry,3,42);
       x.fillStyle='#eee'; x.font=`bold 12px ${FB}`; x.textBaseline='top'; x.fillText((name||'Item').slice(0,14),rx+10,ry+8);
-      x.fillStyle='rgba(255,255,255,0.38)'; x.font=`11px ${FN}`; x.fillText(fmt(price||0)+' cr',rx+10,ry+24);
+      x.fillStyle='rgba(255,255,255,0.38)'; x.font=`11px ${FN}`; x.fillText(subLabel,rx+10,ry+24);
     });
   }
 
@@ -230,15 +230,15 @@ async function generateThemedCard({ username, avatarUrl, balance, totalEarned, s
     const vd=x.createLinearGradient(0,0,0,H);
     vd.addColorStop(0,'rgba(0,255,200,0)'); vd.addColorStop(0.5,'rgba(0,255,200,0.28)'); vd.addColorStop(1,'rgba(0,255,200,0)');
     x.strokeStyle=vd; x.lineWidth=1; x.beginPath(); x.moveTo(487,20); x.lineTo(487,H-20); x.stroke();
-    x.save(); x.shadowColor='#00ffcc'; x.shadowBlur=8; x.fillStyle='#00ffcc'; x.font=`bold 11px ${FB}`; x.textBaseline='top'; x.fillText('✦  SHOP ROLES',500,26); x.restore();
-    if (!ROLES.length) { x.fillStyle='rgba(0,255,200,0.35)'; x.font=`12px ${FN}`; x.fillText('No items yet',500,48); }
-    ROLES.forEach(({name,color,price},i)=>{
-      const rx=500+(i%2)*178,ry=42+Math.floor(i/2)*46; const clr=/^#[0-9A-Fa-f]{6}$/.test(color||'')?color:'#5865F2';
+    x.save(); x.shadowColor='#00ffcc'; x.shadowBlur=8; x.fillStyle='#00ffcc'; x.font=`bold 11px ${FB}`; x.textBaseline='top'; x.fillText('✦  INVENTORY',500,26); x.restore();
+    if (!ROLES.length) { x.fillStyle='rgba(0,255,200,0.35)'; x.font=`12px ${FN}`; x.fillText('Nothing owned yet',500,48); }
+    ROLES.forEach(({name,color,type},i)=>{
+      const rx=500+(i%2)*178,ry=42+Math.floor(i/2)*46; const clr=/^#[0-9A-Fa-f]{6}$/.test(color||'')?color:'#5865F2'; const subLabel=type==='color_role'&&color?color.toLowerCase():type==='theme'?'theme':type==='channel'?'channel':'role';
       x.fillStyle='rgba(0,200,255,0.07)'; rrect(x,rx,ry,165,38,6); x.fill();
       x.strokeStyle='rgba(0,200,255,0.22)'; x.lineWidth=1; rrect(x,rx,ry,165,38,6); x.stroke();
       x.fillStyle=clr; x.fillRect(rx,ry,3,38);
       x.fillStyle='#ffe066'; x.font=`bold 12px ${FB}`; x.textBaseline='top'; x.fillText((name||'Item').slice(0,14),rx+10,ry+8);
-      x.fillStyle='rgba(0,255,200,0.55)'; x.font=`11px ${FN}`; x.fillText(fmt(price||0)+' cr',rx+10,ry+24);
+      x.fillStyle='rgba(0,255,200,0.55)'; x.font=`11px ${FN}`; x.fillText(subLabel,rx+10,ry+24);
     });
   }
 
@@ -301,14 +301,14 @@ async function generateThemedCard({ username, avatarUrl, balance, totalEarned, s
     x.font=`bold 13px ${FB}`; x.fillStyle='rgba(70,10,36,0.65)'; x.fillText(TOT,200+x.measureText('TOTAL EARNED ').width,200);
 
     rrect(x,490,16,W-504,H-32,12); x.fillStyle='rgba(255,175,205,0.16)'; x.fill(); x.strokeStyle='rgba(195,115,150,0.25)'; x.lineWidth=1; x.stroke();
-    x.fillStyle='#7a2640'; x.font=`bold 11px ${FB}`; x.textBaseline='top'; x.fillText('✿  SHOP ROLES',502,30);
-    if (!ROLES.length) { x.fillStyle='rgba(135,50,80,0.35)'; x.font=`12px ${FN}`; x.fillText('No items yet',502,52); }
-    ROLES.forEach(({name,color,price},i)=>{
-      const rx=502+(i%2)*172,ry=46+Math.floor(i/2)*50; const clr=/^#[0-9A-Fa-f]{6}$/.test(color||'')?color:'#5865F2';
+    x.fillStyle='#7a2640'; x.font=`bold 11px ${FB}`; x.textBaseline='top'; x.fillText('✿  INVENTORY',502,30);
+    if (!ROLES.length) { x.fillStyle='rgba(135,50,80,0.35)'; x.font=`12px ${FN}`; x.fillText('Nothing owned yet',502,52); }
+    ROLES.forEach(({name,color,type},i)=>{
+      const rx=502+(i%2)*172,ry=46+Math.floor(i/2)*50; const clr=/^#[0-9A-Fa-f]{6}$/.test(color||'')?color:'#5865F2'; const subLabel=type==='color_role'&&color?color.toLowerCase():type==='theme'?'theme':type==='channel'?'channel':'role';
       x.fillStyle='rgba(255,175,205,0.22)'; rrect(x,rx,ry,160,40,8); x.fill(); x.strokeStyle='rgba(195,115,150,0.28)'; x.lineWidth=1; rrect(x,rx,ry,160,40,8); x.stroke();
       x.fillStyle=clr; x.fillRect(rx,ry,3,40);
       x.fillStyle='#480c24'; x.font=`bold 12px ${FB}`; x.textBaseline='top'; x.fillText((name||'Item').slice(0,14),rx+10,ry+8);
-      x.fillStyle='rgba(135,50,80,0.55)'; x.font=`11px ${FN}`; x.fillText(fmt(price||0)+' cr',rx+10,ry+24);
+      x.fillStyle='rgba(135,50,80,0.55)'; x.font=`11px ${FN}`; x.fillText(subLabel,rx+10,ry+24);
     });
   }
 
@@ -357,15 +357,15 @@ async function generateThemedCard({ username, avatarUrl, balance, totalEarned, s
     const vd=x.createLinearGradient(0,0,0,H);
     vd.addColorStop(0,'rgba(200,151,42,0)'); vd.addColorStop(0.5,'rgba(200,151,42,0.3)'); vd.addColorStop(1,'rgba(200,151,42,0)');
     x.strokeStyle=vd; x.lineWidth=1; x.beginPath(); x.moveTo(487,22); x.lineTo(487,H-22); x.stroke();
-    x.fillStyle='#c8a030'; x.font=`bold 11px ${FB}`; x.textBaseline='top'; x.fillText('⚜  SHOP ROLES',500,30);
-    if (!ROLES.length) { x.fillStyle='rgba(200,151,42,0.35)'; x.font=`12px ${FN}`; x.fillText('No items yet',500,50); }
-    ROLES.forEach(({name,color,price},i)=>{
-      const rx=500+(i%2)*178,ry=46+Math.floor(i/2)*48; const clr=/^#[0-9A-Fa-f]{6}$/.test(color||'')?color:'#5865F2';
+    x.fillStyle='#c8a030'; x.font=`bold 11px ${FB}`; x.textBaseline='top'; x.fillText('⚜  INVENTORY',500,30);
+    if (!ROLES.length) { x.fillStyle='rgba(200,151,42,0.35)'; x.font=`12px ${FN}`; x.fillText('Nothing owned yet',500,50); }
+    ROLES.forEach(({name,color,type},i)=>{
+      const rx=500+(i%2)*178,ry=46+Math.floor(i/2)*48; const clr=/^#[0-9A-Fa-f]{6}$/.test(color||'')?color:'#5865F2'; const subLabel=type==='color_role'&&color?color.toLowerCase():type==='theme'?'theme':type==='channel'?'channel':'role';
       x.fillStyle='rgba(200,151,42,0.07)'; rrect(x,rx,ry,165,38,6); x.fill();
       x.strokeStyle='rgba(200,151,42,0.28)'; x.lineWidth=1; rrect(x,rx,ry,165,38,6); x.stroke();
       x.fillStyle=clr; x.fillRect(rx,ry,3,38);
       x.fillStyle='#d4b060'; x.font=`bold 12px ${FB}`; x.textBaseline='top'; x.fillText((name||'Item').slice(0,14),rx+10,ry+8);
-      x.fillStyle='rgba(200,160,60,0.55)'; x.font=`11px ${FN}`; x.fillText(fmt(price||0)+' cr',rx+10,ry+24);
+      x.fillStyle='rgba(200,160,60,0.55)'; x.font=`11px ${FN}`; x.fillText(subLabel,rx+10,ry+24);
     });
   }
 
@@ -400,14 +400,14 @@ async function generateThemedCard({ username, avatarUrl, balance, totalEarned, s
     x.font=`bold 13px ${FB}`; x.fillStyle='rgba(30,14,90,0.72)'; x.fillText(TOT,200+x.measureText('TOTAL EARNED ').width,202);
 
     rrect(x,490,22,W-504,H-44,14); x.fillStyle='rgba(255,255,255,0.3)'; x.fill(); x.strokeStyle='rgba(255,255,255,0.6)'; x.lineWidth=1; x.stroke();
-    x.fillStyle='rgba(60,35,155,0.75)'; x.font=`bold 11px ${FB}`; x.textBaseline='top'; x.fillText('✦  SHOP ROLES',506,36);
-    if (!ROLES.length) { x.fillStyle='rgba(50,25,120,0.4)'; x.font=`12px ${FN}`; x.fillText('No items yet',506,58); }
-    ROLES.forEach(({name,color,price},i)=>{
-      const rx=506+(i%2)*172,ry=52+Math.floor(i/2)*52; const clr=/^#[0-9A-Fa-f]{6}$/.test(color||'')?color:'#5865F2';
+    x.fillStyle='rgba(60,35,155,0.75)'; x.font=`bold 11px ${FB}`; x.textBaseline='top'; x.fillText('✦  INVENTORY',506,36);
+    if (!ROLES.length) { x.fillStyle='rgba(50,25,120,0.4)'; x.font=`12px ${FN}`; x.fillText('Nothing owned yet',506,58); }
+    ROLES.forEach(({name,color,type},i)=>{
+      const rx=506+(i%2)*172,ry=52+Math.floor(i/2)*52; const clr=/^#[0-9A-Fa-f]{6}$/.test(color||'')?color:'#5865F2'; const subLabel=type==='color_role'&&color?color.toLowerCase():type==='theme'?'theme':type==='channel'?'channel':'role';
       x.fillStyle='rgba(255,255,255,0.48)'; rrect(x,rx,ry,160,42,10); x.fill(); x.strokeStyle='rgba(255,255,255,0.75)'; x.lineWidth=1; rrect(x,rx,ry,160,42,10); x.stroke();
       x.fillStyle=clr; x.fillRect(rx,ry,3,42);
       x.fillStyle='#221255'; x.font=`bold 12px ${FB}`; x.textBaseline='top'; x.fillText((name||'Item').slice(0,14),rx+10,ry+8);
-      x.fillStyle='rgba(60,35,155,0.62)'; x.font=`11px ${FN}`; x.fillText(fmt(price||0)+' cr',rx+10,ry+24);
+      x.fillStyle='rgba(60,35,155,0.62)'; x.font=`11px ${FN}`; x.fillText(subLabel,rx+10,ry+24);
     });
   }
 
@@ -468,14 +468,14 @@ async function generateThemedCard({ username, avatarUrl, balance, totalEarned, s
     const vd=x.createLinearGradient(0,0,0,H);
     vd.addColorStop(0,'rgba(136,0,204,0)'); vd.addColorStop(0.5,'rgba(136,0,204,0.3)'); vd.addColorStop(1,'rgba(136,0,204,0)');
     x.strokeStyle=vd; x.lineWidth=1; x.beginPath(); x.moveTo(487,20); x.lineTo(487,H-20); x.stroke();
-    x.fillStyle='#cc88ff'; x.font=`bold 11px ${FB}`; x.textBaseline='top'; x.fillText('✦  SHOP ROLES',500,28);
-    if (!ROLES.length) { x.fillStyle='rgba(136,0,204,0.4)'; x.font=`12px ${FN}`; x.fillText('No items yet',500,48); }
-    ROLES.forEach(({name,color,price},i)=>{
-      const rx=500+(i%2)*178,ry=44+Math.floor(i/2)*46; const clr=/^#[0-9A-Fa-f]{6}$/.test(color||'')?color:'#5865F2';
+    x.fillStyle='#cc88ff'; x.font=`bold 11px ${FB}`; x.textBaseline='top'; x.fillText('✦  INVENTORY',500,28);
+    if (!ROLES.length) { x.fillStyle='rgba(136,0,204,0.4)'; x.font=`12px ${FN}`; x.fillText('Nothing owned yet',500,48); }
+    ROLES.forEach(({name,color,type},i)=>{
+      const rx=500+(i%2)*178,ry=44+Math.floor(i/2)*46; const clr=/^#[0-9A-Fa-f]{6}$/.test(color||'')?color:'#5865F2'; const subLabel=type==='color_role'&&color?color.toLowerCase():type==='theme'?'theme':type==='channel'?'channel':'role';
       x.fillStyle='rgba(100,0,180,0.12)'; rrect(x,rx,ry,165,37,6); x.fill(); x.strokeStyle='rgba(136,0,204,0.28)'; x.lineWidth=1; rrect(x,rx,ry,165,37,6); x.stroke();
       x.fillStyle=clr; x.fillRect(rx,ry,3,37);
       x.fillStyle='#cc88ff'; x.font=`bold 12px ${FB}`; x.textBaseline='top'; x.fillText((name||'Item').slice(0,14),rx+10,ry+6);
-      x.fillStyle='rgba(100,150,255,0.62)'; x.font=`11px ${FN}`; x.fillText(fmt(price||0)+' cr',rx+10,ry+22);
+      x.fillStyle='rgba(100,150,255,0.62)'; x.font=`11px ${FN}`; x.fillText(subLabel,rx+10,ry+22);
     });
   }
 
@@ -519,14 +519,14 @@ async function generateThemedCard({ username, avatarUrl, balance, totalEarned, s
     const vd=x.createLinearGradient(0,0,0,H);
     vd.addColorStop(0,'rgba(176,136,48,0)'); vd.addColorStop(0.5,'rgba(176,136,48,0.24)'); vd.addColorStop(1,'rgba(176,136,48,0)');
     x.strokeStyle=vd; x.lineWidth=1; x.beginPath(); x.moveTo(487,16); x.lineTo(487,H-16); x.stroke();
-    x.fillStyle='#d0a040'; x.font=`bold 11px ${FB}`; x.textBaseline='top'; x.fillText('✦  SHOP ROLES',500,28);
-    if (!ROLES.length) { x.fillStyle='rgba(176,136,48,0.4)'; x.font=`12px ${FN}`; x.fillText('No items yet',500,48); }
-    ROLES.forEach(({name,color,price},i)=>{
-      const rx=500+(i%2)*178,ry=44+Math.floor(i/2)*46; const clr=/^#[0-9A-Fa-f]{6}$/.test(color||'')?color:'#5865F2';
+    x.fillStyle='#d0a040'; x.font=`bold 11px ${FB}`; x.textBaseline='top'; x.fillText('✦  INVENTORY',500,28);
+    if (!ROLES.length) { x.fillStyle='rgba(176,136,48,0.4)'; x.font=`12px ${FN}`; x.fillText('Nothing owned yet',500,48); }
+    ROLES.forEach(({name,color,type},i)=>{
+      const rx=500+(i%2)*178,ry=44+Math.floor(i/2)*46; const clr=/^#[0-9A-Fa-f]{6}$/.test(color||'')?color:'#5865F2'; const subLabel=type==='color_role'&&color?color.toLowerCase():type==='theme'?'theme':type==='channel'?'channel':'role';
       x.fillStyle='rgba(176,136,48,0.08)'; rrect(x,rx,ry,165,37,5); x.fill(); x.strokeStyle='rgba(176,136,48,0.26)'; x.lineWidth=1; rrect(x,rx,ry,165,37,5); x.stroke();
       x.fillStyle=clr; x.fillRect(rx,ry,3,37);
       x.fillStyle='#d0a040'; x.font=`bold 12px ${FB}`; x.textBaseline='top'; x.fillText((name||'Item').slice(0,14),rx+10,ry+6);
-      x.fillStyle='rgba(176,136,48,0.58)'; x.font=`11px ${FN}`; x.fillText(fmt(price||0)+' cr',rx+10,ry+22);
+      x.fillStyle='rgba(176,136,48,0.58)'; x.font=`11px ${FN}`; x.fillText(subLabel,rx+10,ry+22);
     });
   }
 
@@ -567,14 +567,14 @@ async function generateThemedCard({ username, avatarUrl, balance, totalEarned, s
 
     x.fillStyle='rgba(90,58,26,0.07)'; x.fillRect(488,14,W-502,H-28);
     x.strokeStyle='rgba(90,58,26,0.2)'; x.lineWidth=1; x.beginPath(); x.moveTo(488,14); x.lineTo(488,H-14); x.stroke();
-    x.fillStyle='#5a3a1a'; x.font=`bold 11px ${FB}`; x.textBaseline='top'; x.fillText('✦  SHOP ITEMS',500,28);
-    if (!ROLES.length) { x.fillStyle='rgba(90,58,26,0.4)'; x.font=`12px ${FN}`; x.fillText('No items yet',500,48); }
-    ROLES.forEach(({name,color,price},i)=>{
-      const rx=500+(i%2)*176,ry=44+Math.floor(i/2)*50; const clr=/^#[0-9A-Fa-f]{6}$/.test(color||'')?color:'#5865F2';
+    x.fillStyle='#5a3a1a'; x.font=`bold 11px ${FB}`; x.textBaseline='top'; x.fillText('✦  INVENTORY',500,28);
+    if (!ROLES.length) { x.fillStyle='rgba(90,58,26,0.4)'; x.font=`12px ${FN}`; x.fillText('Nothing owned yet',500,48); }
+    ROLES.forEach(({name,color,type},i)=>{
+      const rx=500+(i%2)*176,ry=44+Math.floor(i/2)*50; const clr=/^#[0-9A-Fa-f]{6}$/.test(color||'')?color:'#5865F2'; const subLabel=type==='color_role'&&color?color.toLowerCase():type==='theme'?'theme':type==='channel'?'channel':'role';
       x.fillStyle='rgba(90,58,26,0.07)'; rrect(x,rx,ry,163,40,4); x.fill(); x.strokeStyle='rgba(90,58,26,0.2)'; x.lineWidth=1; rrect(x,rx,ry,163,40,4); x.stroke();
       x.fillStyle=clr; x.fillRect(rx,ry,4,40);
       x.fillStyle='#281408'; x.font=`bold 12px ${FB}`; x.textBaseline='top'; x.fillText((name||'Item').slice(0,14),rx+11,ry+8);
-      x.fillStyle='rgba(90,58,26,0.58)'; x.font=`11px ${FN}`; x.fillText(fmt(price||0)+' cr',rx+11,ry+24);
+      x.fillStyle='rgba(90,58,26,0.58)'; x.font=`11px ${FN}`; x.fillText(subLabel,rx+11,ry+24);
     });
   }
 

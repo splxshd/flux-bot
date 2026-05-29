@@ -60,9 +60,21 @@ const credits = {
     const guildId = message.guild.id;
     const data    = db.getCredits(guildId, target.id);
     const s       = db.getCreditSettings(guildId);
-    const items   = db.getShopItems(guildId);
 
     const equippedTheme = db.getUserTheme(guildId, target.id);
+
+    // Build inventory: owned themes first, then purchased roles/channels (most recent first)
+    const ownedThemes = db.getUserOwnedThemes(guildId, target.id);
+    const purchases   = db.getUserPurchases(guildId, target.id);
+    const items = [
+      ...ownedThemes.map(t => ({
+        name:  t.charAt(0).toUpperCase() + t.slice(1) + ' Theme',
+        type:  'theme',
+        color: null,
+        price: 0,
+      })),
+      ...purchases,
+    ].slice(0, 4);
     const avatarUrl = target.displayAvatarURL({ extension: 'png', size: 256, forceStatic: true });
 
     try {
