@@ -1421,6 +1421,10 @@ const cf = {
 
     pendingDuels.set(key, true);
 
+    // Lock the challenger's cooldown immediately — regardless of outcome
+    // (decline / timeout / win / loss all count as "used your flip")
+    db.setCfAt(guildId, challenger.id, now);
+
     const row = new ActionRowBuilder().addComponents(
       new ButtonBuilder().setCustomId(`cf_accept_${challenger.id}_${target.id}_${amt}`)
         .setLabel('Accept').setEmoji('✅').setStyle(ButtonStyle.Success),
@@ -1476,10 +1480,9 @@ const cf = {
       db.addWallet(guildId, loser.id,  -amt);
       db.addWallet(guildId, winner.id,  amt);
 
-      // Set cooldown for both players so neither can flip immediately again
+      // Set cooldown for the target too — they can't immediately accept another duel
       const tsNow = Math.floor(Date.now() / 1000);
-      db.setCfAt(guildId, challenger.id, tsNow);
-      db.setCfAt(guildId, target.id,     tsNow);
+      db.setCfAt(guildId, target.id, tsNow);
 
       const winnerEco = db.getEco(guildId, winner.id);
 
