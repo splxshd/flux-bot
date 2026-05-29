@@ -119,6 +119,10 @@ const COMMANDS = {
   addvariant:       { description: 'Add a variant to a SellAuth product.',           aliases: [],            params: '<product_id> <name>',                 permission: 'Administrator',     usage: '/addvariant <product_id> <name>',              example: '/addvariant abc Basic',          module: 'SellAuth' },
   removeproduct:    { description: 'Remove a SellAuth product.',                     aliases: [],            params: '<product_id>',                        permission: 'Administrator',     usage: '/removeproduct <product_id>',                  example: '/removeproduct abc',             module: 'SellAuth' },
   restock:          { description: 'Restock a product with keys or content.',        aliases: [],            params: '<keys> [product_id] [variant_id]',    permission: 'Administrator',     usage: '/restock <keys>',                              example: '/restock key1,key2',             module: 'SellAuth' },
+  // ── Credits & Shop ────────────────────────────────────────────────────────────
+  credits:          { description: 'Check your balance, browse the shop, buy items, view inventory or see the leaderboard.', aliases: [], params: '<balance|shop|buy|inventory|leaderboard>', permission: null,          usage: '/credits <subcommand>',                        example: '/credits balance',               module: 'Credits' },
+  myrole:           { description: 'Create and manage your personal cosmetic color role.',                                   aliases: [], params: '<view|create|color|rename|delete>',      permission: null,          usage: '/myrole <subcommand>',                         example: '/myrole create Nights #FF5733',  module: 'Credits' },
+  creditsetup:      { description: 'Configure the credit & shop system — earn rates, shop items, custom role costs.',        aliases: [], params: '<subcommand>',                           permission: 'Manage Guild', usage: '/creditsetup <messages|voice|additem|...>',    example: '/creditsetup messages 5',        module: 'Credits' },
   // ── Owner ─────────────────────────────────────────────────────────────────────
   setstatus:        { description: 'Set the bot status/activity.',                   aliases: [],            params: '<type> <text>',                       permission: 'Administrator',     usage: '/setstatus <playing|watching|listening> <text>', example: '/setstatus playing ,help',     module: 'Owner' },
   restart:          { description: 'Restart the bot process.',                       aliases: [],            params: '',                                    permission: 'Administrator',     usage: '/restart',                                     example: '/restart',                       module: 'Owner' },
@@ -140,6 +144,7 @@ const CATEGORY_DEFS = {
   'Anti-Raid':   { emoji: '🛡️', description: 'Protect against raids' },
   Vouching:      { emoji: '⭐', description: 'Leave reputation for sellers' },
   SellAuth:      { emoji: '🛍️', description: 'Manage your SellAuth store' },
+  Credits:       { emoji: '💳', description: 'Earn credits, buy roles and manage the shop' },
   Owner:         { emoji: '👑', description: 'Bot owner & server config commands' },
 };
 
