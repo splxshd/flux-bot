@@ -105,83 +105,155 @@ const credits = {
   },
 };
 
-// ── ,shop [page] ──────────────────────────────────────────────────────────────
+// ── Shop helpers ──────────────────────────────────────────────────────────────
+const RARITY_BARS = {
+  common:    '⬜⬜⬜⬜',
+  uncommon:  '🟩⬜⬜⬜',
+  rare:      '🟦🟦⬜⬜',
+  epic:      '🟪🟪🟪⬜',
+  legendary: '🟨🟨🟨🟨',
+};
+const SHOP_COLORS  = { daily: 0xF1C40F, weekly: 0x5865F2, all: 0x9B59B6 };
+const SHOP_TITLES  = { daily: '🌅  Daily Shop', weekly: '🗓️  Weekly Shop', all: '🏪  Browse All' };
+const TYPE_ICON    = { color_role: '🎨', role: '🏷️', channel: '🔓', theme: '🎴' };
+const SHOP_PER_PAGE = 4;
+
+async function _buildShopEmbed(guildId, userId, tab, page, guild, author) {
+  const userCr = db.getCredits(guildId, userId);
+  let items, subline;
+
+  if (tab === 'daily') {
+    items   = db.getShopItemsByIds(db.generateUserDailyShop(guildId, userId));
+    subline = `Resets in **${_fmtMs(_msTilMidnightUTC())}**  ·  unique to you`;
+  } else if (tab === 'weekly') {
+    items   = db.getShopItemsByIds(db.generateUserWeeklyShop(guildId, userId));
+    subline = `Resets in **${_fmtMs(_msTilNextMonday())}**  ·  unique to you`;
+  } else {
+    items   = db.getShopItems(guildId);
+    subline = `**${items.length}** item${items.length !== 1 ? 's' : ''} in the pool`;
+  }
+
+  const totalPages = Math.max(1, Math.ceil(items.length / SHOP_PER_PAGE));
+  page = Math.min(Math.max(page, 0), totalPages - 1);
+  const slice = items.slice(page * SHOP_PER_PAGE, (page + 1) * SHOP_PER_PAGE);
+
+  const embed = new EmbedBuilder()
+    .setColor(SHOP_COLORS[tab])
+    .setTitle(SHOP_TITLES[tab])
+    .setAuthor({ name: `${author.username}'s Shop`, iconURL: author.displayAvatarURL({ size: 64 }) })
+    .setThumbnail(guild.iconURL({ size: 128 }) || null)
+    .setDescription(
+      `> 💳  **${fmt(userCr.amount)} credits**\n` +
+      `> ${subline}\n` +
+      `> Use \`\`,buy <id>\`\` to purchase`
+    )
+    .setFooter({ text: `Page ${page + 1} / ${totalPages}  ·  flux credits` })
+    .setTimestamp();
+
+  if (!slice.length) {
+    embed.addFields({ name: '─  Empty  ─', value: 'No items available yet — admins can add with `,additem`.', inline: false });
+    return { embed, totalPages, page };
+  }
+
+  for (const item of slice) {
+    const icon      = TYPE_ICON[item.type] || '📦';
+    const bar       = RARITY_BARS[item.rarity] || RARITY_BARS.common;
+    const badge     = RARITY_BADGE[item.rarity] || '⬜ Common';
+    const outStock  = item.stock !== -1 && item.sold >= item.stock;
+    const stockStr  = outStock ? '~~sold out~~' : item.stock === -1 ? '∞' : `${item.stock - item.sold} left`;
+
+    const isOwned   = (item.type === 'theme' && item.theme_name && db.hasTheme(guildId, userId, item.theme_name))
+                   || ((item.type === 'color_role' || item.type === 'role') && !!db.getUserPurchase(guildId, userId, item.id));
+
+    let status;
+    if (isOwned)                         status = '✨ **owned**';
+    else if (outStock)                   status = '📦 **sold out**';
+    else if (userCr.amount >= item.price) status = '✅';
+    else                                 status = '❌';
+
+    const colorHint = item.type === 'color_role' && item.color ? `  \`${item.color}\`` : '';
+
+    embed.addFields({
+      name:  `${icon}  ${item.name}${colorHint}  ·  \`#${item.id}\``,
+      value: [
+        `${bar}  ${badge}`,
+        `💳 **${fmt(item.price)} cr**  ·  ${stockStr}  ·  ${status}`,
+        item.description ? `> *${item.description}*` : null,
+      ].filter(v => v !== null).join('\n'),
+      inline: false,
+    });
+  }
+
+  return { embed, totalPages, page };
+}
+
+function _shopButtons(tab, page, totalPages, userId) {
+  const rows = [
+    new ActionRowBuilder().addComponents(
+      new ButtonBuilder().setCustomId(`sh_daily_${userId}`)
+        .setLabel('🌅 Daily').setStyle(tab === 'daily' ? ButtonStyle.Primary : ButtonStyle.Secondary),
+      new ButtonBuilder().setCustomId(`sh_weekly_${userId}`)
+        .setLabel('🗓️ Weekly').setStyle(tab === 'weekly' ? ButtonStyle.Primary : ButtonStyle.Secondary),
+      new ButtonBuilder().setCustomId(`sh_all_${userId}`)
+        .setLabel('🏪 All Items').setStyle(tab === 'all' ? ButtonStyle.Primary : ButtonStyle.Secondary),
+    ),
+  ];
+
+  if (totalPages > 1) {
+    rows.push(new ActionRowBuilder().addComponents(
+      new ButtonBuilder().setCustomId(`sh_prev_${userId}`)
+        .setLabel('◀ Prev').setStyle(ButtonStyle.Secondary).setDisabled(page <= 0),
+      new ButtonBuilder().setCustomId(`sh_pg_${userId}`)
+        .setLabel(`${page + 1} / ${totalPages}`).setStyle(ButtonStyle.Secondary).setDisabled(true),
+      new ButtonBuilder().setCustomId(`sh_next_${userId}`)
+        .setLabel('Next ▶').setStyle(ButtonStyle.Secondary).setDisabled(page >= totalPages - 1),
+    ));
+  }
+
+  return rows;
+}
+
+// ── ,shop ─────────────────────────────────────────────────────────────────────
+// One command for daily, weekly, and full shop — tabs + pages via buttons.
 const shop = {
   name: 'shop',
-  aliases: ['store', 'creditshop'],
+  aliases: ['store', 'creditshop', 'dailyshop', 'dshop', 'weeklyshop', 'wshop', 'weekly', 'daily'],
   async execute(message, args) {
     const guildId = message.guild.id;
-    const items   = db.getShopItems(guildId);
+    const userId  = message.author.id;
 
-    if (!items.length) {
-      return message.reply({ embeds: [new EmbedBuilder()
-        .setColor(YELLOW)
-        .setDescription('🛒 The shop is empty! Admins can add items with `,additem`.')] });
-    }
+    // Detect which tab to open based on the alias or first arg
+    const cmdUsed = message.content.trim().split(/\s+/)[0].slice(1).toLowerCase();
+    let tab = 'daily';
+    if (['weeklyshop', 'wshop', 'weekly'].includes(cmdUsed) || args[0] === 'weekly') tab = 'weekly';
+    else if (args[0] === 'all' || args[0] === 'browse') tab = 'all';
 
-    let page       = Math.max(1, parseInt(args[0]) || 1);
-    const totalPages = Math.ceil(items.length / ITEMS_PER_PAGE);
-    page = Math.min(page, totalPages);
+    const { embed, totalPages, page } = await _buildShopEmbed(
+      guildId, userId, tab, 0, message.guild, message.author
+    );
+    const buttons = _shopButtons(tab, 0, totalPages, userId);
+    const msg = await message.reply({ embeds: [embed], components: buttons });
 
-    const userCr = db.getCredits(guildId, message.author.id);
-
-    function buildEmbed(p) {
-      const start     = (p - 1) * ITEMS_PER_PAGE;
-      const pageItems = items.slice(start, start + ITEMS_PER_PAGE);
-
-      const embed = new EmbedBuilder()
-        .setColor(GOLD)
-        .setTitle('🛒 Credit Shop')
-        .setDescription(`Your balance: **${fmt(userCr.amount)} credits**\nBuy items with \`,buy <id>\``)
-        .setFooter({ text: `Page ${p}/${totalPages} • flux credits` })
-        .setTimestamp();
-
-      for (const item of pageItems) {
-        const typeIcon  = item.type === 'color_role' ? '🎨' : item.type === 'role' ? '🏷️' : '🔓';
-        const stockStr  = item.stock === -1 ? '∞' : `${item.stock - item.sold} left`;
-        const colorStr  = item.type === 'color_role' && item.color ? ` • ${item.color}` : '';
-        const canAfford = userCr.amount >= item.price ? '✅' : '❌';
-        const desc      = item.description ? `*${item.description}*\n` : '';
-        embed.addFields({
-          name:  `${typeIcon} #${item.id} — ${item.name}${colorStr}`,
-          value: `${desc}💳 **${fmt(item.price)} credits** • Stock: ${stockStr} ${canAfford}`,
-          inline: false,
-        });
-      }
-      return embed;
-    }
-
-    function buildRow(p) {
-      return new ActionRowBuilder().addComponents(
-        new ButtonBuilder()
-          .setCustomId(`shop_prev_${message.author.id}_${p}`)
-          .setLabel('◀ Prev').setStyle(ButtonStyle.Secondary).setDisabled(p <= 1),
-        new ButtonBuilder()
-          .setCustomId(`shop_next_${message.author.id}_${p}`)
-          .setLabel('Next ▶').setStyle(ButtonStyle.Secondary).setDisabled(p >= totalPages),
-      );
-    }
-
-    const msg = await message.reply({
-      embeds: [buildEmbed(page)],
-      components: totalPages > 1 ? [buildRow(page)] : [],
-    });
-
-    if (totalPages <= 1) return;
+    let curTab = tab, curPage = 0;
 
     const col = msg.createMessageComponentCollector({
-      filter: i => i.user.id === message.author.id &&
-        (i.customId.startsWith(`shop_prev_${message.author.id}`) ||
-         i.customId.startsWith(`shop_next_${message.author.id}`)),
-      time: 60_000,
+      filter: i => i.user.id === userId && i.customId.endsWith(`_${userId}`),
+      time: 120_000,
     });
 
-    col.on('collect', async (i) => {
-      const parts  = i.customId.split('_');
-      const dir    = parts[1]; // 'prev' or 'next'
-      const cur    = parseInt(parts[parts.length - 1]);
-      const newP   = dir === 'next' ? cur + 1 : cur - 1;
-      await i.update({ embeds: [buildEmbed(newP)], components: [buildRow(newP)] });
+    col.on('collect', async i => {
+      const id = i.customId;
+      if      (id === `sh_daily_${userId}`)  { curTab = 'daily';  curPage = 0; }
+      else if (id === `sh_weekly_${userId}`) { curTab = 'weekly'; curPage = 0; }
+      else if (id === `sh_all_${userId}`)    { curTab = 'all';    curPage = 0; }
+      else if (id === `sh_prev_${userId}`)   { curPage = Math.max(0, curPage - 1); }
+      else if (id === `sh_next_${userId}`)   { curPage++; }
+
+      const { embed: e, totalPages: tp, page: p } = await _buildShopEmbed(
+        guildId, userId, curTab, curPage, message.guild, message.author
+      );
+      curPage = p;
+      await i.update({ embeds: [e], components: _shopButtons(curTab, curPage, tp, userId) });
     });
 
     col.on('end', () => msg.edit({ components: [] }).catch(() => {}));
@@ -1350,104 +1422,9 @@ const setthemeprice = {
   },
 };
 
-// ── ,dailyshop ────────────────────────────────────────────────────────────────
-// Personalised 4-item shop that resets at midnight UTC, seeded per user+date.
-const dailyshop = {
-  name: 'dailyshop',
-  aliases: ['daily', 'dshop'],
-  async execute(message) {
-    const guildId = message.guild.id;
-    const userId  = message.author.id;
-
-    const itemIds = db.generateUserDailyShop(guildId, userId);
-    const items   = db.getShopItemsByIds(itemIds);
-    const userCr  = db.getCredits(guildId, userId);
-    const resets  = _fmtMs(_msTilMidnightUTC());
-
-    if (!items.length) {
-      return message.reply({ embeds: [new EmbedBuilder().setColor(YELLOW)
-        .setDescription('🛒 No items in the shop pool yet! Admins can add items with `,additem`.')] });
-    }
-
-    const typeIcon = { color_role: '🎨', role: '🏷️', channel: '🔓', theme: '🎴' };
-
-    const embed = new EmbedBuilder()
-      .setColor(GOLD)
-      .setTitle('🌅 Your Daily Shop')
-      .setDescription(`💳 Balance: **${fmt(userCr.amount)} credits** • Resets in **${resets}**\nBuy with \`,buy <id>\``)
-      .setFooter({ text: 'Your shop is unique • refreshes midnight UTC • flux credits' })
-      .setTimestamp();
-
-    for (const item of items) {
-      const icon    = typeIcon[item.type] || '📦';
-      const badge   = RARITY_BADGE[item.rarity] || '⬜ Common';
-      const stock   = item.stock === -1 ? '∞' : `${Math.max(0, item.stock - item.sold)} left`;
-      const canBuy  = userCr.amount >= item.price ? '✅' : '❌';
-      const owned   = (item.type === 'theme' && db.hasTheme(guildId, userId, item.theme_name))
-                   || ((item.type === 'color_role' || item.type === 'role') && db.getUserPurchase(guildId, userId, item.id))
-                   ? ' *(owned)*' : '';
-      embed.addFields({
-        name:  `${icon} #${item.id} — ${item.name}${owned}`,
-        value: `${item.description ? `*${item.description}*\n` : ''}${badge} • **${fmt(item.price)} cr** • ${stock} ${canBuy}`,
-        inline: false,
-      });
-    }
-
-    await message.reply({ embeds: [embed] });
-  },
-};
-
-// ── ,weeklyshop ───────────────────────────────────────────────────────────────
-// Personalised 6-item shop that resets each Monday, seeded per user+week.
-const weeklyshop = {
-  name: 'weeklyshop',
-  aliases: ['weekly', 'wshop'],
-  async execute(message) {
-    const guildId = message.guild.id;
-    const userId  = message.author.id;
-
-    const itemIds = db.generateUserWeeklyShop(guildId, userId);
-    const items   = db.getShopItemsByIds(itemIds);
-    const userCr  = db.getCredits(guildId, userId);
-    const resets  = _fmtMs(_msTilNextMonday());
-
-    if (!items.length) {
-      return message.reply({ embeds: [new EmbedBuilder().setColor(YELLOW)
-        .setDescription('🛒 No items in the shop pool yet! Admins can add items with `,additem`.')] });
-    }
-
-    const typeIcon = { color_role: '🎨', role: '🏷️', channel: '🔓', theme: '🎴' };
-
-    const embed = new EmbedBuilder()
-      .setColor('#5865F2')
-      .setTitle('🗓️ Your Weekly Shop')
-      .setDescription(`💳 Balance: **${fmt(userCr.amount)} credits** • Resets in **${resets}**\nBuy with \`,buy <id>\``)
-      .setFooter({ text: 'Your shop is unique • refreshes every Monday UTC • flux credits' })
-      .setTimestamp();
-
-    for (const item of items) {
-      const icon    = typeIcon[item.type] || '📦';
-      const badge   = RARITY_BADGE[item.rarity] || '⬜ Common';
-      const stock   = item.stock === -1 ? '∞' : `${Math.max(0, item.stock - item.sold)} left`;
-      const canBuy  = userCr.amount >= item.price ? '✅' : '❌';
-      const owned   = (item.type === 'theme' && db.hasTheme(guildId, userId, item.theme_name))
-                   || ((item.type === 'color_role' || item.type === 'role') && db.getUserPurchase(guildId, userId, item.id))
-                   ? ' *(owned)*' : '';
-      embed.addFields({
-        name:  `${icon} #${item.id} — ${item.name}${owned}`,
-        value: `${item.description ? `*${item.description}*\n` : ''}${badge} • **${fmt(item.price)} cr** • ${stock} ${canBuy}`,
-        inline: false,
-      });
-    }
-
-    await message.reply({ embeds: [embed] });
-  },
-};
-
 module.exports = [
   credits, shop, buy, inventory, creditlead,
   additem, removeitem, givecr, takecr, setcr, reseteco, shopconfig,
   myrole, creditsetup, pointhelp, previewthemes,
   themes, buytheme, cardtheme, givetheme, setthemeprice,
-  dailyshop, weeklyshop,
 ];
