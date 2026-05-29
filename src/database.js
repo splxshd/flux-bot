@@ -93,11 +93,21 @@ _convertFromWAL(dbPath);
 
 // ─── Non-blocking async DB init ───────────────────────────────────────────────
 function _tryOpenDb(resolve, reject, attempt) {
-  // After 30 retries (60 seconds) of persistent lock: back up the stuck database
-  // and start fresh. Guarantees the bot comes online within ~1 minute regardless
-  // of what other process is holding the lock.
+  // Before every attempt: wipe stale journal / WAL / SHM files.
+  // These are safe to delete when we're the only writer — they only exist because
+  // a previous process crashed mid-transaction. Leaving them causes SQLite to
+  // attempt recovery and re-acquire locks that no longer exist, creating an
+  // infinite SQLITE_BUSY loop even on an otherwise healthy file.
+  for (const suf of ['-journal', '-wal', '-shm']) {
+    try { fs.unlinkSync(dbPath + suf); } catch (_) {}
+  }
+
+  // At 30 retries (~60 s): back up the stuck file and restart the process.
+  // Railway will bring up a fresh instance; the new instance will restore from
+  // the backup on next boot via _restoreIfEmpty(). This is cleaner than letting
+  // a zombie process grind through 150 retries while occupying the volume lock.
   if (attempt === 30) {
-    console.warn('[DB] Persistent lock after 30 retries — backing up database and starting fresh...');
+    console.warn('[DB] Persistent lock after 30 retries — backing up and restarting process...');
     for (const suf of ['', '-wal', '-shm', '-journal']) {
       const f = dbPath + suf;
       try {
@@ -109,6 +119,9 @@ function _tryOpenDb(resolve, reject, attempt) {
         try { fs.unlinkSync(f); } catch (_) {}
       }
     }
+    // Exit so Railway restarts us with a clean slate.
+    // (If two instances were running, only one will survive the restart.)
+    process.exit(1);
   }
 
   let conn;
