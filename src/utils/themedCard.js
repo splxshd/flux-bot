@@ -87,7 +87,7 @@ async function generateThemedCard({ username, avatarUrl, balance, totalEarned, s
   const BAL   = fmtBal(balance);
   const TOT   = fmtBal(totalEarned) + ' cr';
   const UNAME = username.length > 22 ? username.slice(0,20)+'…' : username;
-  const ROLES = shopItems.slice(0,4);
+  const ROLES = shopItems.slice(0,3);
   const QUOTE = quote ? quote.trim().slice(0,60) : '';
 
   async function drawAvatar(ax, ay, ar, fallbackFill) {
@@ -164,13 +164,13 @@ async function generateThemedCard({ username, avatarUrl, balance, totalEarned, s
     x.fillStyle='rgba(255,255,255,0.75)'; x.font=`bold 11px ${FB}`; x.textBaseline='top'; x.fillText('✦  INVENTORY',506,30);
     if (!ROLES.length) { x.fillStyle='rgba(255,255,255,0.28)'; x.font=`12px ${FN}`; x.fillText('Nothing owned yet',506,52); }
     ROLES.forEach(({name,color,type},i)=>{
-      const rx=506+(i%2)*174,ry=46+Math.floor(i/2)*50; const clr=/^#[0-9A-Fa-f]{6}$/.test(color||'')?color:'#5865F2'; const subLabel=type==='color_role'&&color?color.toLowerCase():type==='theme'?'theme':type==='channel'?'channel':'role';
-      rrect(x,rx,ry,162,42,8);
-      const p2=x.createLinearGradient(rx,0,rx+162,0); p2.addColorStop(0,'rgba(255,255,255,0.09)'); p2.addColorStop(1,'rgba(255,255,255,0.03)');
+      const rx=500,ry=44+i*44; const clr=/^#[0-9A-Fa-f]{6}$/.test(color||'')?color:'#5865F2'; const subLabel=type==='color_role'&&color?color.toLowerCase():type==='theme'?'theme':type==='channel'?'channel':'role';
+      rrect(x,rx,ry,342,38,8);
+      const p2=x.createLinearGradient(rx,0,rx+342,0); p2.addColorStop(0,'rgba(255,255,255,0.09)'); p2.addColorStop(1,'rgba(255,255,255,0.03)');
       x.fillStyle=p2; x.fill(); x.strokeStyle='rgba(255,255,255,0.17)'; x.lineWidth=1; x.stroke();
-      x.fillStyle=clr; x.fillRect(rx,ry,3,42);
-      x.fillStyle='#eee'; x.font=`bold 12px ${FB}`; x.textBaseline='top'; x.fillText((name||'Item').slice(0,14),rx+10,ry+8);
-      x.fillStyle='rgba(255,255,255,0.38)'; x.font=`11px ${FN}`; x.fillText(subLabel,rx+10,ry+24);
+      x.fillStyle=clr; x.fillRect(rx,ry,3,38);
+      x.fillStyle='#eee'; x.font=`bold 12px ${FB}`; x.textBaseline='top'; x.fillText((name||'Item').slice(0,26),rx+10,ry+8);
+      x.fillStyle='rgba(255,255,255,0.38)'; x.font=`11px ${FN}`; x.fillText(subLabel,rx+10,ry+22);
     });
   }
 
@@ -234,12 +234,12 @@ async function generateThemedCard({ username, avatarUrl, balance, totalEarned, s
     x.save(); x.shadowColor='#00ffcc'; x.shadowBlur=8; x.fillStyle='#00ffcc'; x.font=`bold 11px ${FB}`; x.textBaseline='top'; x.fillText('✦  INVENTORY',500,26); x.restore();
     if (!ROLES.length) { x.fillStyle='rgba(0,255,200,0.35)'; x.font=`12px ${FN}`; x.fillText('Nothing owned yet',500,48); }
     ROLES.forEach(({name,color,type},i)=>{
-      const rx=500+(i%2)*178,ry=42+Math.floor(i/2)*46; const clr=/^#[0-9A-Fa-f]{6}$/.test(color||'')?color:'#5865F2'; const subLabel=type==='color_role'&&color?color.toLowerCase():type==='theme'?'theme':type==='channel'?'channel':'role';
-      x.fillStyle='rgba(0,200,255,0.07)'; rrect(x,rx,ry,165,38,6); x.fill();
-      x.strokeStyle='rgba(0,200,255,0.22)'; x.lineWidth=1; rrect(x,rx,ry,165,38,6); x.stroke();
+      const rx=500,ry=44+i*44; const clr=/^#[0-9A-Fa-f]{6}$/.test(color||'')?color:'#5865F2'; const subLabel=type==='color_role'&&color?color.toLowerCase():type==='theme'?'theme':type==='channel'?'channel':'role';
+      x.fillStyle='rgba(0,200,255,0.07)'; rrect(x,rx,ry,342,38,6); x.fill();
+      x.strokeStyle='rgba(0,200,255,0.22)'; x.lineWidth=1; rrect(x,rx,ry,342,38,6); x.stroke();
       x.fillStyle=clr; x.fillRect(rx,ry,3,38);
-      x.fillStyle='#ffe066'; x.font=`bold 12px ${FB}`; x.textBaseline='top'; x.fillText((name||'Item').slice(0,14),rx+10,ry+8);
-      x.fillStyle='rgba(0,255,200,0.55)'; x.font=`11px ${FN}`; x.fillText(subLabel,rx+10,ry+24);
+      x.fillStyle='#ffe066'; x.font=`bold 12px ${FB}`; x.textBaseline='top'; x.fillText((name||'Item').slice(0,26),rx+10,ry+8);
+      x.fillStyle='rgba(0,255,200,0.55)'; x.font=`11px ${FN}`; x.fillText(subLabel,rx+10,ry+22);
     });
   }
 
@@ -305,11 +305,11 @@ async function generateThemedCard({ username, avatarUrl, balance, totalEarned, s
     x.fillStyle='#7a2640'; x.font=`bold 11px ${FB}`; x.textBaseline='top'; x.fillText('✿  INVENTORY',502,30);
     if (!ROLES.length) { x.fillStyle='rgba(135,50,80,0.35)'; x.font=`12px ${FN}`; x.fillText('Nothing owned yet',502,52); }
     ROLES.forEach(({name,color,type},i)=>{
-      const rx=502+(i%2)*172,ry=46+Math.floor(i/2)*50; const clr=/^#[0-9A-Fa-f]{6}$/.test(color||'')?color:'#5865F2'; const subLabel=type==='color_role'&&color?color.toLowerCase():type==='theme'?'theme':type==='channel'?'channel':'role';
-      x.fillStyle='rgba(255,175,205,0.22)'; rrect(x,rx,ry,160,40,8); x.fill(); x.strokeStyle='rgba(195,115,150,0.28)'; x.lineWidth=1; rrect(x,rx,ry,160,40,8); x.stroke();
-      x.fillStyle=clr; x.fillRect(rx,ry,3,40);
-      x.fillStyle='#480c24'; x.font=`bold 12px ${FB}`; x.textBaseline='top'; x.fillText((name||'Item').slice(0,14),rx+10,ry+8);
-      x.fillStyle='rgba(135,50,80,0.55)'; x.font=`11px ${FN}`; x.fillText(subLabel,rx+10,ry+24);
+      const rx=500,ry=44+i*44; const clr=/^#[0-9A-Fa-f]{6}$/.test(color||'')?color:'#5865F2'; const subLabel=type==='color_role'&&color?color.toLowerCase():type==='theme'?'theme':type==='channel'?'channel':'role';
+      x.fillStyle='rgba(255,175,205,0.22)'; rrect(x,rx,ry,342,38,8); x.fill(); x.strokeStyle='rgba(195,115,150,0.28)'; x.lineWidth=1; rrect(x,rx,ry,342,38,8); x.stroke();
+      x.fillStyle=clr; x.fillRect(rx,ry,3,38);
+      x.fillStyle='#480c24'; x.font=`bold 12px ${FB}`; x.textBaseline='top'; x.fillText((name||'Item').slice(0,26),rx+10,ry+8);
+      x.fillStyle='rgba(135,50,80,0.55)'; x.font=`11px ${FN}`; x.fillText(subLabel,rx+10,ry+22);
     });
   }
 
@@ -361,12 +361,12 @@ async function generateThemedCard({ username, avatarUrl, balance, totalEarned, s
     x.fillStyle='#c8a030'; x.font=`bold 11px ${FB}`; x.textBaseline='top'; x.fillText('⚜  INVENTORY',500,30);
     if (!ROLES.length) { x.fillStyle='rgba(200,151,42,0.35)'; x.font=`12px ${FN}`; x.fillText('Nothing owned yet',500,50); }
     ROLES.forEach(({name,color,type},i)=>{
-      const rx=500+(i%2)*178,ry=46+Math.floor(i/2)*48; const clr=/^#[0-9A-Fa-f]{6}$/.test(color||'')?color:'#5865F2'; const subLabel=type==='color_role'&&color?color.toLowerCase():type==='theme'?'theme':type==='channel'?'channel':'role';
-      x.fillStyle='rgba(200,151,42,0.07)'; rrect(x,rx,ry,165,38,6); x.fill();
-      x.strokeStyle='rgba(200,151,42,0.28)'; x.lineWidth=1; rrect(x,rx,ry,165,38,6); x.stroke();
+      const rx=500,ry=44+i*44; const clr=/^#[0-9A-Fa-f]{6}$/.test(color||'')?color:'#5865F2'; const subLabel=type==='color_role'&&color?color.toLowerCase():type==='theme'?'theme':type==='channel'?'channel':'role';
+      x.fillStyle='rgba(200,151,42,0.07)'; rrect(x,rx,ry,342,38,6); x.fill();
+      x.strokeStyle='rgba(200,151,42,0.28)'; x.lineWidth=1; rrect(x,rx,ry,342,38,6); x.stroke();
       x.fillStyle=clr; x.fillRect(rx,ry,3,38);
-      x.fillStyle='#d4b060'; x.font=`bold 12px ${FB}`; x.textBaseline='top'; x.fillText((name||'Item').slice(0,14),rx+10,ry+8);
-      x.fillStyle='rgba(200,160,60,0.55)'; x.font=`11px ${FN}`; x.fillText(subLabel,rx+10,ry+24);
+      x.fillStyle='#d4b060'; x.font=`bold 12px ${FB}`; x.textBaseline='top'; x.fillText((name||'Item').slice(0,26),rx+10,ry+8);
+      x.fillStyle='rgba(200,160,60,0.55)'; x.font=`11px ${FN}`; x.fillText(subLabel,rx+10,ry+22);
     });
   }
 
@@ -404,11 +404,11 @@ async function generateThemedCard({ username, avatarUrl, balance, totalEarned, s
     x.fillStyle='rgba(60,35,155,0.75)'; x.font=`bold 11px ${FB}`; x.textBaseline='top'; x.fillText('✦  INVENTORY',506,36);
     if (!ROLES.length) { x.fillStyle='rgba(50,25,120,0.4)'; x.font=`12px ${FN}`; x.fillText('Nothing owned yet',506,58); }
     ROLES.forEach(({name,color,type},i)=>{
-      const rx=506+(i%2)*172,ry=52+Math.floor(i/2)*52; const clr=/^#[0-9A-Fa-f]{6}$/.test(color||'')?color:'#5865F2'; const subLabel=type==='color_role'&&color?color.toLowerCase():type==='theme'?'theme':type==='channel'?'channel':'role';
-      x.fillStyle='rgba(255,255,255,0.48)'; rrect(x,rx,ry,160,42,10); x.fill(); x.strokeStyle='rgba(255,255,255,0.75)'; x.lineWidth=1; rrect(x,rx,ry,160,42,10); x.stroke();
-      x.fillStyle=clr; x.fillRect(rx,ry,3,42);
-      x.fillStyle='#221255'; x.font=`bold 12px ${FB}`; x.textBaseline='top'; x.fillText((name||'Item').slice(0,14),rx+10,ry+8);
-      x.fillStyle='rgba(60,35,155,0.62)'; x.font=`11px ${FN}`; x.fillText(subLabel,rx+10,ry+24);
+      const rx=500,ry=44+i*44; const clr=/^#[0-9A-Fa-f]{6}$/.test(color||'')?color:'#5865F2'; const subLabel=type==='color_role'&&color?color.toLowerCase():type==='theme'?'theme':type==='channel'?'channel':'role';
+      x.fillStyle='rgba(255,255,255,0.48)'; rrect(x,rx,ry,342,38,10); x.fill(); x.strokeStyle='rgba(255,255,255,0.75)'; x.lineWidth=1; rrect(x,rx,ry,342,38,10); x.stroke();
+      x.fillStyle=clr; x.fillRect(rx,ry,3,38);
+      x.fillStyle='#221255'; x.font=`bold 12px ${FB}`; x.textBaseline='top'; x.fillText((name||'Item').slice(0,26),rx+10,ry+8);
+      x.fillStyle='rgba(60,35,155,0.62)'; x.font=`11px ${FN}`; x.fillText(subLabel,rx+10,ry+22);
     });
   }
 
@@ -472,10 +472,10 @@ async function generateThemedCard({ username, avatarUrl, balance, totalEarned, s
     x.fillStyle='#cc88ff'; x.font=`bold 11px ${FB}`; x.textBaseline='top'; x.fillText('✦  INVENTORY',500,28);
     if (!ROLES.length) { x.fillStyle='rgba(136,0,204,0.4)'; x.font=`12px ${FN}`; x.fillText('Nothing owned yet',500,48); }
     ROLES.forEach(({name,color,type},i)=>{
-      const rx=500+(i%2)*178,ry=44+Math.floor(i/2)*46; const clr=/^#[0-9A-Fa-f]{6}$/.test(color||'')?color:'#5865F2'; const subLabel=type==='color_role'&&color?color.toLowerCase():type==='theme'?'theme':type==='channel'?'channel':'role';
-      x.fillStyle='rgba(100,0,180,0.12)'; rrect(x,rx,ry,165,37,6); x.fill(); x.strokeStyle='rgba(136,0,204,0.28)'; x.lineWidth=1; rrect(x,rx,ry,165,37,6); x.stroke();
-      x.fillStyle=clr; x.fillRect(rx,ry,3,37);
-      x.fillStyle='#cc88ff'; x.font=`bold 12px ${FB}`; x.textBaseline='top'; x.fillText((name||'Item').slice(0,14),rx+10,ry+6);
+      const rx=500,ry=44+i*44; const clr=/^#[0-9A-Fa-f]{6}$/.test(color||'')?color:'#5865F2'; const subLabel=type==='color_role'&&color?color.toLowerCase():type==='theme'?'theme':type==='channel'?'channel':'role';
+      x.fillStyle='rgba(100,0,180,0.12)'; rrect(x,rx,ry,342,38,6); x.fill(); x.strokeStyle='rgba(136,0,204,0.28)'; x.lineWidth=1; rrect(x,rx,ry,342,38,6); x.stroke();
+      x.fillStyle=clr; x.fillRect(rx,ry,3,38);
+      x.fillStyle='#cc88ff'; x.font=`bold 12px ${FB}`; x.textBaseline='top'; x.fillText((name||'Item').slice(0,26),rx+10,ry+8);
       x.fillStyle='rgba(100,150,255,0.62)'; x.font=`11px ${FN}`; x.fillText(subLabel,rx+10,ry+22);
     });
   }
@@ -523,10 +523,10 @@ async function generateThemedCard({ username, avatarUrl, balance, totalEarned, s
     x.fillStyle='#d0a040'; x.font=`bold 11px ${FB}`; x.textBaseline='top'; x.fillText('✦  INVENTORY',500,28);
     if (!ROLES.length) { x.fillStyle='rgba(176,136,48,0.4)'; x.font=`12px ${FN}`; x.fillText('Nothing owned yet',500,48); }
     ROLES.forEach(({name,color,type},i)=>{
-      const rx=500+(i%2)*178,ry=44+Math.floor(i/2)*46; const clr=/^#[0-9A-Fa-f]{6}$/.test(color||'')?color:'#5865F2'; const subLabel=type==='color_role'&&color?color.toLowerCase():type==='theme'?'theme':type==='channel'?'channel':'role';
-      x.fillStyle='rgba(176,136,48,0.08)'; rrect(x,rx,ry,165,37,5); x.fill(); x.strokeStyle='rgba(176,136,48,0.26)'; x.lineWidth=1; rrect(x,rx,ry,165,37,5); x.stroke();
-      x.fillStyle=clr; x.fillRect(rx,ry,3,37);
-      x.fillStyle='#d0a040'; x.font=`bold 12px ${FB}`; x.textBaseline='top'; x.fillText((name||'Item').slice(0,14),rx+10,ry+6);
+      const rx=500,ry=44+i*44; const clr=/^#[0-9A-Fa-f]{6}$/.test(color||'')?color:'#5865F2'; const subLabel=type==='color_role'&&color?color.toLowerCase():type==='theme'?'theme':type==='channel'?'channel':'role';
+      x.fillStyle='rgba(176,136,48,0.08)'; rrect(x,rx,ry,342,38,5); x.fill(); x.strokeStyle='rgba(176,136,48,0.26)'; x.lineWidth=1; rrect(x,rx,ry,342,38,5); x.stroke();
+      x.fillStyle=clr; x.fillRect(rx,ry,3,38);
+      x.fillStyle='#d0a040'; x.font=`bold 12px ${FB}`; x.textBaseline='top'; x.fillText((name||'Item').slice(0,26),rx+10,ry+8);
       x.fillStyle='rgba(176,136,48,0.58)'; x.font=`11px ${FN}`; x.fillText(subLabel,rx+10,ry+22);
     });
   }
@@ -571,46 +571,66 @@ async function generateThemedCard({ username, avatarUrl, balance, totalEarned, s
     x.fillStyle='#5a3a1a'; x.font=`bold 11px ${FB}`; x.textBaseline='top'; x.fillText('✦  INVENTORY',500,28);
     if (!ROLES.length) { x.fillStyle='rgba(90,58,26,0.4)'; x.font=`12px ${FN}`; x.fillText('Nothing owned yet',500,48); }
     ROLES.forEach(({name,color,type},i)=>{
-      const rx=500+(i%2)*176,ry=44+Math.floor(i/2)*50; const clr=/^#[0-9A-Fa-f]{6}$/.test(color||'')?color:'#5865F2'; const subLabel=type==='color_role'&&color?color.toLowerCase():type==='theme'?'theme':type==='channel'?'channel':'role';
-      x.fillStyle='rgba(90,58,26,0.07)'; rrect(x,rx,ry,163,40,4); x.fill(); x.strokeStyle='rgba(90,58,26,0.2)'; x.lineWidth=1; rrect(x,rx,ry,163,40,4); x.stroke();
-      x.fillStyle=clr; x.fillRect(rx,ry,4,40);
-      x.fillStyle='#281408'; x.font=`bold 12px ${FB}`; x.textBaseline='top'; x.fillText((name||'Item').slice(0,14),rx+11,ry+8);
-      x.fillStyle='rgba(90,58,26,0.58)'; x.font=`11px ${FN}`; x.fillText(subLabel,rx+11,ry+24);
+      const rx=500,ry=44+i*44; const clr=/^#[0-9A-Fa-f]{6}$/.test(color||'')?color:'#5865F2'; const subLabel=type==='color_role'&&color?color.toLowerCase():type==='theme'?'theme':type==='channel'?'channel':'role';
+      x.fillStyle='rgba(90,58,26,0.07)'; rrect(x,rx,ry,342,38,4); x.fill(); x.strokeStyle='rgba(90,58,26,0.2)'; x.lineWidth=1; rrect(x,rx,ry,342,38,4); x.stroke();
+      x.fillStyle=clr; x.fillRect(rx,ry,4,38);
+      x.fillStyle='#281408'; x.font=`bold 12px ${FB}`; x.textBaseline='top'; x.fillText((name||'Item').slice(0,26),rx+11,ry+8);
+      x.fillStyle='rgba(90,58,26,0.58)'; x.font=`11px ${FN}`; x.fillText(subLabel,rx+11,ry+22);
     });
   }
 
-  // ── QUOTE (all themes) ────────────────────────────────────────────────────────
+  // ── QUOTE (all themes — centered in right panel below inventory) ─────────────
   if (QUOTE) {
     const qColors = {
-      holographic: 'rgba(255,255,255,0.82)',
-      city:        'rgba(0,255,200,0.82)',
-      sakura:      'rgba(80,20,45,0.80)',
-      royal:       'rgba(225,180,70,0.82)',
-      glass:       'rgba(40,18,110,0.80)',
-      galaxy:      'rgba(190,150,255,0.88)',
-      academia:    'rgba(195,152,62,0.82)',
-      paper:       'rgba(70,42,16,0.80)',
+      holographic: 'rgba(255,255,255,0.90)',
+      city:        'rgba(0,255,200,0.90)',
+      sakura:      'rgba(100,25,55,0.88)',
+      royal:       'rgba(232,200,96,0.90)',
+      glass:       'rgba(50,22,130,0.88)',
+      galaxy:      'rgba(205,165,255,0.94)',
+      academia:    'rgba(210,168,70,0.90)',
+      paper:       'rgba(80,48,18,0.88)',
     };
     const qShadow = {
-      holographic: 'rgba(120,80,255,0.5)',
-      city:        'rgba(0,200,150,0.55)',
-      sakura:      'rgba(255,150,185,0.35)',
-      royal:       'rgba(180,130,0,0.55)',
-      glass:       'rgba(120,80,255,0.35)',
-      galaxy:      'rgba(140,0,220,0.65)',
-      academia:    'rgba(0,0,0,0.4)',
+      holographic: 'rgba(120,80,255,0.55)',
+      city:        'rgba(0,200,150,0.60)',
+      sakura:      'rgba(255,150,185,0.45)',
+      royal:       'rgba(200,150,0,0.60)',
+      glass:       'rgba(120,80,255,0.40)',
+      galaxy:      'rgba(140,0,220,0.72)',
+      academia:    'rgba(0,0,0,0.40)',
       paper:       'rgba(0,0,0,0.22)',
     };
-    const qx    = theme === 'paper' ? 192 : theme === 'royal' ? 204 : 200;
-    const qText = QUOTE.length > 43 ? QUOTE.slice(0,42)+'…' : QUOTE;
+    const qDivColor = {
+      holographic: 'rgba(255,255,255,0.15)',
+      city:        'rgba(0,200,255,0.20)',
+      sakura:      'rgba(195,115,150,0.22)',
+      royal:       'rgba(200,151,42,0.25)',
+      glass:       'rgba(255,255,255,0.40)',
+      galaxy:      'rgba(136,0,204,0.22)',
+      academia:    'rgba(176,136,48,0.20)',
+      paper:       'rgba(90,58,26,0.18)',
+    };
+    const lastItemBottom = ROLES.length > 0 ? (44 + (ROLES.length - 1) * 44 + 38) : 52;
+    const divY    = lastItemBottom + 8;
+    const qCx     = 671;
+    const quoteCY = Math.round((divY + H - 14) / 2);
+    const qText   = QUOTE.length > 50 ? QUOTE.slice(0, 49) + '…' : QUOTE;
+
     x.save();
-    x.shadowColor  = qShadow[theme] || 'rgba(0,0,0,0.4)';
-    x.shadowBlur   = 8;
-    x.fillStyle    = qColors[theme] || 'rgba(255,255,255,0.82)';
-    x.font         = `italic 11px ${FN}`;
-    x.textBaseline = 'top';
-    x.textAlign    = 'left';
-    x.fillText(`❝ ${qText} ❞`, qx, 221);
+    x.strokeStyle = qDivColor[theme] || 'rgba(255,255,255,0.15)';
+    x.lineWidth   = 1;
+    x.beginPath(); x.moveTo(500, divY); x.lineTo(842, divY); x.stroke();
+    x.restore();
+
+    x.save();
+    x.shadowColor  = qShadow[theme]  || 'rgba(0,0,0,0.4)';
+    x.shadowBlur   = 10;
+    x.fillStyle    = qColors[theme]  || 'rgba(255,255,255,0.90)';
+    x.font         = `italic 13px ${FN}`;
+    x.textBaseline = 'middle';
+    x.textAlign    = 'center';
+    x.fillText(`“${qText}”`, qCx, quoteCY);
     x.restore();
   }
 
