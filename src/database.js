@@ -117,6 +117,14 @@ function _tryOpenDb(resolve, reject, attempt) {
     conn.run('PRAGMA busy_timeout = 0');
     conn.run('PRAGMA foreign_keys = ON');
     db = conn;
+
+    // Patch db.get / db.all at the source so EVERY caller (including functions
+    // that call db.get / db.all directly) gets BigInt → Number normalisation.
+    const _rawGet = db.get.bind(db);
+    const _rawAll = db.all.bind(db);
+    db.get = (...a) => _normalizeRow(_rawGet(...a));
+    db.all = (...a) => { const r = _rawAll(...a); return Array.isArray(r) ? r.map(_normalizeRow) : r; };
+
     db.run('PRAGMA busy_timeout = 10000');
     _runSchema();
     db.run('PRAGMA busy_timeout = 0');
