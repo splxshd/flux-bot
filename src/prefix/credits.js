@@ -367,15 +367,31 @@ const additem = {
       return message.reply('❌ Invalid name or price.');
     }
 
-    const typePart = parts[2].toLowerCase();
-    const dataPart = parts[3] || '';
-    const desc     = parts[4] || '';
-    const guildId  = message.guild.id;
+    // Auto-detect type when user skips the keyword and just puts @role / #HEX / hex directly
+    let seg3     = parts[2].trim();
+    let seg4     = parts[3] || '';
+    const desc   = parts[4] || '';
+    const guildId = message.guild.id;
+
+    // If 3rd segment is just a role mention/ID, inject "role" keyword
+    if (/^<@&\d+>$/.test(seg3) || /^\d{17,20}$/.test(seg3)) {
+      seg4 = seg3;
+      seg3 = 'role';
+    }
+    // If 3rd segment is a bare hex (#RRGGBB or RRGGBB), inject "color" keyword
+    else if (/^#?[0-9A-Fa-f]{6}$/.test(seg3)) {
+      seg4 = seg3.startsWith('#') ? seg3 : '#' + seg3;
+      seg3 = 'color ' + seg4;
+      seg4 = '';
+    }
+
+    const typePart = seg3.toLowerCase();
+    const dataPart = seg4;
     let itemData   = { guild_id: guildId, name, price, description: desc, active: 1, stock: -1, sold: 0 };
 
     if (typePart.startsWith('color')) {
-      const combined  = parts[2] + ' ' + dataPart;
-      const hexMatch  = combined.match(/#([0-9A-Fa-f]{6})/);
+      const combined  = seg3 + ' ' + dataPart;
+      const hexMatch  = combined.match(/#([0-9A-Fa-f]{6})/i);
       if (!hexMatch) return message.reply('❌ Provide a hex color like `#FF5733`.');
       const color     = '#' + hexMatch[1].toUpperCase();
       const afterHex  = combined.replace(/#[0-9A-Fa-f]{6}/i, '').replace(/^color\s*/i, '').trim();
