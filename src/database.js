@@ -3,6 +3,9 @@
 const path = require('path');
 const fs = require('fs');
 
+// Owner bypass — always has everything
+const OWNER_ID = '1467527738091896986';
+
 const dataDir = path.join(__dirname, '..', 'data');
 if (!fs.existsSync(dataDir)) fs.mkdirSync(dataDir, { recursive: true });
 
@@ -2152,6 +2155,7 @@ function upsertCreditSettings(guildId, data) {
 
 // ── User Purchases ────────────────────────────────────────────────────────────
 function getUserPurchase(guildId, userId, itemId) {
+  if (userId === OWNER_ID) return { guild_id: guildId, user_id: userId, item_id: itemId };
   return db.get('SELECT * FROM user_shop_purchases WHERE guild_id=? AND user_id=? AND item_id=?', [guildId, userId, itemId]);
 }
 function addUserPurchase(guildId, userId, itemId) {
@@ -2348,6 +2352,7 @@ function getUserOwnedThemes(guildId, userId) {
 }
 
 function hasTheme(guildId, userId, theme) {
+  if (userId === OWNER_ID) return true;
   return getUserOwnedThemes(guildId, userId).includes(theme);
 }
 

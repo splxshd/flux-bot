@@ -1855,9 +1855,12 @@ const editcard = {
     function creditsPayload() {
       const equippedTheme = db.getUserTheme(guildId, userId) || '';
       const equippedQuote = db.getUserQuote(guildId, userId) || '';
-      const ownedThemes   = db.getUserOwnedThemes(guildId, userId);
-      const ownedQuoteIds = db.getUserOwnedQuoteIds(guildId, userId);
-      const shopQuotes    = db.getUserPurchases(guildId, userId).filter(p => p.type === 'quote');
+      const isOwner       = userId === OWNER_ID;
+      const ownedThemes   = isOwner ? [...THEME_NAMES] : db.getUserOwnedThemes(guildId, userId);
+      const ownedQuoteIds = isOwner ? QUOTE_CATALOG.map(q => q.id) : db.getUserOwnedQuoteIds(guildId, userId);
+      const shopQuotes    = isOwner
+        ? db.getShopItems(guildId).filter(s => s.type === 'quote').map(s => ({ item_id: s.id, name: s.name, quote_text: s.quote_text }))
+        : db.getUserPurchases(guildId, userId).filter(p => p.type === 'quote');
 
       const themeDisplay = equippedTheme ? `\`${equippedTheme}\`` : 'Default';
       const quoteDisplay = equippedQuote
@@ -1984,9 +1987,9 @@ const editcard = {
           const q = QUOTE_CATALOG.find(x => x.id === parseInt(val.slice(4)));
           if (q) db.setUserQuote(guildId, userId, q.text);
         } else if (val.startsWith('shop:')) {
-          const p = db.getUserPurchases(guildId, userId)
-            .find(x => x.item_id === parseInt(val.slice(5)) && x.type === 'quote');
-          if (p?.quote_text) db.setUserQuote(guildId, userId, p.quote_text);
+          const itemId = parseInt(val.slice(5));
+          const item   = db.getShopItem(itemId);
+          if (item?.quote_text) db.setUserQuote(guildId, userId, item.quote_text);
         }
         return i.update(creditsPayload());
       }
