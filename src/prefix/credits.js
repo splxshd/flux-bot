@@ -1,6 +1,6 @@
 'use strict';
 
-const { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, PermissionFlagsBits, AttachmentBuilder } = require('discord.js');
+const { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, StringSelectMenuBuilder, PermissionFlagsBits, AttachmentBuilder } = require('discord.js');
 const db = require('../database');
 const { generateCreditsCard } = require('../utils/creditsCard');
 const { generateThemedCard, THEME_NAMES } = require('../utils/themedCard');
@@ -202,7 +202,7 @@ async function _buildShopEmbed(guildId, userId, tab, page, guild, author) {
     const stockStr = item.stock === -1 ? '∞ stock' : outStock ? 'sold out' : `${item.stock - item.sold} left`;
 
     const isOwned  = (item.type === 'theme' && item.theme_name && db.hasTheme(guildId, userId, item.theme_name))
-                  || ((item.type === 'color_role' || item.type === 'role') && !!db.getUserPurchase(guildId, userId, item.id));
+                  || ((item.type === 'color_role' || item.type === 'role' || item.type === 'channel' || item.type === 'quote') && !!db.getUserPurchase(guildId, userId, item.id));
 
     let status;
     if (isOwned)                          status = '✨ owned';
@@ -330,11 +330,13 @@ const buy = {
     }
 
     // Prevent duplicate purchases
-    if (item.type === 'color_role' || item.type === 'role' || item.type === 'quote') {
+    if (item.type === 'color_role' || item.type === 'role' || item.type === 'quote' || item.type === 'channel') {
       if (db.getUserPurchase(guildId, userId, item.id)) {
-        const reequip = item.type === 'quote' ? `  Re-equip it with \`,myquotes\`.` : '';
+        const hint = item.type === 'quote'   ? '  Re-equip it from `,editcard`.'
+                   : item.type === 'channel' ? '  You already have access to that channel.'
+                   : '';
         return message.reply({ embeds: [new EmbedBuilder().setColor(YELLOW)
-          .setDescription(`⚠️ You already own **${item.name}**!${reequip}`)] });
+          .setDescription(`⚠️ You already own **${item.name}**!${hint}`)] });
       }
     }
     if (item.type === 'theme' && item.theme_name) {
@@ -1812,10 +1814,193 @@ const clearquote = {
   },
 };
 
+// ── ,editcard ─────────────────────────────────────────────────────────────────
+// Interactive card editor — credits card (theme + quote), level card (soon),
+// flex card (soon). Replaces separate ,cardtheme / ,equipquote commands.
+const editcard = {
+  name: 'editcard',
+  aliases: ['editcards', 'cardeditor', 'customizecard', 'mycards'],
+  async execute(message) {
+    const guildId = message.guild.id;
+    const userId  = message.author.id;
+
+    // ── Main menu payload ──────────────────────────────────────────────────
+    function mainPayload() {
+      return {
+        embeds: [new EmbedBuilder()
+          .setColor(BLUE)
+          .setTitle('🃏 Card Editor')
+          .setDescription(
+            'Customize your cards — select one to edit.\n\n' +
+            '**💳 Credits Card** — theme & quote\n' +
+            '**📊 Level Card** — *coming soon*\n' +
+            '**✨ Flex Card** — *coming soon*'
+          )
+          .setFooter({ text: 'flux cards' })],
+        components: [new ActionRowBuilder().addComponents(
+          new ButtonBuilder()
+            .setCustomId(`ec_credits_${userId}`)
+            .setLabel('💳 Credits Card').setStyle(ButtonStyle.Primary),
+          new ButtonBuilder()
+            .setCustomId(`ec_level_${userId}`)
+            .setLabel('📊 Level Card').setStyle(ButtonStyle.Secondary).setDisabled(true),
+          new ButtonBuilder()
+            .setCustomId(`ec_flex_${userId}`)
+            .setLabel('✨ Flex Card').setStyle(ButtonStyle.Secondary).setDisabled(true),
+        )],
+      };
+    }
+
+    // ── Credits card menu payload ──────────────────────────────────────────
+    function creditsPayload() {
+      const equippedTheme = db.getUserTheme(guildId, userId) || '';
+      const equippedQuote = db.getUserQuote(guildId, userId) || '';
+      const ownedThemes   = db.getUserOwnedThemes(guildId, userId);
+      const ownedQuoteIds = db.getUserOwnedQuoteIds(guildId, userId);
+      const shopQuotes    = db.getUserPurchases(guildId, userId).filter(p => p.type === 'quote');
+
+      const themeDisplay = equippedTheme ? `\`${equippedTheme}\`` : 'Default';
+      const quoteDisplay = equippedQuote
+        ? `"${equippedQuote.slice(0, 52)}${equippedQuote.length > 52 ? '…' : ''}"`
+        : 'None';
+
+      const embed = new EmbedBuilder()
+        .setColor(BLUE)
+        .setTitle('💳 Credits Card Editor')
+        .addFields(
+          { name: '🎨 Theme', value: themeDisplay, inline: true },
+          { name: '💬 Quote', value: quoteDisplay, inline: true },
+        )
+        .setFooter({ text: 'Changes apply instantly · run ,credits to preview' });
+
+      const rows = [];
+
+      // ── Theme select ─────────────────────────────────────────────────────
+      if (ownedThemes.length) {
+        const themeOptions = [
+          { label: '— Default (no theme)', value: 'none', description: 'Use the standard credits card', default: !equippedTheme },
+          ...ownedThemes.map(t => ({
+            label: t.charAt(0).toUpperCase() + t.slice(1) + ' Theme',
+            value: t,
+            description: `Equip the ${t} theme`,
+            default: t === equippedTheme,
+          })),
+        ];
+        rows.push(new ActionRowBuilder().addComponents(
+          new StringSelectMenuBuilder()
+            .setCustomId(`ec_theme_${userId}`)
+            .setPlaceholder('🎨 Choose a theme…')
+            .addOptions(themeOptions)
+        ));
+      } else {
+        embed.addFields({
+          name: '🛒 No themes yet',
+          value: 'Buy card themes from `,shop` to unlock them here.',
+          inline: false,
+        });
+      }
+
+      // ── Quote select ─────────────────────────────────────────────────────
+      const allOwnedQuotes = [
+        ...QUOTE_CATALOG.filter(q => ownedQuoteIds.includes(q.id)).map(q => ({
+          id: `cat:${q.id}`, name: q.name, text: q.text,
+        })),
+        ...shopQuotes.map(p => ({
+          id: `shop:${p.item_id}`, name: p.name, text: p.quote_text || '',
+        })),
+      ];
+
+      if (allOwnedQuotes.length) {
+        const activeId = allOwnedQuotes.find(q => q.text === equippedQuote)?.id || null;
+        const quoteOptions = [
+          { label: '— No quote', value: 'none', description: 'Remove quote from card', default: !equippedQuote },
+          ...allOwnedQuotes.slice(0, 24).map(q => ({
+            label: q.name.slice(0, 25),
+            value: q.id,
+            description: (q.text || '').slice(0, 50),
+            default: q.id === activeId,
+          })),
+        ];
+        rows.push(new ActionRowBuilder().addComponents(
+          new StringSelectMenuBuilder()
+            .setCustomId(`ec_quote_${userId}`)
+            .setPlaceholder('💬 Choose a quote…')
+            .addOptions(quoteOptions)
+        ));
+      } else {
+        embed.addFields({
+          name: '🛒 No quotes yet',
+          value: 'Browse `,quotes` or `,shop` to buy card quotes.',
+          inline: false,
+        });
+      }
+
+      // ── Bottom buttons ────────────────────────────────────────────────────
+      const btns = [
+        new ButtonBuilder()
+          .setCustomId(`ec_back_${userId}`)
+          .setLabel('← Cards').setStyle(ButtonStyle.Secondary),
+      ];
+      if (equippedQuote) {
+        btns.push(new ButtonBuilder()
+          .setCustomId(`ec_clearquote_${userId}`)
+          .setLabel('🗑️ Clear Quote').setStyle(ButtonStyle.Danger));
+      }
+      rows.push(new ActionRowBuilder().addComponents(btns));
+
+      return { embeds: [embed], components: rows };
+    }
+
+    // ── Send + collect ─────────────────────────────────────────────────────
+    const msg = await message.reply(mainPayload());
+
+    const col = msg.createMessageComponentCollector({
+      filter: i => i.user.id === userId && i.customId.endsWith(`_${userId}`),
+      time: 120_000,
+    });
+
+    col.on('collect', async i => {
+      const cid = i.customId;
+
+      if (cid === `ec_credits_${userId}`)      return i.update(creditsPayload());
+      if (cid === `ec_back_${userId}`)         return i.update(mainPayload());
+
+      if (cid === `ec_clearquote_${userId}`) {
+        db.setUserQuote(guildId, userId, '');
+        return i.update(creditsPayload());
+      }
+
+      if (cid === `ec_theme_${userId}`) {
+        const val = i.values[0];
+        db.setEquippedTheme(guildId, userId, val === 'none' ? null : val);
+        return i.update(creditsPayload());
+      }
+
+      if (cid === `ec_quote_${userId}`) {
+        const val = i.values[0];
+        if (val === 'none') {
+          db.setUserQuote(guildId, userId, '');
+        } else if (val.startsWith('cat:')) {
+          const q = QUOTE_CATALOG.find(x => x.id === parseInt(val.slice(4)));
+          if (q) db.setUserQuote(guildId, userId, q.text);
+        } else if (val.startsWith('shop:')) {
+          const p = db.getUserPurchases(guildId, userId)
+            .find(x => x.item_id === parseInt(val.slice(5)) && x.type === 'quote');
+          if (p?.quote_text) db.setUserQuote(guildId, userId, p.quote_text);
+        }
+        return i.update(creditsPayload());
+      }
+    });
+
+    col.on('end', () => msg.edit({ components: [] }).catch(() => {}));
+  },
+};
+
 module.exports = [
   credits, shop, buy, inventory, creditlead,
   additem, removeitem, givecr, takecr, setcr, reseteco, shopconfig,
   myrole, creditsetup, pointhelp, previewthemes,
   themes, buytheme, cardtheme, givetheme, setthemeprice,
   quotes, buyquote, myquotes, equipquote, customquote, clearquote,
+  editcard,
 ];
