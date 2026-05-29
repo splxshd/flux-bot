@@ -155,7 +155,7 @@ const SHOP_TITLES  = { daily: '🌅  Daily Shop', weekly: '🗓️  Weekly Shop'
 const TYPE_ICON    = { color_role: '🎨', role: '🏷️', channel: '🔓', theme: '🎴', quote: '💬', custom_role: '🖌️' };
 const SHOP_PER_PAGE = 4;
 
-async function _buildShopEmbed(guildId, userId, tab, page, guild, author) {
+async function _buildShopEmbed(guildId, userId, tab, page, guild, author, filter = 'all') {
   const userCr = db.getCredits(guildId, userId);
   let items, subline, subicon;
 
@@ -169,8 +169,12 @@ async function _buildShopEmbed(guildId, userId, tab, page, guild, author) {
     subline = `Resets in **${_fmtMs(_msTilNextMonday())}**  ·  personalized for you`;
   } else {
     items   = db.getShopItems(guildId);
+    if (filter === 'theme') items = items.filter(i => i.type === 'theme');
+    else if (filter === 'quote') items = items.filter(i => i.type === 'quote');
+    else if (filter === 'role')  items = items.filter(i => ['color_role','role','custom_role','channel'].includes(i.type));
     subicon = '📦';
-    subline = `**${items.length}** item${items.length !== 1 ? 's' : ''} in the pool  ·  view only`;
+    const filterLabel = filter === 'theme' ? '  ·  🎴 themes' : filter === 'quote' ? '  ·  💬 quotes' : filter === 'role' ? '  ·  🏷️ roles' : '';
+    subline = `**${items.length}** item${items.length !== 1 ? 's' : ''} in the pool${filterLabel}  ·  view only`;
   }
 
   const totalPages = Math.max(1, Math.ceil(items.length / SHOP_PER_PAGE));
@@ -224,7 +228,7 @@ async function _buildShopEmbed(guildId, userId, tab, page, guild, author) {
   return { embed, totalPages, page };
 }
 
-function _shopButtons(tab, page, totalPages, userId) {
+function _shopButtons(tab, page, totalPages, userId, filter = 'all') {
   const rows = [
     new ActionRowBuilder().addComponents(
       new ButtonBuilder().setCustomId(`sh_daily_${userId}`)
@@ -235,6 +239,20 @@ function _shopButtons(tab, page, totalPages, userId) {
         .setLabel('🏪 All Items').setStyle(tab === 'all' ? ButtonStyle.Primary : ButtonStyle.Secondary),
     ),
   ];
+
+  // Filter row — only on All Items tab
+  if (tab === 'all') {
+    rows.push(new ActionRowBuilder().addComponents(
+      new ButtonBuilder().setCustomId(`sh_f_all_${userId}`)
+        .setLabel('All Types').setStyle(filter === 'all' ? ButtonStyle.Primary : ButtonStyle.Secondary),
+      new ButtonBuilder().setCustomId(`sh_f_th_${userId}`)
+        .setLabel('🎴 Themes').setStyle(filter === 'theme' ? ButtonStyle.Primary : ButtonStyle.Secondary),
+      new ButtonBuilder().setCustomId(`sh_f_qt_${userId}`)
+        .setLabel('💬 Quotes').setStyle(filter === 'quote' ? ButtonStyle.Primary : ButtonStyle.Secondary),
+      new ButtonBuilder().setCustomId(`sh_f_rl_${userId}`)
+        .setLabel('🏷️ Roles').setStyle(filter === 'role' ? ButtonStyle.Primary : ButtonStyle.Secondary),
+    ));
+  }
 
   if (totalPages > 1) {
     rows.push(new ActionRowBuilder().addComponents(
@@ -266,12 +284,12 @@ const shop = {
     else if (args[0] === 'all' || args[0] === 'browse') tab = 'all';
 
     const { embed, totalPages, page } = await _buildShopEmbed(
-      guildId, userId, tab, 0, message.guild, message.author
+      guildId, userId, tab, 0, message.guild, message.author, 'all'
     );
-    const buttons = _shopButtons(tab, 0, totalPages, userId);
+    const buttons = _shopButtons(tab, 0, totalPages, userId, 'all');
     const msg = await message.reply({ embeds: [embed], components: buttons });
 
-    let curTab = tab, curPage = 0;
+    let curTab = tab, curPage = 0, curFilter = 'all';
 
     const col = msg.createMessageComponentCollector({
       filter: i => i.user.id === userId && i.customId.endsWith(`_${userId}`),
@@ -280,17 +298,21 @@ const shop = {
 
     col.on('collect', async i => {
       const id = i.customId;
-      if      (id === `sh_daily_${userId}`)  { curTab = 'daily';  curPage = 0; }
-      else if (id === `sh_weekly_${userId}`) { curTab = 'weekly'; curPage = 0; }
-      else if (id === `sh_all_${userId}`)    { curTab = 'all';    curPage = 0; }
+      if      (id === `sh_daily_${userId}`)  { curTab = 'daily';  curPage = 0; curFilter = 'all'; }
+      else if (id === `sh_weekly_${userId}`) { curTab = 'weekly'; curPage = 0; curFilter = 'all'; }
+      else if (id === `sh_all_${userId}`)    { curTab = 'all';    curPage = 0; curFilter = 'all'; }
+      else if (id === `sh_f_all_${userId}`)  { curFilter = 'all';   curPage = 0; }
+      else if (id === `sh_f_th_${userId}`)   { curFilter = 'theme'; curPage = 0; }
+      else if (id === `sh_f_qt_${userId}`)   { curFilter = 'quote'; curPage = 0; }
+      else if (id === `sh_f_rl_${userId}`)   { curFilter = 'role';  curPage = 0; }
       else if (id === `sh_prev_${userId}`)   { curPage = Math.max(0, curPage - 1); }
       else if (id === `sh_next_${userId}`)   { curPage++; }
 
       const { embed: e, totalPages: tp, page: p } = await _buildShopEmbed(
-        guildId, userId, curTab, curPage, message.guild, message.author
+        guildId, userId, curTab, curPage, message.guild, message.author, curFilter
       );
       curPage = p;
-      await i.update({ embeds: [e], components: _shopButtons(curTab, curPage, tp, userId) });
+      await i.update({ embeds: [e], components: _shopButtons(curTab, curPage, tp, userId, curFilter) });
     });
 
     col.on('end', () => msg.edit({ components: [] }).catch(() => {}));

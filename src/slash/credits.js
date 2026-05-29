@@ -88,60 +88,143 @@ const credits = {
 
     // ── shop ─────────────────────────────────────────────────────────────────
     if (sub === 'shop') {
-      const items = db.getShopItems(guildId);
-      if (!items.length) {
-        return interaction.reply({ embeds: [new EmbedBuilder()
-          .setColor(YELLOW)
-          .setDescription('🛒 The shop is empty! Admins can add items with `/creditsetup additem`.')], ephemeral: true });
-      }
+      const uid   = interaction.user.id;
+      const SHOP_COLORS  = { daily: 0xF1C40F, weekly: 0x5865F2, all: 0x9B59B6 };
+      const SHOP_TITLES  = { daily: '🌅  Daily Shop', weekly: '🗓️  Weekly Shop', all: '🏪  All Items' };
+      const TYPE_ICON    = { color_role: '🎨', role: '🏷️', channel: '🔓', theme: '🎴', quote: '💬', custom_role: '🖌️' };
+      const RARITY_BADGE = { common: '⬜', uncommon: '🟩', rare: '🟦', epic: '🟪', legendary: '🟨' };
+      const PER_PAGE = 4;
 
-      let page       = interaction.options.getInteger('page') || 1;
-      const totalPages = Math.ceil(items.length / ITEMS_PER_PAGE);
-      page = Math.min(Math.max(page, 1), totalPages);
+      const buildEmbed = (tab, page, filter) => {
+        const userCr = db.getCredits(guildId, uid);
+        let items, subline, subicon;
 
-      const userCr = db.getCredits(guildId, interaction.user.id);
-
-      const buildEmbed = (p) => {
-        const pageItems = items.slice((p - 1) * ITEMS_PER_PAGE, p * ITEMS_PER_PAGE);
-        const embed = new EmbedBuilder()
-          .setColor(GOLD)
-          .setTitle('🛒 Credit Shop')
-          .setDescription(`Your balance: **${fmt(userCr.amount)} credits**\nBuy with \`/credits buy id:<id>\``)
-          .setFooter({ text: `Page ${p}/${totalPages} • flux credits` })
-          .setTimestamp();
-        for (const item of pageItems) {
-          const icon  = item.type === 'color_role' ? '🎨' : item.type === 'role' ? '🏷️' : '🔓';
-          const stock = item.stock === -1 ? '∞' : `${item.stock - item.sold} left`;
-          const col   = item.type === 'color_role' && item.color ? ` • ${item.color}` : '';
-          const tick  = userCr.amount >= item.price ? '✅' : '❌';
-          embed.addFields({
-            name:  `${icon} #${item.id} — ${item.name}${col}`,
-            value: `${item.description ? `*${item.description}*\n` : ''}💳 **${fmt(item.price)} credits** • ${stock} ${tick}`,
-            inline: false,
-          });
+        if (tab === 'daily') {
+          items   = db.getShopItemsByIds(db.generateUserDailyShop(guildId, uid));
+          subicon = '⏰';
+          subline = `personalized for you  ·  resets daily`;
+        } else if (tab === 'weekly') {
+          items   = db.getShopItemsByIds(db.generateUserWeeklyShop(guildId, uid));
+          subicon = '📅';
+          subline = `personalized for you  ·  resets weekly`;
+        } else {
+          items   = db.getShopItems(guildId);
+          if (filter === 'theme') items = items.filter(i => i.type === 'theme');
+          else if (filter === 'quote') items = items.filter(i => i.type === 'quote');
+          else if (filter === 'role')  items = items.filter(i => ['color_role','role','custom_role','channel'].includes(i.type));
+          subicon = '📦';
+          const filterLabel = filter === 'theme' ? '  ·  🎴 themes' : filter === 'quote' ? '  ·  💬 quotes' : filter === 'role' ? '  ·  🏷️ roles' : '';
+          subline = `**${items.length}** item${items.length !== 1 ? 's' : ''} in the pool${filterLabel}  ·  view only`;
         }
-        return embed;
+
+        const totalPages = Math.max(1, Math.ceil(items.length / PER_PAGE));
+        page = Math.min(Math.max(page, 0), totalPages - 1);
+        const slice = items.slice(page * PER_PAGE, (page + 1) * PER_PAGE);
+
+        const embed = new EmbedBuilder()
+          .setColor(SHOP_COLORS[tab])
+          .setTitle(SHOP_TITLES[tab])
+          .setAuthor({ name: `${interaction.user.username}'s shop`, iconURL: interaction.user.displayAvatarURL({ size: 64 }) })
+          .setDescription(
+            `💳  **${fmt(userCr.amount)} cr** in your wallet\n` +
+            `${subicon}  ${subline}\n` +
+            (tab === 'all' ? `-# Browse only — buy from daily or weekly tab` : `-# /credits buy id:<id> to purchase`)
+          )
+          .setFooter({ text: `Page ${page + 1} / ${totalPages}  ·  flux credits` })
+          .setTimestamp();
+
+        if (!slice.length) {
+          embed.addFields({ name: 'No items', value: tab === 'all' ? 'Nothing matches this filter.' : 'Check back later.', inline: false });
+        } else {
+          for (const item of slice) {
+            const icon     = TYPE_ICON[item.type] || '📦';
+            const badge    = RARITY_BADGE[item.rarity] || RARITY_BADGE.common;
+            const outStock = item.stock !== -1 && item.sold >= item.stock;
+            const stockStr = item.stock === -1 ? '∞ stock' : outStock ? 'sold out' : `${item.stock - item.sold} left`;
+            const isOwned  = (item.type === 'theme' && item.theme_name && db.hasTheme(guildId, uid, item.theme_name))
+                          || (['color_role','role','channel','quote'].includes(item.type) && !!db.getUserPurchase(guildId, uid, item.id));
+            let status;
+            if (isOwned)                          status = '✨ owned';
+            else if (outStock)                    status = '🚫 sold out';
+            else if (userCr.amount >= item.price) status = '✅';
+            else                                  status = '❌';
+            const colorStr = item.type === 'color_role' && item.color ? `  \`${item.color}\`  ·` : '';
+            const infoLine = `${badge}${colorStr}  ·  **${fmt(item.price)} cr**  ·  ${stockStr}  ·  ${status}`;
+            embed.addFields({
+              name:  `${icon}  ${item.name}  ·  \`#${item.id}\``,
+              value: item.description ? `${infoLine}\n-# ${item.description}` : infoLine,
+              inline: false,
+            });
+          }
+        }
+
+        return { embed, totalPages, page };
       };
 
-      const buildRow = (p) => new ActionRowBuilder().addComponents(
-        new ButtonBuilder().setCustomId(`crshop_prev_${interaction.user.id}_${p}`).setLabel('◀').setStyle(ButtonStyle.Secondary).setDisabled(p <= 1),
-        new ButtonBuilder().setCustomId(`crshop_next_${interaction.user.id}_${p}`).setLabel('▶').setStyle(ButtonStyle.Secondary).setDisabled(p >= totalPages),
-      );
+      const buildRows = (tab, page, totalPages, filter) => {
+        const rows = [
+          new ActionRowBuilder().addComponents(
+            new ButtonBuilder().setCustomId(`csh_daily_${uid}`).setLabel('🌅 Daily')
+              .setStyle(tab === 'daily' ? ButtonStyle.Primary : ButtonStyle.Secondary),
+            new ButtonBuilder().setCustomId(`csh_weekly_${uid}`).setLabel('🗓️ Weekly')
+              .setStyle(tab === 'weekly' ? ButtonStyle.Primary : ButtonStyle.Secondary),
+            new ButtonBuilder().setCustomId(`csh_all_${uid}`).setLabel('🏪 All Items')
+              .setStyle(tab === 'all' ? ButtonStyle.Primary : ButtonStyle.Secondary),
+          ),
+        ];
+        if (tab === 'all') {
+          rows.push(new ActionRowBuilder().addComponents(
+            new ButtonBuilder().setCustomId(`csh_f_all_${uid}`).setLabel('All Types')
+              .setStyle(filter === 'all' ? ButtonStyle.Primary : ButtonStyle.Secondary),
+            new ButtonBuilder().setCustomId(`csh_f_th_${uid}`).setLabel('🎴 Themes')
+              .setStyle(filter === 'theme' ? ButtonStyle.Primary : ButtonStyle.Secondary),
+            new ButtonBuilder().setCustomId(`csh_f_qt_${uid}`).setLabel('💬 Quotes')
+              .setStyle(filter === 'quote' ? ButtonStyle.Primary : ButtonStyle.Secondary),
+            new ButtonBuilder().setCustomId(`csh_f_rl_${uid}`).setLabel('🏷️ Roles')
+              .setStyle(filter === 'role' ? ButtonStyle.Primary : ButtonStyle.Secondary),
+          ));
+        }
+        if (totalPages > 1) {
+          rows.push(new ActionRowBuilder().addComponents(
+            new ButtonBuilder().setCustomId(`csh_prev_${uid}`).setLabel('◀ Prev')
+              .setStyle(ButtonStyle.Secondary).setDisabled(page <= 0),
+            new ButtonBuilder().setCustomId(`csh_pg_${uid}`).setLabel(`${page + 1} / ${totalPages}`)
+              .setStyle(ButtonStyle.Secondary).setDisabled(true),
+            new ButtonBuilder().setCustomId(`csh_next_${uid}`).setLabel('Next ▶')
+              .setStyle(ButtonStyle.Secondary).setDisabled(page >= totalPages - 1),
+          ));
+        }
+        return rows;
+      };
 
-      await interaction.reply({ embeds: [buildEmbed(page)], components: totalPages > 1 ? [buildRow(page)] : [] });
+      let curTab = 'daily', curPage = 0, curFilter = 'all';
+      const { embed: initEmbed, totalPages: initTp, page: initPg } = buildEmbed(curTab, curPage, curFilter);
+      curPage = initPg;
 
-      if (totalPages <= 1) return;
+      await interaction.reply({ embeds: [initEmbed], components: buildRows(curTab, curPage, initTp, curFilter) });
+
       const col = interaction.channel.createMessageComponentCollector({
-        filter: i => i.user.id === interaction.user.id && (i.customId.startsWith(`crshop_prev_${interaction.user.id}`) || i.customId.startsWith(`crshop_next_${interaction.user.id}`)),
-        time: 60_000,
+        filter: i => i.user.id === uid && i.customId.endsWith(`_${uid}`),
+        time: 120_000,
       });
+
       col.on('collect', async i => {
-        const parts = i.customId.split('_');
-        const dir   = parts[1];
-        const cur   = parseInt(parts[parts.length - 1]);
-        const np    = dir === 'next' ? cur + 1 : cur - 1;
-        await i.update({ embeds: [buildEmbed(np)], components: [buildRow(np)] });
+        const id = i.customId;
+        if      (id === `csh_daily_${uid}`)  { curTab = 'daily';  curPage = 0; curFilter = 'all'; }
+        else if (id === `csh_weekly_${uid}`) { curTab = 'weekly'; curPage = 0; curFilter = 'all'; }
+        else if (id === `csh_all_${uid}`)    { curTab = 'all';    curPage = 0; curFilter = 'all'; }
+        else if (id === `csh_f_all_${uid}`)  { curFilter = 'all';   curPage = 0; }
+        else if (id === `csh_f_th_${uid}`)   { curFilter = 'theme'; curPage = 0; }
+        else if (id === `csh_f_qt_${uid}`)   { curFilter = 'quote'; curPage = 0; }
+        else if (id === `csh_f_rl_${uid}`)   { curFilter = 'role';  curPage = 0; }
+        else if (id === `csh_prev_${uid}`)   { curPage = Math.max(0, curPage - 1); }
+        else if (id === `csh_next_${uid}`)   { curPage++; }
+
+        const { embed: e, totalPages: tp, page: p } = buildEmbed(curTab, curPage, curFilter);
+        curPage = p;
+        await i.update({ embeds: [e], components: buildRows(curTab, curPage, tp, curFilter) });
       });
+
       col.on('end', () => interaction.editReply({ components: [] }).catch(() => {}));
       return;
     }
