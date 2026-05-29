@@ -1995,6 +1995,7 @@ function _runSchema() {
   try { db.run('UPDATE credit_settings SET custom_role_cost = 800000 WHERE custom_role_cost = 500'); } catch (_) {}
   try { db.run('ALTER TABLE credit_settings ADD COLUMN custom_role_update_cost INTEGER DEFAULT 0'); } catch (_) {}
   try { db.run('ALTER TABLE credit_settings ADD COLUMN max_custom_roles INTEGER DEFAULT 1');       } catch (_) {}
+  try { db.run('ALTER TABLE credit_settings ADD COLUMN custom_quote_cost INTEGER DEFAULT 2500');   } catch (_) {}
 
   db.run(`CREATE TABLE IF NOT EXISTS staff_checkin_settings (
   guild_id TEXT PRIMARY KEY,

@@ -994,8 +994,9 @@ const creditsetup = {
       invites:    { key: 'invite_credits',          label: 'Credits per invite',         emoji: '📨', default: 0   },
       voice:      { key: 'voice_credits',           label: 'Credits per VC minute',      emoji: '🎙️', default: 0   },
       rolecost:   { key: 'custom_role_cost',        label: 'Custom role creation cost',  emoji: '🎨', default: 800000 },
-      updatecost: { key: 'custom_role_update_cost', label: 'Custom role update cost',    emoji: '✏️', default: 0   },
-      slots:      { key: 'max_custom_roles',        label: 'Max custom role slots',      emoji: '🔢', default: 1   },
+      updatecost: { key: 'custom_role_update_cost', label: 'Custom role update cost',    emoji: '✏️', default: 0      },
+      slots:      { key: 'max_custom_roles',        label: 'Max custom role slots',      emoji: '🔢', default: 1      },
+      quotecost:  { key: 'custom_quote_cost',       label: 'Custom quote cost',          emoji: '💬', default: 2500  },
     };
 
     if (sub && SETTINGS[sub]) {
@@ -1653,17 +1654,23 @@ const equipquote = {
 };
 
 // ── ,customquote <text> ────────────────────────────────────────────────────────
-// Free — lets users write their own quote for the card.
 const customquote = {
   name: 'customquote',
   aliases: ['setquote', 'cardquote'],
   async execute(message, args) {
     const guildId = message.guild.id;
     const userId  = message.author.id;
+    const s       = db.getCreditSettings(guildId);
+    const cost    = s.custom_quote_cost ?? 2500;
 
     if (!args.length) {
       return message.reply({ embeds: [new EmbedBuilder().setColor(BLUE)
-        .setDescription('Usage: `,customquote <your text>`\nMax 80 characters. Shows on your credits card.\nUse `,clearquote` to remove it.')] });
+        .setDescription(
+          `Set a custom quote on your credits card.\n\n` +
+          `**Usage:** \`,customquote <text>\`\n` +
+          `**Cost:** ${fmt(cost)} credits  ·  max 80 characters\n` +
+          `You're charged each time you update it.`
+        )] });
     }
 
     const text = args.join(' ').trim();
@@ -1672,12 +1679,23 @@ const customquote = {
         .setDescription(`❌ Too long (**${text.length}** chars). Keep it under **80** characters.`)] });
     }
 
+    const cr = db.getCredits(guildId, userId);
+    if (cr.amount < cost) {
+      return message.reply({ embeds: [new EmbedBuilder().setColor(RED)
+        .setDescription(`❌ Setting a custom quote costs **${fmt(cost)} credits** — you only have **${fmt(cr.amount)}**.\nBrowse ready-made quotes for free with \`,quotes\`.`)] });
+    }
+
+    db.spendCredits(guildId, userId, cost);
     db.setUserQuote(guildId, userId, text);
 
     await message.reply({ embeds: [new EmbedBuilder()
       .setColor(GREEN)
       .setTitle('✅  Custom Quote Set')
       .setDescription(`> *❝ ${text} ❞*`)
+      .addFields(
+        { name: '💳 Spent',     value: `${fmt(cost)} cr`,             inline: true },
+        { name: '💰 Remaining', value: `${fmt(cr.amount - cost)} cr`, inline: true },
+      )
       .setFooter({ text: 'Run ,credits to preview  ·  ,clearquote to remove' })] });
   },
 };
