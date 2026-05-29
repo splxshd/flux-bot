@@ -11,6 +11,16 @@ const cron = require('node-cron');
 process.on('unhandledRejection', err => console.error('[UnhandledRejection]', err));
 process.on('uncaughtException', err => { console.error('[UncaughtException]', err); process.exit(1); });
 
+// ─── Graceful shutdown on SIGTERM (Railway zero-downtime deploys) ─────────────
+// Railway sends SIGTERM to the old instance when a new deployment starts.
+// Without this handler the process dies instantly without closing SQLite,
+// leaving a journal/lock file that blocks the new instance from opening the DB.
+process.on('SIGTERM', () => {
+  console.log('[flux] SIGTERM received — closing database and exiting...');
+  try { require('./database').closeDb(); } catch (_) {}
+  process.exit(0);
+});
+
 // ─── Critical env var check ───────────────────────────────────────────────────
 if (!process.env.BOT_TOKEN) {
   console.error('[FATAL] BOT_TOKEN env var is not set. Cannot start bot.');

@@ -2108,6 +2108,15 @@ function hasStaffCheckedIn(guildId, date, userId) {
   return !!db.get('SELECT 1 FROM staff_checkins WHERE guild_id=? AND date=? AND user_id=?', [guildId, date, userId]);
 }
 
+// Gracefully close the database. Called on SIGTERM so Railway's zero-downtime
+// deploy releases the file lock before the new instance tries to open it.
+function closeDb() {
+  if (db) {
+    try { db.close(); console.log('[DB] Database closed cleanly.'); } catch (_) {}
+    db = null;
+  }
+}
+
 module.exports = {
   _dbReady,
   get, all, run,
@@ -2180,4 +2189,5 @@ module.exports = {
   getUserPurchase, addUserPurchase, getUserPurchases,
   getStaffCheckinSettings, upsertStaffCheckinSettings, getAllEnabledStaffCheckin,
   recordStaffCheckin, getStaffCheckins, hasStaffCheckedIn,
+  closeDb,
 };
