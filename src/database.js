@@ -7,7 +7,7 @@ const dataDir = path.join(__dirname, '..', 'data');
 if (!fs.existsSync(dataDir)) fs.mkdirSync(dataDir, { recursive: true });
 
 const { Database } = require('node-sqlite3-wasm');
-const dbPath = path.join(dataDir, 'nights2.db');
+const dbPath = path.join(dataDir, 'nights3.db');
 let db;
 
 // ─── WAL → DELETE mode conversion ────────────────────────────────────────────
@@ -46,26 +46,33 @@ function _convertFromWAL(targetPath) {
   }
 }
 
-const oldDbPath = path.join(dataDir, 'nights.db');
+const oldDbPath  = path.join(dataDir, 'nights.db');
+const prev2DbPath = path.join(dataDir, 'nights2.db');
 
 // ─── Pre-open restore: raw file copy before ANY SQLite connection opens ───────
-// Uses a marker file so this runs exactly once even if nights2.db already has
+// Uses a marker file so this runs exactly once even if nights3.db already has
 // schema tables (which makes it >8KB even when empty of real user data).
 (function _restoreIfEmpty() {
-  const marker = path.join(dataDir, '.restored');
+  const marker = path.join(dataDir, '.restored3');
   if (fs.existsSync(marker)) return; // already ran once, skip
 
   try {
-    // Find the best source: .bak files first (retry-30 renamed nights.db there)
+    // Priority: nights2.db.bak.* → nights2.db → nights.db.bak.* → nights.db
     let src = null;
     try {
       const baks = fs.readdirSync(dataDir)
-        .filter(f => f.startsWith('nights.db.bak.')).sort().reverse();
+        .filter(f => f.startsWith('nights2.db.bak.') || f.startsWith('nights.db.bak.'))
+        .sort().reverse();
       for (const b of baks) {
         const p = path.join(dataDir, b);
         if (fs.statSync(p).size > 8192) { src = p; break; }
       }
     } catch (_) {}
+    if (!src) {
+      try {
+        if (fs.existsSync(prev2DbPath) && fs.statSync(prev2DbPath).size > 8192) src = prev2DbPath;
+      } catch (_) {}
+    }
     if (!src) {
       try {
         if (fs.existsSync(oldDbPath) && fs.statSync(oldDbPath).size > 8192) src = oldDbPath;
@@ -74,21 +81,21 @@ const oldDbPath = path.join(dataDir, 'nights.db');
 
     if (!src) {
       console.log('[DB] No old database found — starting fresh.');
-      fs.writeFileSync(marker, '1'); // mark so we don't check again
+      fs.writeFileSync(marker, '1');
       return;
     }
 
     _convertFromWAL(src);
     fs.copyFileSync(src, dbPath);
     _convertFromWAL(dbPath);
-    fs.writeFileSync(marker, '1'); // mark as done
-    console.log(`[DB] Restored data from ${path.basename(src)} → nights2.db`);
+    fs.writeFileSync(marker, '1');
+    console.log(`[DB] Restored data from ${path.basename(src)} → nights3.db`);
   } catch (e) {
     console.warn('[DB] Restore error:', e.message);
   }
 })();
 
-// Convert nights2.db from WAL if needed (in case restore wasn't needed but file is WAL)
+// Convert nights3.db from WAL if needed (in case restore wasn't needed but file is WAL)
 _convertFromWAL(dbPath);
 
 // ─── Non-blocking async DB init ───────────────────────────────────────────────
