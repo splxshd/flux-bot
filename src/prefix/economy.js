@@ -277,7 +277,7 @@ const donate = {
 // ── ,rob ─────────────────────────────────────────────────────────────────────
 const rob = {
   name: 'rob',
-  aliases: ['steal', 'mug'],
+  aliases: ['mug'],
   async execute(message, args) {
     const target = message.mentions.users.first();
     if (!target || target.bot || target.id === message.author.id)
