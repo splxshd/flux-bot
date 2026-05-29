@@ -4,7 +4,7 @@ const { createCanvas, loadImage, GlobalFonts } = require('@napi-rs/canvas');
 const path = require('path');
 const fs   = require('fs');
 
-let FB = 'sans-serif', FN = 'sans-serif';
+let FB = 'sans-serif', FN = 'sans-serif', FQ = 'serif';
 for (const fp of [
   path.join(__dirname, '../../node_modules/@fontsource/open-sans/files/open-sans-latin-700-normal.woff2'),
   '/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf',
@@ -13,6 +13,10 @@ for (const fp of [
   path.join(__dirname, '../../node_modules/@fontsource/open-sans/files/open-sans-latin-400-normal.woff2'),
   '/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf',
 ]) { if (fs.existsSync(fp)) { try { GlobalFonts.registerFromPath(fp, 'CrNorm'); FN = 'CrNorm'; break; } catch {} } }
+for (const fp of [
+  path.join(__dirname, '../../node_modules/@fontsource/playfair-display/files/playfair-display-latin-700-italic.woff2'),
+  path.join(__dirname, '../../node_modules/@fontsource/playfair-display/files/playfair-display-latin-700-italic.woff'),
+]) { if (fs.existsSync(fp)) { try { GlobalFonts.registerFromPath(fp, 'CrQuote'); FQ = 'CrQuote'; break; } catch {} } }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 function rrect(ctx, x, y, w, h, r) {
@@ -958,7 +962,7 @@ async function generateThemedCard({ username, avatarUrl, balance, totalEarned, s
     x.shadowColor  = qShadow[theme]  || 'rgba(0,0,0,0.4)';
     x.shadowBlur   = 14;
     x.fillStyle    = qColors[theme]  || '#ffffff';
-    x.font         = `bold italic 13px ${FB}`;
+    x.font         = `14px ${FQ}`;
     x.textBaseline = 'middle';
     x.textAlign    = 'center';
     x.fillText(`“${qText}”`, qCx, quoteCY);
