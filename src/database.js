@@ -137,7 +137,7 @@ function _tryOpenDb(resolve, reject, attempt) {
   let conn;
   try {
     conn = new Database(dbPath);
-    conn.run('PRAGMA busy_timeout = 0');
+    conn.run('PRAGMA busy_timeout = 15000');
     conn.run('PRAGMA foreign_keys = ON');
     db = conn;
 
@@ -148,9 +148,9 @@ function _tryOpenDb(resolve, reject, attempt) {
     db.get = (...a) => _normalizeRow(_rawGet(...a));
     db.all = (...a) => { const r = _rawAll(...a); return Array.isArray(r) ? r.map(_normalizeRow) : r; };
 
-    db.run('PRAGMA busy_timeout = 10000');
     _runSchema();
-    db.run('PRAGMA busy_timeout = 0');
+    // Keep busy_timeout at 15000 permanently — any query that hits a lock will
+    // wait up to 15s before throwing, covering Railway's rolling-restart overlap.
     resolve();
   } catch (e) {
     if (conn) { try { conn.close(); } catch (_) {} db = null; }
