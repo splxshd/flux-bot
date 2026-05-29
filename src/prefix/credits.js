@@ -1996,7 +1996,7 @@ const editcard = {
   },
 };
 
-module.exports = [
+const _exports = [
   credits, shop, buy, inventory, creditlead,
   additem, removeitem, givecr, takecr, setcr, reseteco, shopconfig,
   myrole, creditsetup, pointhelp, previewthemes,
@@ -2004,3 +2004,5 @@ module.exports = [
   quotes, buyquote, myquotes, equipquote, customquote, clearquote,
   editcard,
 ];
+_exports.QUOTE_CATALOG = QUOTE_CATALOG;
+module.exports = _exports;

@@ -11,6 +11,7 @@ const {
 } = require('discord.js');
 const db = require('../database');
 const { THEME_NAMES } = require('../utils/themedCard');
+const { QUOTE_CATALOG } = require('../prefix/credits');
 
 const GREEN  = '#57F287';
 const RED    = '#ED4245';
@@ -676,7 +677,7 @@ const creditsetup = {
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
-// /theme  — equip a card theme via select menu
+// /editcard  — interactive card editor (replaces /theme)
 // ─────────────────────────────────────────────────────────────────────────────
 const THEME_DISPLAY = {
   holographic: '✦ Holographic',
@@ -687,91 +688,145 @@ const THEME_DISPLAY = {
   galaxy:      '🌌 Galaxy',
   academia:    '📚 Academia',
   paper:       '📜 Paper',
+  aurora:      '🌌 Aurora',
+  inferno:     '🔥 Inferno',
+  synthwave:   '◈ Synthwave',
+  ocean:       '🌊 Ocean',
 };
 const RARITY_BADGE_S = { common: '⬜ Common', uncommon: '🟩 Uncommon', rare: '🟦 Rare', epic: '🟪 Epic', legendary: '🟨 Legendary' };
 
-const theme = {
+const editcard = {
   data: new SlashCommandBuilder()
-    .setName('theme')
-    .setDescription('Manage and equip your card themes'),
+    .setName('editcard')
+    .setDescription('Customize your cards — themes, quotes and more'),
 
   async execute(interaction) {
-    const guildId  = interaction.guildId;
-    const userId   = interaction.user.id;
-    const owned    = db.getUserOwnedThemes(guildId, userId);
-    const equipped = db.getUserTheme(guildId, userId);
+    const guildId = interaction.guildId;
+    const userId  = interaction.user.id;
 
-    if (!owned.length) {
-      return interaction.reply({ embeds: [new EmbedBuilder().setColor(YELLOW)
-        .setTitle('🎨 Card Themes')
-        .setDescription("You don't own any card themes yet!\n\n**How to get themes:**\n• `,dailyshop` / `,weeklyshop` — check your personal shops\n• `,buytheme <name>` — buy directly by name\n• `,previewthemes` — preview all 8 themes")], ephemeral: true });
+    function mainPayload() {
+      return {
+        embeds: [new EmbedBuilder()
+          .setColor(BLUE)
+          .setTitle('🃏 Card Editor')
+          .setDescription(
+            'Customize your cards — select one to edit.\n\n' +
+            '**💳 Credits Card** — theme & quote\n' +
+            '**📊 Level Card** — *coming soon*\n' +
+            '**✨ Flex Card** — *coming soon*'
+          )
+          .setFooter({ text: 'flux cards' })],
+        components: [new ActionRowBuilder().addComponents(
+          new ButtonBuilder().setCustomId(`ec_credits_${userId}`).setLabel('💳 Credits Card').setStyle(ButtonStyle.Primary),
+          new ButtonBuilder().setCustomId(`ec_level_${userId}`).setLabel('📊 Level Card').setStyle(ButtonStyle.Secondary).setDisabled(true),
+          new ButtonBuilder().setCustomId(`ec_flex_${userId}`).setLabel('✨ Flex Card').setStyle(ButtonStyle.Secondary).setDisabled(true),
+        )],
+        ephemeral: true,
+      };
     }
 
-    // Build select options — None (default) + all owned themes
-    const options = [
-      {
-        label: 'Default Card',
-        value: 'none',
-        description: 'Remove theme, show default credits card',
-        emoji: { name: '🔲' },
-        default: !equipped || !THEME_NAMES.includes(equipped),
-      },
-      ...owned.map(t => ({
-        label: THEME_DISPLAY[t] || t.charAt(0).toUpperCase() + t.slice(1),
-        value: t,
-        description: t === equipped ? 'Currently equipped' : 'Click to equip',
-        emoji: { name: '🎴' },
-        default: t === equipped,
-      })),
-    ];
+    function creditsPayload() {
+      const equippedTheme = db.getUserTheme(guildId, userId) || '';
+      const equippedQuote = db.getUserQuote(guildId, userId) || '';
+      const ownedThemes   = db.getUserOwnedThemes(guildId, userId);
+      const ownedQuoteIds = db.getUserOwnedQuoteIds(guildId, userId);
+      const shopQuotes    = db.getUserPurchases(guildId, userId).filter(p => p.type === 'quote');
 
-    const select = new StringSelectMenuBuilder()
-      .setCustomId(`themeselect_${userId}`)
-      .setPlaceholder(equipped && THEME_NAMES.includes(equipped)
-        ? `Equipped: ${THEME_DISPLAY[equipped] || equipped}`
-        : 'Choose a theme...')
-      .addOptions(options);
+      const themeDisplay = equippedTheme ? (THEME_DISPLAY[equippedTheme] || `\`${equippedTheme}\``) : 'Default';
+      const quoteDisplay = equippedQuote
+        ? `"${equippedQuote.slice(0, 52)}${equippedQuote.length > 52 ? '…' : ''}"`
+        : 'None';
 
-    const row   = new ActionRowBuilder().addComponents(select);
-    const embed = new EmbedBuilder()
-      .setColor(GOLD)
-      .setTitle('🎨 Card Theme Selector')
-      .setDescription(
-        `**Equipped:** ${equipped && THEME_NAMES.includes(equipped) ? `\`${THEME_DISPLAY[equipped] || equipped}\`` : 'None (default)'}\n` +
-        `**Owned:** ${owned.map(t => `\`${THEME_DISPLAY[t] || t}\``).join(', ')}\n\n` +
-        'Pick a theme from the menu below. Your credits card will update immediately.'
-      )
-      .setFooter({ text: `${owned.length} theme${owned.length !== 1 ? 's' : ''} owned • flux credits` });
+      const embed = new EmbedBuilder()
+        .setColor(BLUE)
+        .setTitle('💳 Credits Card Editor')
+        .addFields(
+          { name: '🎨 Theme', value: themeDisplay, inline: true },
+          { name: '💬 Quote', value: quoteDisplay, inline: true },
+        )
+        .setFooter({ text: 'Changes apply instantly · run ,credits to preview' });
 
-    await interaction.reply({ embeds: [embed], components: [row], ephemeral: true });
+      const rows = [];
 
-    // Wait for selection (up to 60s)
-    const collector = interaction.channel?.createMessageComponentCollector({
-      filter: i => i.user.id === userId && i.customId === `themeselect_${userId}`,
-      time: 60_000, max: 5,
-    });
-
-    if (!collector) return;
-
-    collector.on('collect', async i => {
-      const chosen = i.values[0];
-      if (chosen === 'none') {
-        db.setEquippedTheme(guildId, userId, null);
-        await i.update({ embeds: [new EmbedBuilder().setColor(GREEN)
-          .setTitle('🎨 Theme Removed')
-          .setDescription('Removed your card theme — your `,credits` card will show the default style.')], components: [] });
+      // Theme select
+      if (ownedThemes.length) {
+        const themeOptions = [
+          { label: '— Default (no theme)', value: 'none', description: 'Use the standard credits card', default: !equippedTheme },
+          ...ownedThemes.map(t => ({
+            label: THEME_DISPLAY[t] || (t.charAt(0).toUpperCase() + t.slice(1)),
+            value: t,
+            description: `Equip the ${t} theme`,
+            default: t === equippedTheme,
+          })),
+        ];
+        rows.push(new ActionRowBuilder().addComponents(
+          new StringSelectMenuBuilder().setCustomId(`ec_theme_${userId}`).setPlaceholder('🎨 Choose a theme…').addOptions(themeOptions)
+        ));
       } else {
-        db.setEquippedTheme(guildId, userId, chosen);
-        await i.update({ embeds: [new EmbedBuilder().setColor(0xF1C40F)
-          .setTitle('🎴 Theme Equipped!')
-          .setDescription(`Equipped **${THEME_DISPLAY[chosen] || chosen}**!\nRun \`,credits\` or \`/credits balance\` to see your new card.`)], components: [] });
+        embed.addFields({ name: '🛒 No themes yet', value: 'Buy card themes from `,shop` to unlock them here.', inline: false });
       }
-      collector.stop();
+
+      // Quote select
+      const allOwnedQuotes = [
+        ...(QUOTE_CATALOG || []).filter(q => ownedQuoteIds.includes(q.id)).map(q => ({ id: `cat:${q.id}`, name: q.name, text: q.text })),
+        ...shopQuotes.map(p => ({ id: `shop:${p.item_id}`, name: p.name, text: p.quote_text || '' })),
+      ];
+
+      if (allOwnedQuotes.length) {
+        const activeId = allOwnedQuotes.find(q => q.text === equippedQuote)?.id || null;
+        const quoteOptions = [
+          { label: '— No quote', value: 'none', description: 'Remove quote from card', default: !equippedQuote },
+          ...allOwnedQuotes.slice(0, 24).map(q => ({
+            label: q.name.slice(0, 25), value: q.id,
+            description: (q.text || '').slice(0, 50), default: q.id === activeId,
+          })),
+        ];
+        rows.push(new ActionRowBuilder().addComponents(
+          new StringSelectMenuBuilder().setCustomId(`ec_quote_${userId}`).setPlaceholder('💬 Choose a quote…').addOptions(quoteOptions)
+        ));
+      } else {
+        embed.addFields({ name: '🛒 No quotes yet', value: 'Browse `,quotes` or `,shop` to buy card quotes.', inline: false });
+      }
+
+      const btns = [new ButtonBuilder().setCustomId(`ec_back_${userId}`).setLabel('← Cards').setStyle(ButtonStyle.Secondary)];
+      if (equippedQuote) btns.push(new ButtonBuilder().setCustomId(`ec_clearquote_${userId}`).setLabel('🗑️ Clear Quote').setStyle(ButtonStyle.Danger));
+      rows.push(new ActionRowBuilder().addComponents(btns));
+
+      return { embeds: [embed], components: rows };
+    }
+
+    await interaction.reply(mainPayload());
+    const msg = await interaction.fetchReply();
+
+    const col = msg.createMessageComponentCollector({
+      filter: i => i.user.id === userId && i.customId.endsWith(`_${userId}`),
+      time: 120_000,
     });
 
-    collector.on('end', (col) => {
-      if (!col.size) interaction.editReply({ components: [] }).catch(() => {});
+    col.on('collect', async i => {
+      const cid = i.customId;
+      if (cid === `ec_credits_${userId}`)    return i.update(creditsPayload());
+      if (cid === `ec_back_${userId}`)       return i.update(mainPayload());
+      if (cid === `ec_clearquote_${userId}`) { db.setUserQuote(guildId, userId, ''); return i.update(creditsPayload()); }
+      if (cid === `ec_theme_${userId}`) {
+        db.setEquippedTheme(guildId, userId, i.values[0] === 'none' ? null : i.values[0]);
+        return i.update(creditsPayload());
+      }
+      if (cid === `ec_quote_${userId}`) {
+        const val = i.values[0];
+        if (val === 'none') { db.setUserQuote(guildId, userId, ''); }
+        else if (val.startsWith('cat:')) {
+          const q = (QUOTE_CATALOG || []).find(x => x.id === parseInt(val.slice(4)));
+          if (q) db.setUserQuote(guildId, userId, q.text);
+        } else if (val.startsWith('shop:')) {
+          const p = db.getUserPurchases(guildId, userId).find(x => x.item_id === parseInt(val.slice(5)) && x.type === 'quote');
+          if (p?.quote_text) db.setUserQuote(guildId, userId, p.quote_text);
+        }
+        return i.update(creditsPayload());
+      }
     });
+
+    col.on('end', () => interaction.editReply({ components: [] }).catch(() => {}));
   },
 };
 
@@ -890,4 +945,4 @@ const weeklyshop_slash = {
   },
 };
 
-module.exports = [credits, myrole, creditsetup, theme, dailyshop_slash, weeklyshop_slash];
+module.exports = [credits, myrole, creditsetup, editcard, dailyshop_slash, weeklyshop_slash];
