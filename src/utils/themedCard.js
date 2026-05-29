@@ -80,7 +80,7 @@ const W = 860, H = 260;
 const THEME_NAMES = ['holographic','city','sakura','royal','glass','galaxy','academia','paper'];
 
 // ─── Main renderer ────────────────────────────────────────────────────────────
-async function generateThemedCard({ username, avatarUrl, balance, totalEarned, shopItems = [], theme = 'holographic' }) {
+async function generateThemedCard({ username, avatarUrl, balance, totalEarned, shopItems = [], theme = 'holographic', quote = '' }) {
   const canvas = createCanvas(W, H);
   const x      = canvas.getContext('2d');
 
@@ -88,6 +88,7 @@ async function generateThemedCard({ username, avatarUrl, balance, totalEarned, s
   const TOT   = fmtBal(totalEarned) + ' cr';
   const UNAME = username.length > 22 ? username.slice(0,20)+'…' : username;
   const ROLES = shopItems.slice(0,4);
+  const QUOTE = quote ? quote.trim().slice(0,60) : '';
 
   async function drawAvatar(ax, ay, ar, fallbackFill) {
     x.save(); x.beginPath(); x.arc(ax,ay,ar,0,Math.PI*2); x.clip();
@@ -576,6 +577,27 @@ async function generateThemedCard({ username, avatarUrl, balance, totalEarned, s
       x.fillStyle='#281408'; x.font=`bold 12px ${FB}`; x.textBaseline='top'; x.fillText((name||'Item').slice(0,14),rx+11,ry+8);
       x.fillStyle='rgba(90,58,26,0.58)'; x.font=`11px ${FN}`; x.fillText(subLabel,rx+11,ry+24);
     });
+  }
+
+  // ── QUOTE (all themes) ────────────────────────────────────────────────────────
+  if (QUOTE) {
+    const qColors = {
+      holographic: 'rgba(255,255,255,0.25)',
+      city:        'rgba(0,255,200,0.35)',
+      sakura:      'rgba(100,30,60,0.38)',
+      royal:       'rgba(200,160,60,0.38)',
+      glass:       'rgba(50,25,120,0.38)',
+      galaxy:      'rgba(175,135,255,0.35)',
+      academia:    'rgba(176,136,48,0.38)',
+      paper:       'rgba(90,58,26,0.42)',
+    };
+    const qx    = theme === 'paper' ? 192 : theme === 'royal' ? 204 : 200;
+    const qText = QUOTE.length > 43 ? QUOTE.slice(0,42)+'…' : QUOTE;
+    x.fillStyle    = qColors[theme] || 'rgba(255,255,255,0.25)';
+    x.font         = `italic 10px ${FN}`;
+    x.textBaseline = 'top';
+    x.textAlign    = 'left';
+    x.fillText(`❝ ${qText} ❞`, qx, 222);
   }
 
   return canvas.toBuffer('image/png');

@@ -62,10 +62,12 @@ const credits = {
     const s       = db.getCreditSettings(guildId);
 
     const equippedTheme = db.getUserTheme(guildId, target.id);
+    const quote         = db.getUserQuote(guildId, target.id);
 
     // Build inventory: owned themes first, then purchased roles/channels (most recent first)
+    // Filter out theme-type purchases — they're already covered by ownedThemes
     const ownedThemes = db.getUserOwnedThemes(guildId, target.id);
-    const purchases   = db.getUserPurchases(guildId, target.id);
+    const purchases   = db.getUserPurchases(guildId, target.id).filter(p => p.type !== 'theme');
     const items = [
       ...ownedThemes.map(t => ({
         name:  t.charAt(0).toUpperCase() + t.slice(1) + ' Theme',
@@ -87,6 +89,7 @@ const credits = {
           totalEarned: data.total_earned,
           shopItems:   items,
           theme:       equippedTheme,
+          quote,
         });
       } else {
         buffer = await generateCreditsCard({
@@ -1427,9 +1430,44 @@ const setthemeprice = {
   },
 };
 
+// ── ,setquote [text] ──────────────────────────────────────────────────────────
+// Sets (or clears) the custom quote shown on your credits card.
+const setquote = {
+  name: 'setquote',
+  aliases: ['quote', 'myquote', 'cardquote'],
+  async execute(message, args) {
+    const guildId = message.guild.id;
+    const userId  = message.author.id;
+
+    // No args = clear the quote
+    if (!args.length) {
+      db.setUserQuote(guildId, userId, '');
+      return message.reply({ embeds: [new EmbedBuilder()
+        .setColor(YELLOW)
+        .setDescription('🗑️ Your card quote has been cleared.')] });
+    }
+
+    const text = args.join(' ').trim();
+    if (text.length > 80) {
+      return message.reply({ embeds: [new EmbedBuilder()
+        .setColor(RED)
+        .setDescription(`❌ Quote is too long (**${text.length}** chars). Keep it under **80** characters.`)] });
+    }
+
+    db.setUserQuote(guildId, userId, text);
+
+    await message.reply({ embeds: [new EmbedBuilder()
+      .setColor(GREEN)
+      .setTitle('✅ Card Quote Set!')
+      .setDescription(`Your credits card will now show:\n> *❝ ${text} ❞*`)
+      .setFooter({ text: 'Run ,credits to preview it • ,setquote with no text to clear' })] });
+  },
+};
+
 module.exports = [
   credits, shop, buy, inventory, creditlead,
   additem, removeitem, givecr, takecr, setcr, reseteco, shopconfig,
   myrole, creditsetup, pointhelp, previewthemes,
   themes, buytheme, cardtheme, givetheme, setthemeprice,
+  setquote,
 ];

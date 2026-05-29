@@ -1902,9 +1902,10 @@ function _runSchema() {
   PRIMARY KEY (guild_id, user_id)
 )`);
 
-  // Theme system migrations
+  // Theme & profile migrations
   try { db.run("ALTER TABLE credits ADD COLUMN owned_themes TEXT DEFAULT ''"); } catch(_) {}
   try { db.run("ALTER TABLE credits ADD COLUMN equipped_theme TEXT DEFAULT ''"); } catch(_) {}
+  try { db.run("ALTER TABLE credits ADD COLUMN quote TEXT DEFAULT ''"); } catch(_) {}
 
   db.run(`CREATE TABLE IF NOT EXISTS card_theme_prices (
   guild_id TEXT NOT NULL,
@@ -2360,6 +2361,16 @@ function getAllThemePrices(guildId) {
   return db.all('SELECT theme, price FROM card_theme_prices WHERE guild_id=?', [guildId]);
 }
 
+// ── Card Quote ────────────────────────────────────────────────────────────────
+function getUserQuote(guildId, userId) {
+  const row = db.get('SELECT quote FROM credits WHERE guild_id=? AND user_id=?', [guildId, userId]);
+  return (row && row.quote) || '';
+}
+function setUserQuote(guildId, userId, text) {
+  db.run('INSERT INTO credits (guild_id, user_id, amount, total_earned, quote) VALUES (?, ?, 0, 0, ?) ON CONFLICT(guild_id, user_id) DO UPDATE SET quote=excluded.quote',
+    [guildId, userId, text]);
+}
+
 // Gracefully close the database. Called on SIGTERM so Railway's zero-downtime
 // deploy releases the file lock before the new instance tries to open it.
 function closeDb() {
@@ -2438,6 +2449,7 @@ module.exports = {
   getCredits, addCredits, spendCredits, refundCredits, setCreditsAmount, resetCredits, getCreditLeaderboard,
   getUserTheme, getUserOwnedThemes, hasTheme, addOwnedTheme, setEquippedTheme,
   getThemePrice, setThemePrice, getAllThemePrices,
+  getUserQuote, setUserQuote,
   getShopItems, getShopItem, getShopItemByName, addShopItem, removeShopItem, setShopItemRoleId, incrementItemSold,
   generateUserDailyShop, generateUserWeeklyShop, getShopItemsByIds,
   getCreditSettings, upsertCreditSettings,
