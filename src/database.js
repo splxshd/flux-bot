@@ -141,12 +141,24 @@ const _dbReady = new Promise((resolve, reject) => _tryOpenDb(resolve, reject, 0)
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
+// node-sqlite3-wasm returns large INTEGER columns as BigInt.
+// Convert every BigInt back to Number so math/comparisons never throw.
+function _normalizeRow(row) {
+  if (!row || typeof row !== 'object') return row;
+  const out = {};
+  for (const [k, v] of Object.entries(row)) {
+    out[k] = typeof v === 'bigint' ? Number(v) : v;
+  }
+  return out;
+}
+
 function get(sql, params = []) {
-  return db.get(sql, params);
+  return _normalizeRow(db.get(sql, params));
 }
 
 function all(sql, params = []) {
-  return db.all(sql, params);
+  const rows = db.all(sql, params);
+  return Array.isArray(rows) ? rows.map(_normalizeRow) : rows;
 }
 
 function run(sql, params = []) {
