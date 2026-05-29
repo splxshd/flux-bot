@@ -1947,7 +1947,8 @@ function _runSchema() {
   // Migrate: add new columns to credit_settings if they don't exist yet
   try { db.run('ALTER TABLE credit_settings ADD COLUMN invite_credits INTEGER DEFAULT 0');        } catch (_) {}
   try { db.run('ALTER TABLE credit_settings ADD COLUMN voice_credits INTEGER DEFAULT 0');          } catch (_) {}
-  try { db.run('ALTER TABLE credit_settings ADD COLUMN custom_role_cost INTEGER DEFAULT 500');     } catch (_) {}
+  try { db.run('ALTER TABLE credit_settings ADD COLUMN custom_role_cost INTEGER DEFAULT 800000');   } catch (_) {}
+  try { db.run('UPDATE credit_settings SET custom_role_cost = 800000 WHERE custom_role_cost = 500'); } catch (_) {}
   try { db.run('ALTER TABLE credit_settings ADD COLUMN custom_role_update_cost INTEGER DEFAULT 0'); } catch (_) {}
   try { db.run('ALTER TABLE credit_settings ADD COLUMN max_custom_roles INTEGER DEFAULT 1');       } catch (_) {}
 

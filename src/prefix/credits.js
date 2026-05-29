@@ -795,7 +795,7 @@ const creditsetup = {
       cooldown:   { key: 'cooldown_sec',            label: 'Message cooldown (seconds)', emoji: '⏱️', default: 30  },
       invites:    { key: 'invite_credits',          label: 'Credits per invite',         emoji: '📨', default: 0   },
       voice:      { key: 'voice_credits',           label: 'Credits per VC minute',      emoji: '🎙️', default: 0   },
-      rolecost:   { key: 'custom_role_cost',        label: 'Custom role creation cost',  emoji: '🎨', default: 500 },
+      rolecost:   { key: 'custom_role_cost',        label: 'Custom role creation cost',  emoji: '🎨', default: 800000 },
       updatecost: { key: 'custom_role_update_cost', label: 'Custom role update cost',    emoji: '✏️', default: 0   },
       slots:      { key: 'max_custom_roles',        label: 'Max custom role slots',      emoji: '🔢', default: 1   },
     };
