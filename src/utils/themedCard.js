@@ -582,22 +582,36 @@ async function generateThemedCard({ username, avatarUrl, balance, totalEarned, s
   // ── QUOTE (all themes) ────────────────────────────────────────────────────────
   if (QUOTE) {
     const qColors = {
-      holographic: 'rgba(255,255,255,0.25)',
-      city:        'rgba(0,255,200,0.35)',
-      sakura:      'rgba(100,30,60,0.38)',
-      royal:       'rgba(200,160,60,0.38)',
-      glass:       'rgba(50,25,120,0.38)',
-      galaxy:      'rgba(175,135,255,0.35)',
-      academia:    'rgba(176,136,48,0.38)',
-      paper:       'rgba(90,58,26,0.42)',
+      holographic: 'rgba(255,255,255,0.82)',
+      city:        'rgba(0,255,200,0.82)',
+      sakura:      'rgba(80,20,45,0.80)',
+      royal:       'rgba(225,180,70,0.82)',
+      glass:       'rgba(40,18,110,0.80)',
+      galaxy:      'rgba(190,150,255,0.88)',
+      academia:    'rgba(195,152,62,0.82)',
+      paper:       'rgba(70,42,16,0.80)',
+    };
+    const qShadow = {
+      holographic: 'rgba(120,80,255,0.5)',
+      city:        'rgba(0,200,150,0.55)',
+      sakura:      'rgba(255,150,185,0.35)',
+      royal:       'rgba(180,130,0,0.55)',
+      glass:       'rgba(120,80,255,0.35)',
+      galaxy:      'rgba(140,0,220,0.65)',
+      academia:    'rgba(0,0,0,0.4)',
+      paper:       'rgba(0,0,0,0.22)',
     };
     const qx    = theme === 'paper' ? 192 : theme === 'royal' ? 204 : 200;
     const qText = QUOTE.length > 43 ? QUOTE.slice(0,42)+'…' : QUOTE;
-    x.fillStyle    = qColors[theme] || 'rgba(255,255,255,0.25)';
-    x.font         = `italic 10px ${FN}`;
+    x.save();
+    x.shadowColor  = qShadow[theme] || 'rgba(0,0,0,0.4)';
+    x.shadowBlur   = 8;
+    x.fillStyle    = qColors[theme] || 'rgba(255,255,255,0.82)';
+    x.font         = `italic 11px ${FN}`;
     x.textBaseline = 'top';
     x.textAlign    = 'left';
-    x.fillText(`❝ ${qText} ❞`, qx, 222);
+    x.fillText(`❝ ${qText} ❞`, qx, 221);
+    x.restore();
   }
 
   return canvas.toBuffer('image/png');
