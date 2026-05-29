@@ -1998,6 +1998,7 @@ function _runSchema() {
   try { db.run('ALTER TABLE credit_settings ADD COLUMN custom_quote_cost INTEGER DEFAULT 15000');  } catch (_) {}
   try { db.run('UPDATE credit_settings SET custom_quote_cost = 15000 WHERE custom_quote_cost = 2500'); } catch (_) {}
   try { db.run("ALTER TABLE shop_items ADD COLUMN quote_text TEXT DEFAULT ''");                     } catch (_) {}
+  try { db.run('ALTER TABLE credits ADD COLUMN free_role_claims INTEGER DEFAULT 0');                } catch (_) {}
 
   db.run(`CREATE TABLE IF NOT EXISTS staff_checkin_settings (
   guild_id TEXT PRIMARY KEY,
@@ -2396,6 +2397,22 @@ function hasUserOwnedQuote(guildId, userId, quoteId) {
     [guildId, userId, quoteId]);
 }
 
+// ── Free Role Claims (custom_role shop purchases) ──────────────────────────────
+function getFreeRoleClaims(guildId, userId) {
+  const row = db.get('SELECT free_role_claims FROM credits WHERE guild_id=? AND user_id=?', [guildId, userId]);
+  return (row && typeof row.free_role_claims === 'number') ? row.free_role_claims : 0;
+}
+function addFreeRoleClaim(guildId, userId, count) {
+  count = count ?? 1;
+  db.run('INSERT OR IGNORE INTO credits (guild_id, user_id, amount, total_earned) VALUES (?, ?, 0, 0)', [guildId, userId]);
+  db.run('UPDATE credits SET free_role_claims = free_role_claims + ? WHERE guild_id=? AND user_id=?', [count, guildId, userId]);
+}
+function useFreeRoleClaim(guildId, userId) {
+  if (getFreeRoleClaims(guildId, userId) <= 0) return false;
+  db.run('UPDATE credits SET free_role_claims = MAX(0, free_role_claims - 1) WHERE guild_id=? AND user_id=?', [guildId, userId]);
+  return true;
+}
+
 // Gracefully close the database. Called on SIGTERM so Railway's zero-downtime
 // deploy releases the file lock before the new instance tries to open it.
 function closeDb() {
@@ -2476,6 +2493,7 @@ module.exports = {
   getThemePrice, setThemePrice, getAllThemePrices,
   getUserQuote, setUserQuote,
   getUserOwnedQuoteIds, addUserOwnedQuote, hasUserOwnedQuote,
+  getFreeRoleClaims, addFreeRoleClaim, useFreeRoleClaim,
   getShopItems, getShopItem, getShopItemByName, addShopItem, removeShopItem, setShopItemRoleId, incrementItemSold,
   generateUserDailyShop, generateUserWeeklyShop, getShopItemsByIds,
   getCreditSettings, upsertCreditSettings,

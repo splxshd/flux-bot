@@ -152,7 +152,7 @@ const credits = {
 // ── Shop helpers ──────────────────────────────────────────────────────────────
 const SHOP_COLORS  = { daily: 0xF1C40F, weekly: 0x5865F2, all: 0x9B59B6 };
 const SHOP_TITLES  = { daily: '🌅  Daily Shop', weekly: '🗓️  Weekly Shop', all: '🏪  All Items' };
-const TYPE_ICON    = { color_role: '🎨', role: '🏷️', channel: '🔓', theme: '🎴', quote: '💬' };
+const TYPE_ICON    = { color_role: '🎨', role: '🏷️', channel: '🔓', theme: '🎴', quote: '💬', custom_role: '🖌️' };
 const SHOP_PER_PAGE = 4;
 
 async function _buildShopEmbed(guildId, userId, tab, page, guild, author) {
@@ -439,6 +439,24 @@ const buy = {
           )
           .setFooter({ text: 'Run ,credits to see it  ·  ,myquotes to manage quotes' })] });
 
+      } else if (item.type === 'custom_role') {
+        db.addFreeRoleClaim(guildId, userId, 1);
+        const tokens = db.getFreeRoleClaims(guildId, userId);
+        const color  = parseInt((RARITY_COLOR[item.rarity] || '#5865F2').replace('#', ''), 16);
+        return message.reply({ embeds: [new EmbedBuilder()
+          .setColor(color)
+          .setTitle('🖌️ Custom Role Token!')
+          .setDescription(
+            `You bought **${item.name}** and received **1 custom role token**!\n` +
+            `Use \`,myrole create <name> <#hex>\` to create a custom role for free.`
+          )
+          .addFields(
+            { name: '💳 Spent',     value: `${fmt(item.price)} cr`,                 inline: true },
+            { name: '💰 Remaining', value: `${fmt(userCr.amount - item.price)} cr`, inline: true },
+            { name: '🎟️ Tokens',    value: `${tokens} token${tokens !== 1 ? 's' : ''} available`, inline: true },
+          )
+          .setFooter({ text: 'flux credits  ·  ,myrole create <name> <#hex> to use' })] });
+
       } else if (item.type === 'channel') {
         const channel = message.guild.channels.cache.get(item.channel_id);
         if (!channel) {
@@ -556,8 +574,9 @@ const additem = {
           { name: '🏷️ Existing Role', value: '`,additem Name | price | role @role`',               inline: false },
           { name: '🔓 Channel Access', value: '`,additem Name | price | channel #channel`',        inline: false },
           { name: '💬 Quote',         value: '`,additem Name | price | quote The text here.`',     inline: false },
+          { name: '🖌️ Custom Role',   value: '`,additem Name | price | custom_role`',              inline: false },
         )
-        .setDescription('Separate all parts with `|`. Optionally add rarity (`common`/`uncommon`/`rare`/`epic`/`legendary`) and a description as extra `|` segments.')
+        .setDescription('Separate all parts with `|`. Optionally add rarity (`common`/`uncommon`/`rare`/`epic`/`legendary`) and a description as extra `|` segments.\n`custom_role` — buyer gets 1 token to create a custom role for free via `,myrole create`.')
         .setFooter({ text: 'flux credits' })] });
     }
 
@@ -637,13 +656,17 @@ const additem = {
       itemData.type       = 'theme';
       itemData.theme_name = themeName;
 
+    } else if (typePart.startsWith('custom')) {
+      // ,additem Name | price | custom_role [| rarity] [| description]
+      itemData.type = 'custom_role';
+
     } else {
-      return message.reply('❌ Type must be `color`, `role`, `channel`, `theme <name>`, or `quote <text>`.\n' +
-        '**Examples:**\n`,additem Galaxy Theme | 8000 | theme galaxy | epic`\n`,additem Chosen | 5000 | quote You were chosen. | rare`');
+      return message.reply('❌ Type must be `color`, `role`, `channel`, `theme <name>`, `quote <text>`, or `custom_role`.\n' +
+        '**Examples:**\n`,additem Galaxy Theme | 8000 | theme galaxy | epic`\n`,additem Aura Pass | 50000 | custom_role | epic`');
     }
 
     const newId    = db.addShopItem(itemData);
-    const typeIcon = { color_role: '🎨', role: '🏷️', channel: '🔓', theme: '🎴' }[itemData.type] || '📦';
+    const typeIcon = { color_role: '🎨', role: '🏷️', channel: '🔓', theme: '🎴', quote: '💬', custom_role: '🖌️' }[itemData.type] || '📦';
 
     const fields = [
       { name: 'ID',     value: `#${newId}`,             inline: true },
@@ -803,15 +826,18 @@ const myrole = {
       const roles = db.getUserCustomRoles(guildId, userId);
       const cr    = db.getCredits(guildId, userId);
 
+      const tokens = db.getFreeRoleClaims(guildId, userId);
       if (!roles.length) {
+        const costLine = tokens > 0
+          ? `**You have ${tokens} token${tokens !== 1 ? 's' : ''}** — create your role for free!`
+          : `**Cost:** ${fmt(s.custom_role_cost)} credits\n**Your balance:** ${fmt(cr.amount)} credits`;
         return message.reply({ embeds: [new EmbedBuilder()
           .setColor(BLUE)
           .setTitle('🎨 Custom Roles')
           .setDescription(
             `You don't have any custom roles yet!\n\n` +
             `**Create one:**\n\`\`,myrole create <name> <#hex>\`\`\n\n` +
-            `**Cost:** ${fmt(s.custom_role_cost)} credits\n` +
-            `**Your balance:** ${fmt(cr.amount)} credits\n` +
+            `${costLine}\n` +
             `**Max slots:** ${s.max_custom_roles}`,
           )
           .setFooter({ text: 'flux credits' })] });
@@ -827,9 +853,10 @@ const myrole = {
         .setTitle('🎨 Your Custom Roles')
         .setDescription(lines.join('\n'))
         .addFields(
-          { name: '💳 Balance',    value: `${fmt(cr.amount)} credits`,     inline: true },
+          { name: '💳 Balance',     value: `${fmt(cr.amount)} credits`,     inline: true },
           { name: '📝 Update cost', value: `${fmt(s.custom_role_update_cost || 0)} credits`, inline: true },
-          { name: '🔧 Slots used', value: `${roles.length}/${s.max_custom_roles}`, inline: true },
+          { name: '🔧 Slots used',  value: `${roles.length}/${s.max_custom_roles}`, inline: true },
+          ...(tokens > 0 ? [{ name: '🎟️ Tokens', value: `${tokens} free role create${tokens !== 1 ? 's' : ''} available`, inline: true }] : []),
         )
         .setFooter({ text: 'flux credits' })
         .setTimestamp();
@@ -853,11 +880,15 @@ const myrole = {
           .setDescription(`❌ You've used all **${s.max_custom_roles}** custom role slot${s.max_custom_roles !== 1 ? 's' : ''}.`)] });
       }
 
-      const cost = s.custom_role_cost || 0;
-      const cr   = db.getCredits(guildId, userId);
-      if (cr.amount < cost) {
+      const tokens   = db.getFreeRoleClaims(guildId, userId);
+      const baseCost = s.custom_role_cost || 0;
+      const cost     = tokens > 0 ? 0 : baseCost;
+      const cr       = db.getCredits(guildId, userId);
+
+      if (cost > 0 && cr.amount < cost) {
+        const tokenHint = '\n\n*Tip: buy a **Custom Role Token** from the shop to create roles for free!*';
         return message.reply({ embeds: [new EmbedBuilder().setColor(RED)
-          .setDescription(`❌ Creating a custom role costs **${fmt(cost)} credits**.\nYou have **${fmt(cr.amount)}** — need **${fmt(cost - cr.amount)}** more.`)] });
+          .setDescription(`❌ Creating a custom role costs **${fmt(cost)} credits**.\nYou have **${fmt(cr.amount)}** — need **${fmt(cost - cr.amount)}** more.${tokenHint}`)] });
       }
 
       // Find next free slot
@@ -866,7 +897,10 @@ const myrole = {
       while (usedSlots.has(slot)) slot++;
 
       const color = '#' + hexArg.slice(1).toUpperCase();
-      if (cost > 0) db.spendCredits(guildId, userId, cost);
+
+      // Consume token or credits
+      const usedToken = tokens > 0 ? db.useFreeRoleClaim(guildId, userId) : false;
+      if (!usedToken && cost > 0) db.spendCredits(guildId, userId, cost);
 
       try {
         const role = await message.guild.roles.create({
@@ -885,6 +919,7 @@ const myrole = {
         db.addUserCustomRole(guildId, userId, role.id, nameArg, color, slot);
         await message.member.roles.add(role).catch(() => {});
 
+        const tokensLeft = db.getFreeRoleClaims(guildId, userId);
         await message.reply({ embeds: [new EmbedBuilder()
           .setColor(parseInt(color.slice(1), 16))
           .setTitle('🎨 Custom Role Created!')
@@ -893,13 +928,17 @@ const myrole = {
             { name: '🏷️ Name',  value: nameArg,                inline: true },
             { name: '🎨 Color', value: color,                  inline: true },
             { name: '🔢 Slot',  value: `${slot}`,              inline: true },
-            ...(cost > 0 ? [{ name: '💳 Spent', value: `${fmt(cost)} credits`, inline: true }] : []),
+            usedToken
+              ? { name: '🎟️ Token Used', value: `${tokensLeft} token${tokensLeft !== 1 ? 's' : ''} remaining`, inline: true }
+              : (cost > 0 ? { name: '💳 Spent', value: `${fmt(cost)} credits`, inline: true } : { name: '💳 Cost', value: 'Free', inline: true }),
           )
           .setFooter({ text: 'flux credits' })
           .setTimestamp()] });
 
       } catch (e) {
-        if (cost > 0) db.refundCredits(guildId, userId, cost);
+        // Roll back on failure
+        if (usedToken) db.addFreeRoleClaim(guildId, userId, 1);
+        else if (cost > 0) db.refundCredits(guildId, userId, cost);
         await message.reply({ embeds: [new EmbedBuilder().setColor(RED)
           .setDescription(`❌ Failed to create role: ${e.message}. Refunded.`)] });
       }
