@@ -811,8 +811,75 @@ const creditsetup = {
   },
 };
 
+// ── ,pointhelp ────────────────────────────────────────────────────────────────
+const pointhelp = {
+  name: 'pointhelp',
+  aliases: ['creditshelp', 'crhelp', 'shophelp', 'pointshelp'],
+  async execute(message) {
+    const s = db.getCreditSettings(message.guild.id);
+
+    const embed = new EmbedBuilder()
+      .setColor(GOLD)
+      .setAuthor({ name: 'Credits & Shop Help', iconURL: message.client.user.displayAvatarURL() })
+      .setDescription(
+        `Earn credits by chatting (**${s.credits_per_msg ?? 1}** per message, **${s.cooldown_sec ?? 30}s** cooldown)` +
+        (s.invite_credits ? `, **${s.invite_credits}** per invite` : '') +
+        (s.voice_credits  ? `, **${s.voice_credits}** per VC minute` : '') +
+        '. Spend them in the shop or on custom roles.'
+      )
+      .addFields(
+        {
+          name: '💳 Points',
+          value: [
+            '`,credits [@user]` — check your balance',
+            '`,creditlead` — top earners leaderboard',
+          ].join('\n'),
+          inline: false,
+        },
+        {
+          name: '🛒 Shop',
+          value: [
+            '`,shop [page]` — browse all items',
+            '`,buy <id>` — purchase an item by ID',
+            '`,inventory [@user]` — view owned items',
+          ].join('\n'),
+          inline: false,
+        },
+        {
+          name: '🎨 Custom Roles',
+          value: [
+            '`,myrole` — view your current roles',
+            '`,myrole create <name> <#hex>` — create a custom role (costs **' + fmt(s.custom_role_cost ?? 0) + '** cr)',
+            '`,myrole color [slot] <#hex>` — change color',
+            '`,myrole rename [slot] <name>` — rename',
+            '`,myrole delete [slot]` — delete',
+          ].join('\n'),
+          inline: false,
+        },
+        {
+          name: '⚙️ Admin Only',
+          value: [
+            '`,additem Name | price | color #HEX` — add color role',
+            '`,additem Name | price | role @role` — add role item',
+            '`,additem Name | price | channel #ch` — add channel access',
+            '`,removeitem <id>` — remove a shop item',
+            '`,givecr @user <amount>` — give credits',
+            '`,takecr @user <amount>` — take credits',
+            '`,setcr @user <amount>` — set balance',
+            '`,creditsetup` — configure earn rates & costs',
+          ].join('\n'),
+          inline: false,
+        },
+      )
+      .setFooter({ text: 'flux credits • earn by chatting' })
+      .setTimestamp();
+
+    await message.reply({ embeds: [embed] });
+  },
+};
+
 module.exports = [
   credits, shop, buy, inventory, creditlead,
   additem, removeitem, givecr, takecr, setcr, shopconfig,
-  myrole, creditsetup,
+  myrole, creditsetup, pointhelp,
 ];
