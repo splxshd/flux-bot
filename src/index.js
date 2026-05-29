@@ -299,6 +299,19 @@ function startCrons() {
       } catch (e) { console.error('[Cron:deposit]', e); }
     }
   });
+
+  // Every 30 seconds: finalise expired auctions
+  cron.schedule('* * * * * *', async () => {
+    // Only run every 30 seconds (cron min resolution is 1 min, use seconds cron)
+    if (new Date().getSeconds() !== 0 && new Date().getSeconds() !== 30) return;
+    try {
+      const { finaliseAuction } = require('./prefix/auction');
+      const expired = db.getExpiredAuctions();
+      for (const a of expired) {
+        try { await finaliseAuction(a, client); } catch (e) { console.error('[Cron:auction]', e); }
+      }
+    } catch (e) { console.error('[Cron:auction:load]', e); }
+  });
 }
 
 // ─── Async startup ────────────────────────────────────────────────────────────
@@ -316,7 +329,9 @@ function startCrons() {
   console.log('[flux] Loading prefix commands...');
   if (fs.existsSync(prefixDir)) {
     for (const file of fs.readdirSync(prefixDir).filter(f => f.endsWith('.js'))) {
-      const cmds = require(path.join(prefixDir, file));
+      const mod  = require(path.join(prefixDir, file));
+      // Support both plain arrays and { commands: [...] } exports (e.g. auction.js)
+      const cmds = Array.isArray(mod) ? mod : (Array.isArray(mod.commands) ? mod.commands : []);
       for (const cmd of cmds) {
         client.prefixCommands.set(cmd.name, cmd);
         for (const alias of (cmd.aliases || [])) {

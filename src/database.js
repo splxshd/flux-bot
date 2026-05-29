@@ -1975,6 +1975,34 @@ function _runSchema() {
 )`);
 
   try { db.run(`ALTER TABLE staff_checkin_settings ADD COLUMN timezone TEXT DEFAULT 'UTC'`); } catch (_) {}
+
+  db.run(`CREATE TABLE IF NOT EXISTS auctions (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  guild_id TEXT NOT NULL,
+  channel_id TEXT NOT NULL,
+  message_id TEXT DEFAULT NULL,
+  item TEXT NOT NULL,
+  description TEXT DEFAULT '',
+  image_url TEXT DEFAULT '',
+  starting_bid INTEGER NOT NULL,
+  current_bid INTEGER NOT NULL,
+  current_bidder TEXT DEFAULT NULL,
+  min_increment INTEGER DEFAULT 1,
+  ends_at INTEGER NOT NULL,
+  ended INTEGER DEFAULT 0,
+  cancelled INTEGER DEFAULT 0,
+  created_by TEXT NOT NULL,
+  created_at INTEGER DEFAULT (strftime('%s','now'))
+)`);
+
+  db.run(`CREATE TABLE IF NOT EXISTS auction_bids (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  auction_id INTEGER NOT NULL,
+  guild_id TEXT NOT NULL,
+  user_id TEXT NOT NULL,
+  amount INTEGER NOT NULL,
+  bid_at INTEGER DEFAULT (strftime('%s','now'))
+)`);
 }
 
 // ── User Custom Roles ─────────────────────────────────────────────────────────
@@ -2115,6 +2143,60 @@ function hasStaffCheckedIn(guildId, date, userId) {
   return !!db.get('SELECT 1 FROM staff_checkins WHERE guild_id=? AND date=? AND user_id=?', [guildId, date, userId]);
 }
 
+// ── Auctions ──────────────────────────────────────────────────────────────────
+function createAuction(guildId, channelId, item, description, imageUrl, startingBid, minIncrement, endsAt, createdBy) {
+  const r = db.run(
+    `INSERT INTO auctions (guild_id, channel_id, item, description, image_url, starting_bid, current_bid, min_increment, ends_at, created_by)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    [guildId, channelId, item, description || '', imageUrl || '', startingBid, startingBid, minIncrement, endsAt, createdBy],
+  );
+  return db.get('SELECT * FROM auctions WHERE rowid=last_insert_rowid()');
+}
+function getAuction(id) {
+  return db.get('SELECT * FROM auctions WHERE id=?', [id]);
+}
+function getActiveAuctions(guildId) {
+  const now = Math.floor(Date.now() / 1000);
+  return db.all('SELECT * FROM auctions WHERE guild_id=? AND ended=0 AND cancelled=0 AND ends_at>? ORDER BY ends_at ASC', [guildId, now]);
+}
+function getExpiredAuctions() {
+  const now = Math.floor(Date.now() / 1000);
+  return db.all('SELECT * FROM auctions WHERE ended=0 AND cancelled=0 AND ends_at<=?', [now]);
+}
+function setAuctionMessageId(id, messageId) {
+  db.run('UPDATE auctions SET message_id=? WHERE id=?', [messageId, id]);
+}
+function placeBid(auctionId, guildId, userId, amount) {
+  // Returns the previous highest bidder info for refund
+  const auction = getAuction(auctionId);
+  const prev = auction.current_bidder ? { userId: auction.current_bidder, amount: auction.current_bid } : null;
+  db.run('UPDATE auctions SET current_bid=?, current_bidder=? WHERE id=?', [amount, userId, auctionId]);
+  db.run('INSERT INTO auction_bids (auction_id, guild_id, user_id, amount) VALUES (?, ?, ?, ?)', [auctionId, guildId, userId, amount]);
+  return prev;
+}
+function extendAuction(id, newEndsAt) {
+  db.run('UPDATE auctions SET ends_at=? WHERE id=?', [newEndsAt, id]);
+}
+function endAuction(id) {
+  db.run('UPDATE auctions SET ended=1 WHERE id=?', [id]);
+}
+function cancelAuction(id) {
+  db.run('UPDATE auctions SET cancelled=1, ended=1 WHERE id=?', [id]);
+}
+function getAuctionBids(auctionId, limit = 5) {
+  return db.all('SELECT * FROM auction_bids WHERE auction_id=? ORDER BY bid_at DESC LIMIT ?', [auctionId, limit]);
+}
+function getUserActiveBids(guildId, userId) {
+  const now = Math.floor(Date.now() / 1000);
+  return db.all(
+    `SELECT a.*, ab.amount AS my_bid FROM auctions a
+     JOIN auction_bids ab ON ab.auction_id=a.id AND ab.guild_id=? AND ab.user_id=?
+     WHERE a.guild_id=? AND a.ended=0 AND a.cancelled=0 AND a.ends_at>?
+     GROUP BY a.id ORDER BY a.ends_at ASC`,
+    [guildId, userId, guildId, now],
+  );
+}
+
 // Gracefully close the database. Called on SIGTERM so Railway's zero-downtime
 // deploy releases the file lock before the new instance tries to open it.
 function closeDb() {
@@ -2196,5 +2278,8 @@ module.exports = {
   getUserPurchase, addUserPurchase, getUserPurchases,
   getStaffCheckinSettings, upsertStaffCheckinSettings, getAllEnabledStaffCheckin,
   recordStaffCheckin, getStaffCheckins, hasStaffCheckedIn,
+  createAuction, getAuction, getActiveAuctions, getExpiredAuctions,
+  setAuctionMessageId, placeBid, extendAuction, endAuction, cancelAuction,
+  getAuctionBids, getUserActiveBids,
   closeDb,
 };
