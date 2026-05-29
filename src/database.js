@@ -10,7 +10,7 @@ const dataDir = path.join(__dirname, '..', 'data');
 if (!fs.existsSync(dataDir)) fs.mkdirSync(dataDir, { recursive: true });
 
 const { Database } = require('node-sqlite3-wasm');
-const dbPath = path.join(dataDir, 'nights3.db');
+const dbPath = path.join(dataDir, 'nights4.db');
 let db;
 
 // ─── WAL → DELETE mode conversion ────────────────────────────────────────────
@@ -50,13 +50,13 @@ function _convertFromWAL(targetPath) {
 }
 
 const oldDbPath  = path.join(dataDir, 'nights.db');
-const prev2DbPath = path.join(dataDir, 'nights2.db');
+const prev2DbPath = path.join(dataDir, 'nights4.db');
 
 // ─── Pre-open restore: raw file copy before ANY SQLite connection opens ───────
-// Uses a marker file so this runs exactly once even if nights3.db already has
+// Uses a marker file so this runs exactly once even if nights4.db already has
 // schema tables (which makes it >8KB even when empty of real user data).
 (function _restoreIfEmpty() {
-  const marker = path.join(dataDir, '.restored3');
+  const marker = path.join(dataDir, '.restored4');
   if (fs.existsSync(marker)) return; // already ran once, skip
 
   try {
@@ -92,13 +92,13 @@ const prev2DbPath = path.join(dataDir, 'nights2.db');
     fs.copyFileSync(src, dbPath);
     _convertFromWAL(dbPath);
     fs.writeFileSync(marker, '1');
-    console.log(`[DB] Restored data from ${path.basename(src)} → nights3.db`);
+    console.log(`[DB] Restored data from ${path.basename(src)} → nights4.db`);
   } catch (e) {
     console.warn('[DB] Restore error:', e.message);
   }
 })();
 
-// Convert nights3.db from WAL if needed (in case restore wasn't needed but file is WAL)
+// Convert nights4.db from WAL if needed (in case restore wasn't needed but file is WAL)
 _convertFromWAL(dbPath);
 
 // ─── Non-blocking async DB init ───────────────────────────────────────────────
