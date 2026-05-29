@@ -15,7 +15,7 @@ const OWNER_ID = '1467527738091896986';
 const ITEMS_PER_PAGE = 5;
 
 const RARITIES = ['common', 'uncommon', 'rare', 'epic', 'legendary'];
-const RARITY_BADGE = { common: '⬜ Common', uncommon: '🟩 Uncommon', rare: '🟦 Rare', epic: '🟪 Epic', legendary: '🟨 Legendary' };
+const RARITY_BADGE = { common: '★☆☆☆☆  Common', uncommon: '★★☆☆☆  Uncommon', rare: '★★★☆☆  Rare', epic: '★★★★☆  Epic', legendary: '★★★★★  Legendary' };
 const RARITY_COLOR = { common: '#95a5a6', uncommon: '#2ecc71', rare: '#3498db', epic: '#9b59b6', legendary: '#f1c40f' };
 
 function _msTilMidnightUTC() {
@@ -106,30 +106,26 @@ const credits = {
 };
 
 // ── Shop helpers ──────────────────────────────────────────────────────────────
-const RARITY_BARS = {
-  common:    '⬜⬜⬜⬜',
-  uncommon:  '🟩⬜⬜⬜',
-  rare:      '🟦🟦⬜⬜',
-  epic:      '🟪🟪🟪⬜',
-  legendary: '🟨🟨🟨🟨',
-};
 const SHOP_COLORS  = { daily: 0xF1C40F, weekly: 0x5865F2, all: 0x9B59B6 };
-const SHOP_TITLES  = { daily: '🌅  Daily Shop', weekly: '🗓️  Weekly Shop', all: '🏪  Browse All' };
+const SHOP_TITLES  = { daily: '🌅  Daily Shop', weekly: '🗓️  Weekly Shop', all: '🏪  All Items' };
 const TYPE_ICON    = { color_role: '🎨', role: '🏷️', channel: '🔓', theme: '🎴' };
 const SHOP_PER_PAGE = 4;
 
 async function _buildShopEmbed(guildId, userId, tab, page, guild, author) {
   const userCr = db.getCredits(guildId, userId);
-  let items, subline;
+  let items, subline, subicon;
 
   if (tab === 'daily') {
     items   = db.getShopItemsByIds(db.generateUserDailyShop(guildId, userId));
-    subline = `Resets in **${_fmtMs(_msTilMidnightUTC())}**  ·  unique to you`;
+    subicon = '⏰';
+    subline = `Resets in **${_fmtMs(_msTilMidnightUTC())}**  ·  personalized for you`;
   } else if (tab === 'weekly') {
     items   = db.getShopItemsByIds(db.generateUserWeeklyShop(guildId, userId));
-    subline = `Resets in **${_fmtMs(_msTilNextMonday())}**  ·  unique to you`;
+    subicon = '📅';
+    subline = `Resets in **${_fmtMs(_msTilNextMonday())}**  ·  personalized for you`;
   } else {
     items   = db.getShopItems(guildId);
+    subicon = '📦';
     subline = `**${items.length}** item${items.length !== 1 ? 's' : ''} in the pool`;
   }
 
@@ -140,46 +136,43 @@ async function _buildShopEmbed(guildId, userId, tab, page, guild, author) {
   const embed = new EmbedBuilder()
     .setColor(SHOP_COLORS[tab])
     .setTitle(SHOP_TITLES[tab])
-    .setAuthor({ name: `${author.username}'s Shop`, iconURL: author.displayAvatarURL({ size: 64 }) })
+    .setAuthor({ name: `${author.username}'s shop`, iconURL: author.displayAvatarURL({ size: 64 }) })
     .setThumbnail(guild.iconURL({ size: 128 }) || null)
     .setDescription(
-      `> 💳  **${fmt(userCr.amount)} credits**\n` +
-      `> ${subline}\n` +
-      `> Use \`\`,buy <id>\`\` to purchase`
+      `💳  **${fmt(userCr.amount)} cr** in your wallet\n` +
+      `${subicon}  ${subline}\n` +
+      `-# ,buy <id> to purchase`
     )
     .setFooter({ text: `Page ${page + 1} / ${totalPages}  ·  flux credits` })
     .setTimestamp();
 
   if (!slice.length) {
-    embed.addFields({ name: '─  Empty  ─', value: 'No items available yet — admins can add with `,additem`.', inline: false });
+    embed.addFields({ name: 'No items yet', value: 'Admins can stock the shop with `,additem`.', inline: false });
     return { embed, totalPages, page };
   }
 
   for (const item of slice) {
-    const icon      = TYPE_ICON[item.type] || '📦';
-    const bar       = RARITY_BARS[item.rarity] || RARITY_BARS.common;
-    const badge     = RARITY_BADGE[item.rarity] || '⬜ Common';
-    const outStock  = item.stock !== -1 && item.sold >= item.stock;
-    const stockStr  = outStock ? '~~sold out~~' : item.stock === -1 ? '∞' : `${item.stock - item.sold} left`;
+    const icon     = TYPE_ICON[item.type] || '📦';
+    const badge    = RARITY_BADGE[item.rarity] || RARITY_BADGE.common;
+    const outStock = item.stock !== -1 && item.sold >= item.stock;
+    const stockStr = item.stock === -1 ? '∞ stock' : outStock ? 'sold out' : `${item.stock - item.sold} left`;
 
-    const isOwned   = (item.type === 'theme' && item.theme_name && db.hasTheme(guildId, userId, item.theme_name))
-                   || ((item.type === 'color_role' || item.type === 'role') && !!db.getUserPurchase(guildId, userId, item.id));
+    const isOwned  = (item.type === 'theme' && item.theme_name && db.hasTheme(guildId, userId, item.theme_name))
+                  || ((item.type === 'color_role' || item.type === 'role') && !!db.getUserPurchase(guildId, userId, item.id));
 
     let status;
-    if (isOwned)                         status = '✨ **owned**';
-    else if (outStock)                   status = '📦 **sold out**';
+    if (isOwned)                          status = '✨ owned';
+    else if (outStock)                    status = '🚫 sold out';
     else if (userCr.amount >= item.price) status = '✅';
-    else                                 status = '❌';
+    else                                  status = '❌';
 
-    const colorHint = item.type === 'color_role' && item.color ? `  \`${item.color}\`` : '';
+    // Build the single info line
+    const colorStr = item.type === 'color_role' && item.color ? `  \`${item.color}\`  ·` : '';
+    const infoLine = `${badge}${colorStr}  ·  **${fmt(item.price)} cr**  ·  ${stockStr}  ·  ${status}`;
 
     embed.addFields({
-      name:  `${icon}  ${item.name}${colorHint}  ·  \`#${item.id}\``,
-      value: [
-        `${bar}  ${badge}`,
-        `💳 **${fmt(item.price)} cr**  ·  ${stockStr}  ·  ${status}`,
-        item.description ? `> *${item.description}*` : null,
-      ].filter(v => v !== null).join('\n'),
+      name:  `${icon}  ${item.name}  ·  \`#${item.id}\``,
+      value: item.description ? `${infoLine}\n-# ${item.description}` : infoLine,
       inline: false,
     });
   }
