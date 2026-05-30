@@ -2,6 +2,7 @@
 
 const {
   SlashCommandBuilder, EmbedBuilder, PermissionFlagsBits,
+  ActionRowBuilder, ButtonBuilder, ButtonStyle,
 } = require('discord.js');
 const db = require('../database');
 
@@ -180,7 +181,79 @@ const automod = {
     // ── reset ──────────────────────────────────────────────────────────────────
     .addSubcommand(s => s
       .setName('reset')
-      .setDescription('Reset all automod settings to defaults')),
+      .setDescription('Reset all automod settings to defaults'))
+
+    // ── panel ──────────────────────────────────────────────────────────────────
+    .addSubcommand(s => s
+      .setName('panel')
+      .setDescription('Open an interactive panel to toggle automod rules on/off')),
+
+// ── Panel helpers ─────────────────────────────────────────────────────────────
+const RULES = [
+  { key: 'spam',      label: 'Spam',         field: 'spam_enabled'      },
+  { key: 'caps',      label: 'Caps',         field: 'caps_enabled'      },
+  { key: 'links',     label: 'Links',        field: 'links_enabled'     },
+  { key: 'words',     label: 'Words',        field: 'words_enabled'     },
+  { key: 'mentions',  label: 'Mentions',     field: 'mentions_enabled'  },
+  { key: 'emojis',    label: 'Emojis',       field: 'emojis_enabled'    },
+  { key: 'dupes',     label: 'Duplicates',   field: 'dupes_enabled'     },
+  { key: 'newaccts',  label: 'New Accounts', field: 'newaccts_enabled'  },
+  { key: 'zalgo',     label: 'Zalgo',        field: 'zalgo_enabled'     },
+  { key: 'strikes',   label: 'Strikes',      field: 'strikes_enabled'   },
+];
+
+function buildPanelEmbed(s, guild) {
+  const statusLine = s.enabled
+    ? `✅ **Enabled**  ·  Log: ${s.log_channel ? `<#${s.log_channel}>` : '⚠️ not set'}`
+    : `🔴 **Disabled**  ·  Use \`/automod setup enabled:true\` to turn on`;
+
+  const ruleLines = RULES.map(r => {
+    const on = !!s[r.field];
+    return `${on ? '✅' : '🔴'}  **${r.label}**`;
+  });
+
+  // Split into two columns
+  const col1 = ruleLines.slice(0, 5).join('\n');
+  const col2 = ruleLines.slice(5).join('\n');
+
+  return new EmbedBuilder()
+    .setColor(s.enabled ? PURPLE : 0x2B2D31)
+    .setTitle('⚙️ AutoMod Control Panel')
+    .setDescription(statusLine)
+    .addFields(
+      { name: '​', value: col1, inline: true },
+      { name: '​', value: col2, inline: true },
+    )
+    .setFooter({ text: `${guild.name}  ·  Click to toggle rules  ·  /automod <rule> to configure thresholds` })
+    .setTimestamp();
+}
+
+function buildPanelRows(s, uid) {
+  // Row 1: first 5 rules
+  const row1 = new ActionRowBuilder().addComponents(
+    RULES.slice(0, 5).map(r => new ButtonBuilder()
+      .setCustomId(`amp_${r.key}_${uid}`)
+      .setLabel(r.label)
+      .setStyle(s[r.field] ? ButtonStyle.Success : ButtonStyle.Danger))
+  );
+  // Row 2: remaining rules
+  const row2 = new ActionRowBuilder().addComponents(
+    RULES.slice(5).map(r => new ButtonBuilder()
+      .setCustomId(`amp_${r.key}_${uid}`)
+      .setLabel(r.label)
+      .setStyle(s[r.field] ? ButtonStyle.Success : ButtonStyle.Danger))
+  );
+  // Row 3: global toggle + close
+  const row3 = new ActionRowBuilder().addComponents(
+    new ButtonBuilder().setCustomId(`amp_enable_${uid}`)
+      .setLabel('✅ Enable AutoMod').setStyle(ButtonStyle.Primary).setDisabled(!!s.enabled),
+    new ButtonBuilder().setCustomId(`amp_disable_${uid}`)
+      .setLabel('🔴 Disable AutoMod').setStyle(ButtonStyle.Secondary).setDisabled(!s.enabled),
+    new ButtonBuilder().setCustomId(`amp_close_${uid}`)
+      .setLabel('Close').setStyle(ButtonStyle.Secondary),
+  );
+  return [row1, row2, row3];
+}
 
   async execute(interaction) {
     const guildId = interaction.guildId;
@@ -408,6 +481,55 @@ const automod = {
       db.get('DELETE FROM automod_settings WHERE guild_id=?', [guildId]);
       db.get('DELETE FROM automod_strikes WHERE guild_id=?', [guildId]);
       return interaction.editReply('✅ All automod settings reset to defaults.');
+    }
+
+    if (sub === 'panel') {
+      const uid = interaction.user.id;
+      let s = db.getAutomodSettings(guildId);
+
+      await interaction.editReply({
+        embeds: [buildPanelEmbed(s, interaction.guild)],
+        components: buildPanelRows(s, uid),
+      });
+
+      const msg = await interaction.fetchReply();
+      const col = msg.createMessageComponentCollector({
+        filter: i => i.user.id === uid,
+        time: 300_000,
+      });
+
+      col.on('collect', async i => {
+        const id = i.customId;
+
+        if (id === `amp_close_${uid}`) {
+          col.stop();
+          return i.update({ components: [] });
+        }
+
+        if (id === `amp_enable_${uid}`)  db.setAutomodSettings(guildId, { enabled: 1 });
+        else if (id === `amp_disable_${uid}`) db.setAutomodSettings(guildId, { enabled: 0 });
+        else {
+          // Toggle a rule: amp_<key>_<uid>
+          const key = id.replace(`amp_`, '').replace(`_${uid}`, '');
+          const rule = RULES.find(r => r.key === key);
+          if (rule) {
+            s = db.getAutomodSettings(guildId);
+            db.setAutomodSettings(guildId, { [rule.field]: s[rule.field] ? 0 : 1 });
+          }
+        }
+
+        s = db.getAutomodSettings(guildId);
+        await i.update({
+          embeds: [buildPanelEmbed(s, interaction.guild)],
+          components: buildPanelRows(s, uid),
+        });
+      });
+
+      col.on('end', (_, reason) => {
+        if (reason !== 'user') interaction.editReply({ components: [] }).catch(() => {});
+      });
+
+      return;
     }
 
     if (sub === 'view') {
