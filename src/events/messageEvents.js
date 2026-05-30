@@ -7,6 +7,8 @@ module.exports = (client) => {
 
   // ── Message deleted ──────────────────────────────────────────────────────────
   client.on('messageDelete', async (message) => {
+    // Partial messages (not cached) can't be fetched after deletion — skip if author unknown
+    if (message.partial) return;
     if (!message.guild || message.author?.bot) return;
 
     const content = message.content || '[no text content]';
@@ -58,32 +60,40 @@ module.exports = (client) => {
 
   // ── Message edited ───────────────────────────────────────────────────────────
   client.on('messageUpdate', async (oldMsg, newMsg) => {
-    if (!oldMsg.guild || oldMsg.author?.bot) return;
+    // Fetch partials so we always have full author + content data
+    try {
+      if (newMsg.partial) newMsg = await newMsg.fetch();
+      if (oldMsg.partial) oldMsg = await oldMsg.fetch().catch(() => oldMsg);
+    } catch { return; }
+
+    // Use newMsg.author as fallback — same user either way
+    const author = oldMsg.author ?? newMsg.author;
+    if (!newMsg.guild || author?.bot) return;
     if (oldMsg.content === newMsg.content) return;
 
     db.setSnipe(
       oldMsg.guild.id, oldMsg.channel.id,
       oldMsg.content || '[no text]',
-      oldMsg.author?.id ?? null, oldMsg.author?.tag ?? null,
-      oldMsg.author?.displayAvatarURL() ?? null, 'edit'
+      author?.id ?? null, author?.tag ?? null,
+      author?.displayAvatarURL() ?? null, 'edit'
     );
 
-    const settings = db.getGuildSettings(oldMsg.guild.id);
+    const settings = db.getGuildSettings(newMsg.guild.id);
     if (!settings?.log_channel) return;
-    const logCh = oldMsg.guild.channels.cache.get(settings.log_channel);
+    const logCh = newMsg.guild.channels.cache.get(settings.log_channel);
     if (!logCh) return;
 
     const embed = new EmbedBuilder()
       .setColor('#FEE75C')
-      .setAuthor({ name: `${oldMsg.author?.tag || 'Unknown'} — message edited`, iconURL: oldMsg.author?.displayAvatarURL() })
+      .setAuthor({ name: `${author?.tag || author?.username || 'Unknown'} — message edited`, iconURL: author?.displayAvatarURL() })
       .addFields(
-        { name: '📍 Channel', value: `<#${oldMsg.channel.id}>`, inline: true },
+        { name: '📍 Channel', value: `<#${newMsg.channel.id}>`, inline: true },
         { name: '🔗 Jump', value: `[View message](${newMsg.url})`, inline: true },
-        { name: '📝 Before', value: (oldMsg.content || '*empty*').slice(0, 512) },
+        { name: '📝 Before', value: (oldMsg.content || '*[not cached]*').slice(0, 512) },
         { name: '✏️ After',  value: (newMsg.content || '*empty*').slice(0, 512) },
       )
-      .setThumbnail(oldMsg.author?.displayAvatarURL())
-      .setFooter({ text: `User ID: ${oldMsg.author?.id}` })
+      .setThumbnail(author?.displayAvatarURL())
+      .setFooter({ text: `User ID: ${author?.id ?? 'unknown'}` })
       .setTimestamp();
 
     logCh.send({ embeds: [embed] }).catch(() => {});
