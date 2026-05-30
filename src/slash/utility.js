@@ -652,7 +652,18 @@ const afk = {
     .addStringOption(o => o.setName('reason').setDescription('AFK reason')),
   async execute(interaction) {
     const reason = interaction.options.getString('reason') || 'AFK';
-    db.setAfk(interaction.guild.id, interaction.user.id, reason);
+    const member = interaction.member;
+
+    // Store original nickname so we can restore it on return
+    const originalNick = member.nickname ?? null;
+    db.setAfk(interaction.guild.id, interaction.user.id, reason, originalNick);
+
+    // Change nickname to [AFK] name (best-effort — bot may lack perms or user is owner)
+    const displayName = member.displayName;
+    if (!displayName.startsWith('[AFK]')) {
+      member.setNickname(`[AFK] ${displayName}`.slice(0, 32)).catch(() => {});
+    }
+
     const embed = new EmbedBuilder()
       .setColor(YELLOW)
       .setAuthor({ name: `💤 ${interaction.user.tag} is now AFK`, iconURL: interaction.user.displayAvatarURL() })

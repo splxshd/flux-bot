@@ -207,6 +207,13 @@ async function handleMessage(client, message) {
     const myAfk = db.getAfk(guild.id, message.author.id);
     if (myAfk) {
       db.removeAfk(guild.id, message.author.id);
+
+      // Restore original nickname (remove [AFK] prefix)
+      if (message.member) {
+        const restoredNick = myAfk.nick ?? null; // null = remove custom nick (show username)
+        message.member.setNickname(restoredNick).catch(() => {});
+      }
+
       const embed = new EmbedBuilder()
         .setColor(GREEN)
         .setAuthor({ name: `Welcome back, ${message.member?.displayName || message.author.username}!`, iconURL: message.author.displayAvatarURL() })

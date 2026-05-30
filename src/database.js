@@ -646,8 +646,8 @@ function getWebhooksByChannel(guildId, channelId) {
 }
 
 // afk
-function setAfk(guildId, userId, reason) {
-  return run('INSERT OR REPLACE INTO afk (guild_id, user_id, reason) VALUES (?, ?, ?)', [guildId, userId, reason]);
+function setAfk(guildId, userId, reason, nick = null) {
+  return run('INSERT OR REPLACE INTO afk (guild_id, user_id, reason, nick) VALUES (?, ?, ?, ?)', [guildId, userId, reason, nick]);
 }
 
 function getAfk(guildId, userId) {
@@ -1696,9 +1696,12 @@ function _runSchema() {
   guild_id TEXT NOT NULL,
   user_id TEXT NOT NULL,
   reason TEXT,
+  nick TEXT,
   set_at INTEGER DEFAULT (strftime('%s','now')),
   PRIMARY KEY (guild_id, user_id)
 )`);
+  // migration: add nick column to existing deployments
+  try { db.prepare('ALTER TABLE afk ADD COLUMN nick TEXT').run(); } catch {};
 
   db.run(`CREATE TABLE IF NOT EXISTS wallets (
   user_id TEXT PRIMARY KEY,
