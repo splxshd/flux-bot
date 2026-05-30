@@ -2334,7 +2334,8 @@ function generateUserWeeklyShop(guildId, userId) {
     if (ids.length > 0) return ids;
   }
   const items    = db.all('SELECT * FROM shop_items WHERE guild_id=? AND active=1', [guildId]);
-  const selected = _weightedSelect(items, `${userId}:weekly:${week}`, 6);
+  // Max 2 items of the same type so the weekly shop is always a mix
+  const selected = _typeLimitedSelect(items, `${userId}:weekly:${week}`, 6, 2);
   const ids      = selected.map(i => i.id);
   if (ids.length > 0) {
     db.run('INSERT OR REPLACE INTO user_weekly_shops (guild_id, user_id, week, item_ids) VALUES (?, ?, ?, ?)',
