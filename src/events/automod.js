@@ -10,7 +10,8 @@ const dupesTracker = new Map(); // `guildId:userId` → [{content, ts}]
 // ── Regexes ───────────────────────────────────────────────────────────────────
 const URL_REGEX    = /https?:\/\/[^\s<]+|discord\.gg\/\S+|discord\.com\/invite\/\S+/gi;
 const INVITE_REGEX = /discord\.gg\/\S+|discord\.com\/invite\/\S+/gi;
-const EMOJI_REGEX  = /(\p{Emoji_Presentation}|\p{Extended_Pictographic}|<a?:\w+:\d+>)/gu;
+const EMOJI_REGEX  = /(\p{Emoji_Presentation}|<a?:\w+:\d+>)/gu;
+// Zalgo: combining diacritical ranges (hex escapes so encoding can't mangle them)
 const ZALGO_REGEX  = /[̀-ͯ҉᪰-᫿᷀-᷿⃐-⃿︠-︯]{3,}/g;
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
