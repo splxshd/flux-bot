@@ -995,6 +995,284 @@ app.get('/api/guilds', auth, (req, res) => {
   }
 });
 
+// ─── Internal Dashboard Bridge Endpoints ─────────────────────────────────────
+// All POST /internal/* — used by nights-dashboard via bot-bridge.js
+// Auth is the same Bearer API_SECRET as all other routes.
+
+app.post('/internal/ban', auth, async (req, res) => {
+  const { guildId, userId, reason, deleteMessageDays } = req.body;
+  if (!guildId || !userId) return res.status(400).json({ error: 'guildId and userId required' });
+  try {
+    const client = req.app.locals.client;
+    const guild  = await client.guilds.fetch(guildId);
+    await guild.bans.create(userId, { reason: reason || 'Banned via dashboard', deleteMessageSeconds: (deleteMessageDays || 0) * 86400 });
+    res.json({ ok: true });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.post('/internal/unban', auth, async (req, res) => {
+  const { guildId, userId, reason } = req.body;
+  if (!guildId || !userId) return res.status(400).json({ error: 'guildId and userId required' });
+  try {
+    const client = req.app.locals.client;
+    const guild  = await client.guilds.fetch(guildId);
+    await guild.bans.remove(userId, reason || 'Unbanned via dashboard');
+    res.json({ ok: true });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.post('/internal/kick', auth, async (req, res) => {
+  const { guildId, userId, reason } = req.body;
+  if (!guildId || !userId) return res.status(400).json({ error: 'guildId and userId required' });
+  try {
+    const client = req.app.locals.client;
+    const guild  = await client.guilds.fetch(guildId);
+    const member = await guild.members.fetch(userId);
+    await member.kick(reason || 'Kicked via dashboard');
+    res.json({ ok: true });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.post('/internal/mute', auth, async (req, res) => {
+  const { guildId, userId, reason, durationMs } = req.body;
+  if (!guildId || !userId) return res.status(400).json({ error: 'guildId and userId required' });
+  try {
+    const client = req.app.locals.client;
+    const guild  = await client.guilds.fetch(guildId);
+    const member = await guild.members.fetch(userId);
+    // Use Discord timeout (max 28 days)
+    const ms = Math.min(durationMs || 600_000, 28 * 24 * 60 * 60 * 1000);
+    await member.timeout(ms, reason || 'Muted via dashboard');
+    res.json({ ok: true });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.post('/internal/unmute', auth, async (req, res) => {
+  const { guildId, userId, reason } = req.body;
+  if (!guildId || !userId) return res.status(400).json({ error: 'guildId and userId required' });
+  try {
+    const client = req.app.locals.client;
+    const guild  = await client.guilds.fetch(guildId);
+    const member = await guild.members.fetch(userId);
+    await member.timeout(null, reason || 'Unmuted via dashboard');
+    res.json({ ok: true });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.post('/internal/send-message', auth, async (req, res) => {
+  const { guildId, channelId, content } = req.body;
+  if (!guildId || !channelId || !content) return res.status(400).json({ error: 'guildId, channelId, content required' });
+  try {
+    const client  = req.app.locals.client;
+    const guild   = await client.guilds.fetch(guildId);
+    const channel = guild.channels.cache.get(channelId) || await guild.channels.fetch(channelId);
+    if (!channel) return res.status(404).json({ error: 'Channel not found' });
+    const msg = await channel.send(content);
+    res.json({ ok: true, messageId: msg.id });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.post('/internal/send-embed', auth, async (req, res) => {
+  const { guildId, channelId, embed } = req.body;
+  if (!guildId || !channelId || !embed) return res.status(400).json({ error: 'guildId, channelId, embed required' });
+  try {
+    const { EmbedBuilder } = require('discord.js');
+    const client  = req.app.locals.client;
+    const guild   = await client.guilds.fetch(guildId);
+    const channel = guild.channels.cache.get(channelId) || await guild.channels.fetch(channelId);
+    if (!channel) return res.status(404).json({ error: 'Channel not found' });
+    const emb = new EmbedBuilder();
+    if (embed.title)       emb.setTitle(embed.title);
+    if (embed.description) emb.setDescription(embed.description);
+    if (embed.color)       emb.setColor(embed.color);
+    if (embed.footer)      emb.setFooter({ text: embed.footer });
+    if (embed.author)      emb.setAuthor({ name: embed.author, iconURL: embed.authorIcon || undefined });
+    if (embed.image)       emb.setImage(embed.image);
+    if (embed.thumbnail)   emb.setThumbnail(embed.thumbnail);
+    if (Array.isArray(embed.fields)) {
+      for (const f of embed.fields) {
+        if (f.name && f.value) emb.addFields({ name: f.name, value: f.value, inline: !!f.inline });
+      }
+    }
+    const msg = await channel.send({ embeds: [emb] });
+    res.json({ ok: true, messageId: msg.id });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.post('/internal/lock-server', auth, async (req, res) => {
+  const { guildId, reason } = req.body;
+  if (!guildId) return res.status(400).json({ error: 'guildId required' });
+  try {
+    const { PermissionFlagsBits } = require('discord.js');
+    const client = req.app.locals.client;
+    const guild  = await client.guilds.fetch(guildId);
+    await guild.channels.fetch();
+    const everyone = guild.roles.everyone;
+    const failed = [];
+    for (const [, ch] of guild.channels.cache) {
+      if (ch.type !== 0) continue; // text channels only
+      try {
+        await ch.permissionOverwrites.edit(everyone, { SendMessages: false }, { reason: reason || 'Server lockdown via dashboard' });
+      } catch { failed.push(ch.id); }
+    }
+    res.json({ ok: true, failed });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.post('/internal/unlock-server', auth, async (req, res) => {
+  const { guildId, reason } = req.body;
+  if (!guildId) return res.status(400).json({ error: 'guildId required' });
+  try {
+    const client = req.app.locals.client;
+    const guild  = await client.guilds.fetch(guildId);
+    await guild.channels.fetch();
+    const everyone = guild.roles.everyone;
+    const failed = [];
+    for (const [, ch] of guild.channels.cache) {
+      if (ch.type !== 0) continue;
+      try {
+        await ch.permissionOverwrites.edit(everyone, { SendMessages: null }, { reason: reason || 'Server unlocked via dashboard' });
+      } catch { failed.push(ch.id); }
+    }
+    res.json({ ok: true, failed });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.post('/internal/end-giveaway', auth, async (req, res) => {
+  const { guildId, giveawayId } = req.body;
+  if (!guildId || !giveawayId) return res.status(400).json({ error: 'guildId and giveawayId required' });
+  try {
+    const giveaway = db.getGiveaway(parseInt(giveawayId));
+    if (!giveaway) return res.status(404).json({ error: 'Giveaway not found' });
+    const entries = db.getEntries(parseInt(giveawayId));
+    db.endGiveaway(parseInt(giveawayId));
+    const winnerCount = giveaway.winners || 1;
+    const winners = [];
+    if (entries.length > 0) {
+      const shuffled = [...entries].sort(() => Math.random() - 0.5);
+      for (let i = 0; i < Math.min(winnerCount, shuffled.length); i++) winners.push(shuffled[i].user_id);
+    }
+    try {
+      const client  = req.app.locals.client;
+      const guild   = await client.guilds.fetch(guildId);
+      const channel = guild.channels.cache.get(giveaway.channel_id) || await guild.channels.fetch(giveaway.channel_id);
+      if (channel) {
+        const text = winners.length ? winners.map(w => `<@${w}>`).join(', ') : 'No valid entries';
+        await channel.send({ content: `🎉 **${giveaway.prize}** ended! Winners: ${text}` });
+      }
+    } catch {}
+    res.json({ ok: true, winners });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.post('/internal/reroll-giveaway', auth, async (req, res) => {
+  const { guildId, giveawayId } = req.body;
+  if (!guildId || !giveawayId) return res.status(400).json({ error: 'guildId and giveawayId required' });
+  try {
+    const giveaway = db.getGiveaway(parseInt(giveawayId));
+    if (!giveaway) return res.status(404).json({ error: 'Giveaway not found' });
+    const entries = db.getEntries(parseInt(giveawayId));
+    if (!entries.length) return res.status(400).json({ error: 'No entries' });
+    const winner = entries[Math.floor(Math.random() * entries.length)].user_id;
+    try {
+      const client  = req.app.locals.client;
+      const guild   = await client.guilds.fetch(guildId);
+      const channel = guild.channels.cache.get(giveaway.channel_id) || await guild.channels.fetch(giveaway.channel_id);
+      if (channel) await channel.send({ content: `🎉 **${giveaway.prize}** rerolled! New winner: <@${winner}>` });
+    } catch {}
+    res.json({ ok: true, winner });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.post('/internal/close-ticket', auth, async (req, res) => {
+  const { guildId, ticketId, reason } = req.body;
+  if (!guildId || !ticketId) return res.status(400).json({ error: 'guildId and ticketId required' });
+  try {
+    const ticket = db.all('SELECT * FROM tickets WHERE id=? AND guild_id=?', [ticketId, guildId])[0];
+    if (!ticket) return res.status(404).json({ error: 'Ticket not found' });
+    db.run("UPDATE tickets SET status='closed', closed_at=? WHERE id=?", [Math.floor(Date.now() / 1000), ticketId]);
+    // Optionally delete or archive channel
+    try {
+      const client  = req.app.locals.client;
+      const guild   = await client.guilds.fetch(guildId);
+      const channel = ticket.channel_id ? (guild.channels.cache.get(ticket.channel_id) || await guild.channels.fetch(ticket.channel_id).catch(() => null)) : null;
+      if (channel) await channel.send({ content: `🔒 Ticket closed${reason ? `: ${reason}` : ''} — by dashboard` }).catch(() => {});
+    } catch {}
+    res.json({ ok: true });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.post('/internal/add-role', auth, async (req, res) => {
+  const { guildId, userId, roleId, reason } = req.body;
+  if (!guildId || !userId || !roleId) return res.status(400).json({ error: 'guildId, userId, roleId required' });
+  try {
+    const client = req.app.locals.client;
+    const guild  = await client.guilds.fetch(guildId);
+    const member = await guild.members.fetch(userId);
+    await member.roles.add(roleId, reason || 'Added via dashboard');
+    res.json({ ok: true });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.post('/internal/remove-role', auth, async (req, res) => {
+  const { guildId, userId, roleId, reason } = req.body;
+  if (!guildId || !userId || !roleId) return res.status(400).json({ error: 'guildId, userId, roleId required' });
+  try {
+    const client = req.app.locals.client;
+    const guild  = await client.guilds.fetch(guildId);
+    const member = await guild.members.fetch(userId);
+    await member.roles.remove(roleId, reason || 'Removed via dashboard');
+    res.json({ ok: true });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.post('/internal/set-bot-status', auth, async (req, res) => {
+  const { status, activityType, activityText } = req.body;
+  try {
+    const client = req.app.locals.client;
+    const presenceStatus = status || 'online'; // online | idle | dnd | invisible
+    const { ActivityType } = require('discord.js');
+    const typeMap = { PLAYING: ActivityType.Playing, WATCHING: ActivityType.Watching, LISTENING: ActivityType.Listening, COMPETING: ActivityType.Competing, STREAMING: ActivityType.Streaming };
+    const activities = activityText
+      ? [{ name: activityText, type: typeMap[activityType] ?? ActivityType.Playing }]
+      : [];
+    client.user.setPresence({ status: presenceStatus, activities });
+    res.json({ ok: true });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.post('/internal/post-panel', auth, async (req, res) => {
+  // Re-use the existing /api/guild/:guildId/panel/send logic
+  const { guildId, channelId, embedData, dropdown } = req.body;
+  if (!guildId || !channelId) return res.status(400).json({ error: 'guildId and channelId required' });
+  try {
+    const { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
+    const client  = req.app.locals.client;
+    const guild   = await client.guilds.fetch(guildId);
+    const channel = guild.channels.cache.get(channelId) || await guild.channels.fetch(channelId);
+    if (!channel) return res.status(404).json({ error: 'Channel not found' });
+
+    const emb = new EmbedBuilder();
+    if (embedData?.title)       emb.setTitle(embedData.title);
+    if (embedData?.description) emb.setDescription(embedData.description);
+    if (embedData?.color)       emb.setColor(embedData.color);
+    if (embedData?.footer)      emb.setFooter({ text: embedData.footer });
+
+    const components = [];
+    if (dropdown?.buttonLabel) {
+      const styleMap = { PRIMARY: ButtonStyle.Primary, SECONDARY: ButtonStyle.Secondary, SUCCESS: ButtonStyle.Success, DANGER: ButtonStyle.Danger };
+      const btn = new ButtonBuilder()
+        .setCustomId(`panel_open:${guildId}:${Date.now()}`)
+        .setLabel(dropdown.buttonLabel)
+        .setStyle(styleMap[dropdown.buttonStyle] ?? ButtonStyle.Primary);
+      components.push(new ActionRowBuilder().addComponents(btn));
+    }
+
+    const msg = await channel.send({ embeds: embedData ? [emb] : [], components });
+    res.json({ ok: true, messageId: msg.id });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
 // ─── Health check ─────────────────────────────────────────────────────────────
 app.get('/health', (_, res) => res.json({ status: 'ok', uptime: process.uptime() }));
 
