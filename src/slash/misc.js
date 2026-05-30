@@ -123,4 +123,4 @@ const setprefix = {
   },
 };
 
-module.exports = [setstatus, restart, setprefix];
+module.exports = [setstatus, setprefix];
