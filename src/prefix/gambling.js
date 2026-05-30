@@ -406,24 +406,11 @@ const coinflip = {
     const eco     = db.getEco(guildId, userId);
     const s       = db.getEcoSettings(guildId);
 
-    // ── Cooldown: one flip per 60 seconds ─────────────────────────────────────
-    const COIN_CD = 60;
-    const now = Math.floor(Date.now() / 1000);
-    if (eco.cf_at && now - eco.cf_at < COIN_CD) {
-      const left = eco.cf_at + COIN_CD - now;
-      return message.reply({ embeds: [new EmbedBuilder()
-        .setColor(RED)
-        .setDescription(`⏳ You already flipped. Try again in **${left}s**.`)] });
-    }
-
     const bet = parseBet(args[0], eco.wallet);
     if (args[0]) {
       const err = checkBet(eco, bet, s);
       if (err) return message.reply({ embeds: [new EmbedBuilder().setColor(RED).setDescription(err)] });
     }
-
-    // Lock cooldown immediately so they can't spam before picking
-    db.setCfAt(guildId, userId, now);
 
     const btnLabel = (side) => bet ? `${side} (${fmtCoins(bet)} ${s.currency_emoji})` : side;
     const pickRow = new ActionRowBuilder().addComponents(
@@ -471,7 +458,7 @@ const coinflip = {
           `${result === 'heads' ? '🟡' : '⚪'} **${result.toUpperCase()}!**\n\n` +
           (won ? `🎉 You called it!${payoutLine}` : `💀 You picked **${choice}** — better luck next time!${payoutLine}`)
         )
-        .setFooter({ text: `Cooldown: ${COIN_CD}s · flux` });
+        .setFooter({ text: 'flux' });
 
       await sent.edit({ embeds: [resultEmbed], components: [] });
     });
