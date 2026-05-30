@@ -3,6 +3,7 @@
 const {
   SlashCommandBuilder, EmbedBuilder, PermissionFlagsBits,
   ActionRowBuilder, ButtonBuilder, ButtonStyle,
+  StringSelectMenuBuilder, ModalBuilder, TextInputBuilder, TextInputStyle,
 } = require('discord.js');
 const db = require('../database');
 
@@ -124,6 +125,15 @@ function buildPanelRows(s, uid) {
       .setStyle(s[r.field] ? ButtonStyle.Success : ButtonStyle.Danger))
   );
   const row3 = new ActionRowBuilder().addComponents(
+    new StringSelectMenuBuilder()
+      .setCustomId(`amp_cfg_${uid}`)
+      .setPlaceholder('⚙️  Configure a rule…')
+      .addOptions([
+        { label: 'Global Setup', value: 'setup', description: 'Set log channel & master toggle', emoji: '⚙️' },
+        ...RULES.map(r => ({ label: r.label, value: r.key, description: `Configure ${r.label} thresholds & action`, emoji: r.emoji })),
+      ])
+  );
+  const row4 = new ActionRowBuilder().addComponents(
     new ButtonBuilder().setCustomId(`amp_enable_${uid}`)
       .setEmoji('✅').setLabel('Enable').setStyle(ButtonStyle.Success).setDisabled(!!s.enabled),
     new ButtonBuilder().setCustomId(`amp_disable_${uid}`)
@@ -131,7 +141,275 @@ function buildPanelRows(s, uid) {
     new ButtonBuilder().setCustomId(`amp_close_${uid}`)
       .setEmoji('✖️').setLabel('Close').setStyle(ButtonStyle.Secondary),
   );
-  return [row1, row2, row3];
+  return [row1, row2, row3, row4];
+}
+
+// ── Per-rule configuration metadata ──────────────────────────────────────────
+// desc(s) → description string for the rule config embed
+// modalFields → array of { id, label, value(s), long? } for the modal
+// saveModal(fields, submit) → writes parsed values into `fields` object
+const RULE_CFG = {
+  setup: {
+    label: 'Global Setup', emoji: '⚙️',
+    actionField: null,
+    desc: s => `**Status:** ${s.enabled ? '🟢 Enabled' : '🔴 Disabled'}\n**Log Channel:** ${s.log_channel ? `<#${s.log_channel}>` : '⚠️ *not configured*'}`,
+    modalTitle: '⚙️ Global Setup',
+    modalFields: [
+      { id: 'log_channel', label: 'Log Channel ID  (right-click → Copy ID)', value: s => s.log_channel || '' },
+    ],
+    saveModal: (fields, submit) => {
+      const raw = submit.fields.getTextInputValue('log_channel').trim().replace(/\D/g, '');
+      if (raw) fields.log_channel = raw;
+    },
+  },
+  spam: {
+    actionField: 'spam_action', actionChoices: ACTION_CHOICES,
+    desc: s => `Fires when **${s.spam_limit}+ messages** sent in **${s.spam_interval}s**.\nTimeout duration: **${fmtDur(s.spam_timeout_dur)}**`,
+    modalTitle: '💬 Spam Filter — Values',
+    modalFields: [
+      { id: 'limit',    label: 'Message Limit  (2–20)',        value: s => String(s.spam_limit)       },
+      { id: 'interval', label: 'Interval in seconds  (1–60)',  value: s => String(s.spam_interval)    },
+      { id: 'timeout',  label: 'Timeout Duration secs  (60+)', value: s => String(s.spam_timeout_dur) },
+    ],
+    saveModal: (fields, submit) => {
+      const l = parseInt(submit.fields.getTextInputValue('limit'));
+      const i = parseInt(submit.fields.getTextInputValue('interval'));
+      const t = parseInt(submit.fields.getTextInputValue('timeout'));
+      if (!isNaN(l) && l >= 2  && l <= 20) fields.spam_limit       = l;
+      if (!isNaN(i) && i >= 1  && i <= 60) fields.spam_interval    = i;
+      if (!isNaN(t) && t >= 60)            fields.spam_timeout_dur = t;
+    },
+  },
+  caps: {
+    actionField: 'caps_action', actionChoices: ACTION_CHOICES,
+    desc: s => `Fires when ≥ **${s.caps_percent}%** of a message is uppercase.\nMin message length: **${s.caps_min_length}** chars.`,
+    modalTitle: '🔠 Caps Filter — Values',
+    modalFields: [
+      { id: 'percent', label: 'Caps Percentage  (50–100)',    value: s => String(s.caps_percent)    },
+      { id: 'minlen',  label: 'Min Message Length  (1–100)', value: s => String(s.caps_min_length) },
+    ],
+    saveModal: (fields, submit) => {
+      const p = parseInt(submit.fields.getTextInputValue('percent'));
+      const m = parseInt(submit.fields.getTextInputValue('minlen'));
+      if (!isNaN(p) && p >= 50 && p <= 100) fields.caps_percent    = p;
+      if (!isNaN(m) && m >= 1  && m <= 100) fields.caps_min_length = m;
+    },
+  },
+  links: {
+    actionField: 'links_action', actionChoices: ACTION_CHOICES,
+    desc: s => {
+      const wl = JSON.parse(s.links_whitelist || '[]');
+      return `Discord invites: **${s.links_invites ? 'blocked' : 'allowed'}**\nWhitelist: ${wl.length ? wl.join(', ') : '*none*'}`;
+    },
+    modalTitle: '🔗 Link Filter — Values',
+    modalFields: [
+      { id: 'invites',   label: 'Block Discord Invites?  (yes / no)',      value: s => s.links_invites ? 'yes' : 'no'                        },
+      { id: 'whitelist', label: 'Allowed Domains  (comma-separated)',       value: s => JSON.parse(s.links_whitelist || '[]').join(', '), long: true },
+    ],
+    saveModal: (fields, submit) => {
+      const inv = submit.fields.getTextInputValue('invites').toLowerCase().trim();
+      if (inv === 'yes' || inv === '1') fields.links_invites = 1;
+      else if (inv === 'no' || inv === '0') fields.links_invites = 0;
+      const raw = submit.fields.getTextInputValue('whitelist').trim();
+      const wl  = raw ? raw.split(',').map(d => d.trim().toLowerCase()
+        .replace(/^https?:\/\/(www\.)?/, '').split('/')[0]).filter(Boolean) : [];
+      fields.links_whitelist = JSON.stringify(wl);
+    },
+  },
+  words: {
+    actionField: 'words_action', actionChoices: ACTION_CHOICES,
+    desc: () => 'Banned word list is managed separately:\n`/automod words add` · `remove` · `list`',
+    modalTitle: null, modalFields: [],
+    saveModal: () => {},
+  },
+  mentions: {
+    actionField: 'mentions_action', actionChoices: ACTION_CHOICES,
+    desc: s => `Fires when a message contains ≥ **${s.mentions_limit} mentions**.`,
+    modalTitle: '📢 Mentions — Values',
+    modalFields: [
+      { id: 'limit', label: 'Mention Limit  (2–20)', value: s => String(s.mentions_limit) },
+    ],
+    saveModal: (fields, submit) => {
+      const l = parseInt(submit.fields.getTextInputValue('limit'));
+      if (!isNaN(l) && l >= 2 && l <= 20) fields.mentions_limit = l;
+    },
+  },
+  emojis: {
+    actionField: 'emojis_action', actionChoices: ACTION_CHOICES,
+    desc: s => `Fires when a message contains ≥ **${s.emojis_limit} emojis**.`,
+    modalTitle: '😄 Emojis — Values',
+    modalFields: [
+      { id: 'limit', label: 'Emoji Limit  (3–50)', value: s => String(s.emojis_limit) },
+    ],
+    saveModal: (fields, submit) => {
+      const l = parseInt(submit.fields.getTextInputValue('limit'));
+      if (!isNaN(l) && l >= 3 && l <= 50) fields.emojis_limit = l;
+    },
+  },
+  dupes: {
+    actionField: 'dupes_action', actionChoices: ACTION_CHOICES,
+    desc: s => `Fires when the same message is sent ≥ **${s.dupes_limit}×** within **${s.dupes_interval}s**.`,
+    modalTitle: '📋 Duplicates — Values',
+    modalFields: [
+      { id: 'limit',    label: 'Duplicate Count  (2–10)',      value: s => String(s.dupes_limit)    },
+      { id: 'interval', label: 'Interval in seconds  (5–300)', value: s => String(s.dupes_interval) },
+    ],
+    saveModal: (fields, submit) => {
+      const l = parseInt(submit.fields.getTextInputValue('limit'));
+      const i = parseInt(submit.fields.getTextInputValue('interval'));
+      if (!isNaN(l) && l >= 2 && l <= 10)  fields.dupes_limit    = l;
+      if (!isNaN(i) && i >= 5 && i <= 300) fields.dupes_interval = i;
+    },
+  },
+  newaccts: {
+    actionField: 'newaccts_action',
+    actionChoices: [{ name: '👢 Kick', value: 'kick' }, { name: '🔨 Ban', value: 'ban' }],
+    desc: s => `Kicks/bans accounts younger than **${s.newaccts_min_days} days**.`,
+    modalTitle: '🆕 New Accounts — Values',
+    modalFields: [
+      { id: 'min_days', label: 'Minimum Account Age in days  (1–365)', value: s => String(s.newaccts_min_days) },
+    ],
+    saveModal: (fields, submit) => {
+      const d = parseInt(submit.fields.getTextInputValue('min_days'));
+      if (!isNaN(d) && d >= 1 && d <= 365) fields.newaccts_min_days = d;
+    },
+  },
+  zalgo: {
+    actionField: 'zalgo_action', actionChoices: ACTION_CHOICES,
+    desc: () => 'Detects and removes corrupted/zalgo unicode text.\nNo numeric thresholds — just set an action.',
+    modalTitle: null, modalFields: [],
+    saveModal: () => {},
+  },
+  strikes: {
+    actionField: null,
+    desc: s => [
+      `Timeout at **${s.strikes_timeout_at}** strikes  (${fmtDur(s.strikes_timeout_dur)})`,
+      `Kick at **${s.strikes_kick_at}** strikes`,
+      `Ban at **${s.strikes_ban_at}** strikes`,
+      `Strikes decay after **${s.strikes_decay_hours}h** of clean behaviour`,
+    ].join('\n'),
+    modalTitle: '⚡ Strikes — Values',
+    modalFields: [
+      { id: 'timeout_at',  label: 'Timeout at Strike #  (1–10)',   value: s => String(s.strikes_timeout_at)  },
+      { id: 'timeout_dur', label: 'Timeout Duration secs  (60+)',  value: s => String(s.strikes_timeout_dur) },
+      { id: 'kick_at',     label: 'Kick at Strike #  (2–15)',      value: s => String(s.strikes_kick_at)     },
+      { id: 'ban_at',      label: 'Ban at Strike #  (3–20)',       value: s => String(s.strikes_ban_at)      },
+      { id: 'decay_hours', label: 'Decay After Hours  (1–720)',    value: s => String(s.strikes_decay_hours) },
+    ],
+    saveModal: (fields, submit) => {
+      const ta = parseInt(submit.fields.getTextInputValue('timeout_at'));
+      const td = parseInt(submit.fields.getTextInputValue('timeout_dur'));
+      const ka = parseInt(submit.fields.getTextInputValue('kick_at'));
+      const ba = parseInt(submit.fields.getTextInputValue('ban_at'));
+      const dh = parseInt(submit.fields.getTextInputValue('decay_hours'));
+      if (!isNaN(ta) && ta >= 1  && ta <= 10)      fields.strikes_timeout_at  = ta;
+      if (!isNaN(td) && td >= 60)                  fields.strikes_timeout_dur = td;
+      if (!isNaN(ka) && ka >= 2  && ka <= 15)      fields.strikes_kick_at     = ka;
+      if (!isNaN(ba) && ba >= 3  && ba <= 20)      fields.strikes_ban_at      = ba;
+      if (!isNaN(dh) && dh >= 1  && dh <= 720)     fields.strikes_decay_hours = dh;
+    },
+  },
+};
+
+// ── Rule config page embed ────────────────────────────────────────────────────
+function buildRuleConfigEmbed(s, ruleKey, guild) {
+  const cfg  = RULE_CFG[ruleKey];
+  const rule = ruleKey === 'setup'
+    ? { label: cfg.label, emoji: cfg.emoji, field: 'enabled' }
+    : RULES.find(r => r.key === ruleKey);
+
+  const enabled = ruleKey === 'setup' ? !!s.enabled : !!s[rule.field];
+
+  const embed = new EmbedBuilder()
+    .setColor(enabled ? 0x57F287 : 0xED4245)
+    .setAuthor({ name: `${guild.name}  ·  AutoMod Panel`, iconURL: guild.iconURL({ dynamic: true }) ?? undefined })
+    .setTitle(`${rule.emoji}  Configure: ${rule.label}`)
+    .setDescription(
+      (ruleKey !== 'setup' ? `**Status:** ${enabled ? '🟢 Enabled' : '🔴 Disabled'}\n\n` : '') +
+      cfg.desc(s)
+    )
+    .setFooter({ text: '◀ Back to return to the overview  ·  /automod view for all settings' })
+    .setTimestamp();
+
+  if (cfg.actionField) {
+    const action = s[cfg.actionField];
+    embed.addFields({ name: '⚡ Current Action', value: `${ACTION_EMOJI[action] ?? ''} **${action}**`, inline: true });
+  }
+
+  const icon = guild.iconURL({ dynamic: true });
+  if (icon) embed.setThumbnail(icon);
+  return embed;
+}
+
+// ── Rule config page buttons ──────────────────────────────────────────────────
+function buildRuleConfigRows(s, ruleKey, uid) {
+  const cfg  = RULE_CFG[ruleKey];
+  const rule = ruleKey === 'setup'
+    ? { label: cfg.label, emoji: cfg.emoji, field: 'enabled' }
+    : RULES.find(r => r.key === ruleKey);
+  const enabled = !!s[rule.field];
+  const rows = [];
+
+  // Row: Action select (if applicable)
+  if (cfg.actionField && cfg.actionChoices) {
+    const cur = s[cfg.actionField];
+    rows.push(new ActionRowBuilder().addComponents(
+      new StringSelectMenuBuilder()
+        .setCustomId(`amp_action_${ruleKey}_${uid}`)
+        .setPlaceholder(`⚡ Action: ${cur}`)
+        .addOptions(cfg.actionChoices.map(c => ({ label: c.name, value: c.value, default: c.value === cur })))
+    ));
+  }
+
+  // Row: Values · Toggle/Enable/Disable · Back
+  const btns = [];
+
+  if (cfg.modalTitle) {
+    btns.push(new ButtonBuilder()
+      .setCustomId(`amp_values_${ruleKey}_${uid}`)
+      .setEmoji('📝').setLabel('Set Values').setStyle(ButtonStyle.Primary));
+  }
+
+  if (ruleKey === 'setup') {
+    btns.push(
+      new ButtonBuilder().setCustomId(`amp_enable_${uid}`)
+        .setEmoji('✅').setLabel('Enable AutoMod').setStyle(ButtonStyle.Success).setDisabled(!!s.enabled),
+      new ButtonBuilder().setCustomId(`amp_disable_${uid}`)
+        .setEmoji('🔴').setLabel('Disable AutoMod').setStyle(ButtonStyle.Danger).setDisabled(!s.enabled),
+    );
+  } else {
+    btns.push(new ButtonBuilder()
+      .setCustomId(`amp_toggle_${ruleKey}_${uid}`)
+      .setEmoji(enabled ? '🔴' : '✅')
+      .setLabel(enabled ? 'Disable' : 'Enable')
+      .setStyle(enabled ? ButtonStyle.Danger : ButtonStyle.Success));
+  }
+
+  btns.push(new ButtonBuilder()
+    .setCustomId(`amp_back_${uid}`)
+    .setEmoji('◀️').setLabel('Back').setStyle(ButtonStyle.Secondary));
+
+  rows.push(new ActionRowBuilder().addComponents(btns));
+  return rows;
+}
+
+// ── Rule config modal ─────────────────────────────────────────────────────────
+function buildRuleModal(ruleKey, s, uid) {
+  const cfg   = RULE_CFG[ruleKey];
+  const modal = new ModalBuilder()
+    .setCustomId(`amp_modal_${ruleKey}_${uid}`)
+    .setTitle(cfg.modalTitle);
+  for (const f of cfg.modalFields) {
+    modal.addComponents(new ActionRowBuilder().addComponents(
+      new TextInputBuilder()
+        .setCustomId(f.id)
+        .setLabel(f.label)
+        .setStyle(f.long ? TextInputStyle.Paragraph : TextInputStyle.Short)
+        .setValue(f.value(s))
+        .setRequired(f.required !== false)
+    ));
+  }
+  return modal;
 }
 
 const automod = {
@@ -521,6 +799,7 @@ const automod = {
     if (sub === 'panel') {
       const uid = interaction.user.id;
       let s = db.getAutomodSettings(guildId);
+      let panelView = 'main'; // 'main' or a rule key from RULE_CFG
 
       await interaction.editReply({
         embeds: [buildPanelEmbed(s, interaction.guild)],
@@ -536,16 +815,80 @@ const automod = {
       col.on('collect', async i => {
         const id = i.customId;
 
+        // ── Close ───────────────────────────────────────────────────────────
         if (id === `amp_close_${uid}`) {
-          col.stop();
+          col.stop('user');
           return i.update({ components: [] });
         }
 
-        if (id === `amp_enable_${uid}`)  db.setAutomodSettings(guildId, { enabled: 1 });
+        // ── Navigate to rule config page ─────────────────────────────────────
+        if (id === `amp_cfg_${uid}`) {
+          panelView = i.values[0];
+          s = db.getAutomodSettings(guildId);
+          return i.update({
+            embeds: [buildRuleConfigEmbed(s, panelView, interaction.guild)],
+            components: buildRuleConfigRows(s, panelView, uid),
+          });
+        }
+
+        // ── Back to main panel ───────────────────────────────────────────────
+        if (id === `amp_back_${uid}`) {
+          panelView = 'main';
+          s = db.getAutomodSettings(guildId);
+          return i.update({
+            embeds: [buildPanelEmbed(s, interaction.guild)],
+            components: buildPanelRows(s, uid),
+          });
+        }
+
+        // ── Set Values → show modal, await submit ────────────────────────────
+        if (id.startsWith(`amp_values_`)) {
+          const ruleKey = id.slice('amp_values_'.length, -(uid.length + 1));
+          await i.showModal(buildRuleModal(ruleKey, db.getAutomodSettings(guildId), uid));
+
+          const submit = await i.awaitModalSubmit({
+            filter: m => m.customId === `amp_modal_${ruleKey}_${uid}` && m.user.id === uid,
+            time: 120_000,
+          }).catch(() => null);
+
+          if (submit) {
+            const fields = {};
+            RULE_CFG[ruleKey].saveModal(fields, submit);
+            if (Object.keys(fields).length) db.setAutomodSettings(guildId, fields);
+            await submit.deferUpdate().catch(() => {});
+            s = db.getAutomodSettings(guildId);
+            await msg.edit({
+              embeds: [buildRuleConfigEmbed(s, ruleKey, interaction.guild)],
+              components: buildRuleConfigRows(s, ruleKey, uid),
+            }).catch(() => {});
+          }
+          return;
+        }
+
+        // ── Action select (config page) ──────────────────────────────────────
+        if (id.startsWith(`amp_action_`)) {
+          const ruleKey = id.slice('amp_action_'.length, -(uid.length + 1));
+          const cfg = RULE_CFG[ruleKey];
+          if (cfg?.actionField) db.setAutomodSettings(guildId, { [cfg.actionField]: i.values[0] });
+        }
+
+        // ── Toggle rule (config page) ────────────────────────────────────────
+        else if (id.startsWith(`amp_toggle_`)) {
+          const ruleKey = id.slice('amp_toggle_'.length, -(uid.length + 1));
+          const rule = RULES.find(r => r.key === ruleKey);
+          if (rule) {
+            s = db.getAutomodSettings(guildId);
+            db.setAutomodSettings(guildId, { [rule.field]: s[rule.field] ? 0 : 1 });
+          }
+        }
+
+        // ── Enable / Disable master switch ───────────────────────────────────
+        else if (id === `amp_enable_${uid}`)  db.setAutomodSettings(guildId, { enabled: 1 });
         else if (id === `amp_disable_${uid}`) db.setAutomodSettings(guildId, { enabled: 0 });
+
+        // ── Main panel toggle buttons (amp_<ruleKey>_<uid>) ──────────────────
         else {
-          // Toggle a rule: amp_<key>_<uid>
-          const key = id.replace(`amp_`, '').replace(`_${uid}`, '');
+          const key = id.slice('amp_'.length, -(uid.length + 1));
           const rule = RULES.find(r => r.key === key);
           if (rule) {
             s = db.getAutomodSettings(guildId);
@@ -553,11 +896,12 @@ const automod = {
           }
         }
 
+        // ── Refresh whichever view we're on ──────────────────────────────────
         s = db.getAutomodSettings(guildId);
-        await i.update({
-          embeds: [buildPanelEmbed(s, interaction.guild)],
-          components: buildPanelRows(s, uid),
-        });
+        await i.update(panelView === 'main'
+          ? { embeds: [buildPanelEmbed(s, interaction.guild)],               components: buildPanelRows(s, uid)                    }
+          : { embeds: [buildRuleConfigEmbed(s, panelView, interaction.guild)], components: buildRuleConfigRows(s, panelView, uid) }
+        );
       });
 
       col.on('end', (_, reason) => {
