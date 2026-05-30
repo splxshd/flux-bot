@@ -179,6 +179,65 @@ function run(sql, params = []) {
 }
 
 // guild_settings
+// ── AutoMod ───────────────────────────────────────────────────────────────────
+function getAutomodSettings(guildId) {
+  let row = db.get('SELECT * FROM automod_settings WHERE guild_id=?', [guildId]);
+  if (!row) {
+    db.run('INSERT OR IGNORE INTO automod_settings (guild_id) VALUES (?)', [guildId]);
+    row = db.get('SELECT * FROM automod_settings WHERE guild_id=?', [guildId]);
+  }
+  return row;
+}
+function setAutomodSettings(guildId, fields) {
+  getAutomodSettings(guildId); // ensure row exists
+  for (const [k, v] of Object.entries(fields)) {
+    db.run(`UPDATE automod_settings SET ${k}=? WHERE guild_id=?`, [v, guildId]);
+  }
+}
+function getAutomodStrikes(guildId, userId) {
+  const row = db.get('SELECT * FROM automod_strikes WHERE guild_id=? AND user_id=?', [guildId, userId]);
+  return row ? row.count : 0;
+}
+function addAutomodStrike(guildId, userId, decayHours = 24) {
+  const now = Math.floor(Date.now() / 1000);
+  const decaySec = decayHours * 3600;
+  const row = db.get('SELECT * FROM automod_strikes WHERE guild_id=? AND user_id=?', [guildId, userId]);
+  let count = 1;
+  if (row) {
+    // Decay: if last strike was more than decayHours ago, reset
+    count = (now - row.last_at > decaySec) ? 1 : row.count + 1;
+    db.run('UPDATE automod_strikes SET count=?, last_at=? WHERE guild_id=? AND user_id=?', [count, now, guildId, userId]);
+  } else {
+    db.run('INSERT INTO automod_strikes (guild_id, user_id, count, last_at) VALUES (?,?,?,?)', [guildId, userId, 1, now]);
+  }
+  return count;
+}
+function clearAutomodStrikes(guildId, userId) {
+  db.run('DELETE FROM automod_strikes WHERE guild_id=? AND user_id=?', [guildId, userId]);
+}
+function getAutomodWords(guildId) {
+  const s = getAutomodSettings(guildId);
+  try { return JSON.parse(s.words_list || '[]'); } catch { return []; }
+}
+function addAutomodWord(guildId, word) {
+  const words = getAutomodWords(guildId);
+  const w = word.toLowerCase().trim();
+  if (words.includes(w)) return false;
+  words.push(w);
+  setAutomodSettings(guildId, { words_list: JSON.stringify(words) });
+  return true;
+}
+function removeAutomodWord(guildId, word) {
+  const words = getAutomodWords(guildId);
+  const w = word.toLowerCase().trim();
+  const idx = words.indexOf(w);
+  if (idx === -1) return false;
+  words.splice(idx, 1);
+  setAutomodSettings(guildId, { words_list: JSON.stringify(words) });
+  return true;
+}
+
+// guild_settings
 function getGuildSettings(guildId) {
   return get('SELECT * FROM guild_settings WHERE guild_id = ?', [guildId]);
 }
@@ -1326,6 +1385,59 @@ function getBetBettorCounts(betId) {
 
 // ─── Schema (run after DB opens) ─────────────────────────────────────────────
 function _runSchema() {
+  db.run(`CREATE TABLE IF NOT EXISTS automod_settings (
+  guild_id TEXT PRIMARY KEY,
+  enabled INTEGER DEFAULT 0,
+  log_channel TEXT,
+  spam_enabled INTEGER DEFAULT 0,
+  spam_limit INTEGER DEFAULT 5,
+  spam_interval INTEGER DEFAULT 5,
+  spam_action TEXT DEFAULT 'delete',
+  spam_timeout_dur INTEGER DEFAULT 300,
+  caps_enabled INTEGER DEFAULT 0,
+  caps_min_length INTEGER DEFAULT 8,
+  caps_percent INTEGER DEFAULT 70,
+  caps_action TEXT DEFAULT 'delete',
+  links_enabled INTEGER DEFAULT 0,
+  links_invites INTEGER DEFAULT 1,
+  links_action TEXT DEFAULT 'delete',
+  links_whitelist TEXT DEFAULT '[]',
+  words_enabled INTEGER DEFAULT 0,
+  words_action TEXT DEFAULT 'delete',
+  words_list TEXT DEFAULT '[]',
+  mentions_enabled INTEGER DEFAULT 0,
+  mentions_limit INTEGER DEFAULT 5,
+  mentions_action TEXT DEFAULT 'delete',
+  emojis_enabled INTEGER DEFAULT 0,
+  emojis_limit INTEGER DEFAULT 10,
+  emojis_action TEXT DEFAULT 'delete',
+  dupes_enabled INTEGER DEFAULT 0,
+  dupes_limit INTEGER DEFAULT 3,
+  dupes_interval INTEGER DEFAULT 30,
+  dupes_action TEXT DEFAULT 'delete',
+  newaccts_enabled INTEGER DEFAULT 0,
+  newaccts_min_days INTEGER DEFAULT 7,
+  newaccts_action TEXT DEFAULT 'kick',
+  zalgo_enabled INTEGER DEFAULT 0,
+  zalgo_action TEXT DEFAULT 'delete',
+  strikes_enabled INTEGER DEFAULT 1,
+  strikes_timeout_at INTEGER DEFAULT 3,
+  strikes_timeout_dur INTEGER DEFAULT 300,
+  strikes_kick_at INTEGER DEFAULT 5,
+  strikes_ban_at INTEGER DEFAULT 7,
+  strikes_decay_hours INTEGER DEFAULT 24,
+  exempt_roles TEXT DEFAULT '[]',
+  exempt_channels TEXT DEFAULT '[]'
+)`);
+
+  db.run(`CREATE TABLE IF NOT EXISTS automod_strikes (
+  guild_id TEXT NOT NULL,
+  user_id TEXT NOT NULL,
+  count INTEGER DEFAULT 0,
+  last_at INTEGER DEFAULT 0,
+  PRIMARY KEY (guild_id, user_id)
+)`);
+
   db.run(`CREATE TABLE IF NOT EXISTS guild_settings (
   guild_id TEXT PRIMARY KEY,
   prefix TEXT DEFAULT '!',
@@ -2445,6 +2557,9 @@ function closeDb() {
 module.exports = {
   _dbReady,
   get, all, run,
+  getAutomodSettings, setAutomodSettings,
+  getAutomodStrikes, addAutomodStrike, clearAutomodStrikes,
+  getAutomodWords, addAutomodWord, removeAutomodWord,
   getGuildSettings, upsertGuildSettings,
   addWarning, getWarnings, clearWarnings,
   addMute, getMute, removeMute, getExpiredMutes, getAllMutes,

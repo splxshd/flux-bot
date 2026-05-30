@@ -1131,7 +1131,7 @@ const poll = {
 module.exports = [
   ping, say, purge, snipe, editsnipe, clearsnipe,
   lock, unlock, hide, unhide, slowmode, channel, thread, webhook,
-  stickymessage, alias, calc, afk, remind, uptime,
+  stickymessage, alias, calc, afk, remind,
   translate,
   log, autoresponder, reaction,
   serverinfo, userinfo, avatar, banner, embed, poll,
