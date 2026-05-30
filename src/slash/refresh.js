@@ -62,4 +62,4 @@ const refresh = {
   },
 };
 
-module.exports = [refresh];
+module.exports = [];
