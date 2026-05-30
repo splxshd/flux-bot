@@ -907,5 +907,4 @@ const info = {
 };
 
 // Temporarily unregistered from slash to stay under Discord's 100-command limit
-// Re-enable by restoring: module.exports = [ticket, ticketsetup, closeTicketCmd, alert, claim, move, add, remove, rename, info];
-module.exports = [];
+module.exports = [ticket, ticketsetup, closeTicketCmd, alert, claim, move, add, remove, rename, info];

@@ -163,5 +163,4 @@ const ticketwatcher = {
   },
 };
 
-// Temporarily unregistered from slash to stay under Discord's 100-command limit
-module.exports = [];
+module.exports = [ticketwatcher];
