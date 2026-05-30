@@ -2272,6 +2272,32 @@ function _weightedSelect(items, seed, count) {
   return out;
 }
 
+// Like _weightedSelect but caps how many items of the same type can appear.
+function _typeLimitedSelect(items, seed, count, maxPerType) {
+  if (!items.length) return [];
+  const rng = _shopRng(seed);
+  const pool = [...items];
+  const out  = [];
+  const typeCounts = {};
+  count = Math.min(count, pool.length);
+  while (out.length < count && pool.length > 0) {
+    // Only consider items whose type is still under the cap
+    const available = pool.filter(i => (typeCounts[i.type] || 0) < maxPerType);
+    if (!available.length) break;
+    const total = available.reduce((s, i) => s + (_RARITY_WEIGHTS[i.rarity] || 50), 0);
+    let roll = rng() * total;
+    let chosen = available[available.length - 1];
+    for (let i = 0; i < available.length; i++) {
+      roll -= (_RARITY_WEIGHTS[available[i].rarity] || 50);
+      if (roll <= 0) { chosen = available[i]; break; }
+    }
+    out.push(chosen);
+    typeCounts[chosen.type] = (typeCounts[chosen.type] || 0) + 1;
+    pool.splice(pool.indexOf(chosen), 1);
+  }
+  return out;
+}
+
 function _todayStr() { return new Date().toISOString().slice(0, 10); }
 
 function _weekStr() {
@@ -2290,7 +2316,8 @@ function generateUserDailyShop(guildId, userId) {
     if (ids.length > 0) return ids;
   }
   const items    = db.all('SELECT * FROM shop_items WHERE guild_id=? AND active=1', [guildId]);
-  const selected = _weightedSelect(items, `${userId}:daily:${date}`, 4);
+  // Max 2 items of the same type so the daily shop is always a mix
+  const selected = _typeLimitedSelect(items, `${userId}:daily:${date}`, 4, 2);
   const ids      = selected.map(i => i.id);
   if (ids.length > 0) {
     db.run('INSERT OR REPLACE INTO user_daily_shops (guild_id, user_id, date, item_ids) VALUES (?, ?, ?, ?)',

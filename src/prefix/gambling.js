@@ -405,11 +405,25 @@ const coinflip = {
     const userId  = message.author.id;
     const eco     = db.getEco(guildId, userId);
     const s       = db.getEcoSettings(guildId);
-    const bet     = parseBet(args[0], eco.wallet);
+
+    // ── Cooldown: one flip per 60 seconds ─────────────────────────────────────
+    const COIN_CD = 60;
+    const now = Math.floor(Date.now() / 1000);
+    if (eco.cf_at && now - eco.cf_at < COIN_CD) {
+      const left = eco.cf_at + COIN_CD - now;
+      return message.reply({ embeds: [new EmbedBuilder()
+        .setColor(RED)
+        .setDescription(`⏳ You already flipped. Try again in **${left}s**.`)] });
+    }
+
+    const bet = parseBet(args[0], eco.wallet);
     if (args[0]) {
       const err = checkBet(eco, bet, s);
       if (err) return message.reply({ embeds: [new EmbedBuilder().setColor(RED).setDescription(err)] });
     }
+
+    // Lock cooldown immediately so they can't spam before picking
+    db.setCfAt(guildId, userId, now);
 
     const btnLabel = (side) => bet ? `${side} (${fmtCoins(bet)} ${s.currency_emoji})` : side;
     const pickRow = new ActionRowBuilder().addComponents(
@@ -425,10 +439,17 @@ const coinflip = {
 
     const sent = await message.reply({ embeds: [prompt], components: [pickRow] });
 
-    const runFlip = async (i, choice) => {
+    const col = sent.createMessageComponentCollector({
+      componentType: ComponentType.Button,
+      filter: i => i.user.id === message.author.id,
+      time: 30_000,
+      max: 1,
+    });
+
+    col.on('collect', async (i) => {
+      const choice = i.customId === 'coin_heads' ? 'heads' : 'tails';
       await i.deferUpdate();
 
-      // Spinning animation
       const spinEmbed = new EmbedBuilder().setColor(YELLOW).setTitle('🪙 Coinflip').setDescription('🌀  Flipping...').setFooter({ text: 'flux' });
       await sent.edit({ embeds: [spinEmbed], components: [] });
       await new Promise(r => setTimeout(r, 900));
@@ -437,18 +458,12 @@ const coinflip = {
       const result  = coinRig || (Math.random() < 0.5 ? 'heads' : 'tails');
       const won     = choice === result;
 
-      // Economy payout
       let payoutLine = '';
       if (bet) {
         if (won) { db.addWallet(guildId, userId, bet); payoutLine = `\n💰 **+${fmtCoins(bet)} ${s.currency_emoji}**`; }
         else     { db.addWallet(guildId, userId, -bet); payoutLine = `\n💸 **-${fmtCoins(bet)} ${s.currency_emoji}**`; }
       }
 
-      const newEco = db.getEco(guildId, userId);
-      const flipRow = new ActionRowBuilder().addComponents(
-        new ButtonBuilder().setCustomId('coin_heads').setLabel(bet && newEco.wallet >= bet ? btnLabel('Heads') : 'Heads').setEmoji('🟡').setStyle(ButtonStyle.Primary),
-        new ButtonBuilder().setCustomId('coin_tails').setLabel(bet && newEco.wallet >= bet ? btnLabel('Tails') : 'Tails').setEmoji('⚪').setStyle(ButtonStyle.Secondary),
-      );
       const resultEmbed = new EmbedBuilder()
         .setColor(won ? GREEN : RED)
         .setTitle('🪙 Coinflip')
@@ -456,23 +471,13 @@ const coinflip = {
           `${result === 'heads' ? '🟡' : '⚪'} **${result.toUpperCase()}!**\n\n` +
           (won ? `🎉 You called it!${payoutLine}` : `💀 You picked **${choice}** — better luck next time!${payoutLine}`)
         )
-        .setFooter({ text: 'Click to flip again!' });
+        .setFooter({ text: `Cooldown: ${COIN_CD}s · flux` });
 
-      await sent.edit({ embeds: [resultEmbed], components: [flipRow] });
-    };
-
-    const col = sent.createMessageComponentCollector({
-      componentType: ComponentType.Button,
-      filter: i => i.user.id === message.author.id,
-      time: 120_000,
+      await sent.edit({ embeds: [resultEmbed], components: [] });
     });
 
-    col.on('collect', async (i) => {
-      await runFlip(i, i.customId === 'coin_heads' ? 'heads' : 'tails');
-    });
-
-    col.on('end', () => {
-      sent.edit({ components: [] }).catch(() => {});
+    col.on('end', (collected) => {
+      if (collected.size === 0) sent.edit({ components: [] }).catch(() => {});
     });
   },
 };
