@@ -488,7 +488,8 @@ const ticketsetup = {
       .addStringOption(o => o.setName('image').setDescription('Banner image URL'))
       .addStringOption(o => o.setName('title').setDescription('Panel title'))
       .addStringOption(o => o.setName('description').setDescription('Panel description'))
-      .addStringOption(o => o.setName('thumbnail').setDescription('Thumbnail URL (default: server icon)')))
+      .addStringOption(o => o.setName('thumbnail').setDescription('Thumbnail URL (default: server icon)'))
+      .addStringOption(o => o.setName('color').setDescription('Embed color hex (default: #000000)')))
     .addSubcommand(s => s.setName('addcategory').setDescription('Add a ticket category to the panel dropdown')
       .addStringOption(o => o.setName('name').setDescription('Display name (e.g. "General Support")').setRequired(true))
       .addChannelOption(o => o.setName('discord_category').setDescription('Discord category channel for this type').setRequired(true))
@@ -589,17 +590,19 @@ const ticketsetup = {
     } else if (sub === 'panel') {
       const ch        = interaction.options.getChannel('channel') || interaction.channel;
       const image     = interaction.options.getString('image');
-      const title     = interaction.options.getString('title')       || 'Support Tickets';
+      const title     = interaction.options.getString('title')       || 'Soul Tickets';
       const desc      = interaction.options.getString('description') ||
         'If you need help, click on the option corresponding to the type of ticket you want to open.\n**Response time may vary due to many factors, so please be patient.**';
       const thumbnail = interaction.options.getString('thumbnail');
+      const colorRaw  = interaction.options.getString('color');
+      const color     = colorRaw ? colorRaw.trim() : 0x000000;
 
       const categories = db.getTicketCategories(interaction.guild.id);
 
       const embed = new EmbedBuilder()
         .setTitle(title)
         .setDescription(desc)
-        .setColor(BLUE)
+        .setColor(color)
         .setThumbnail(thumbnail || interaction.guild.iconURL());
       if (image) embed.setImage(image);
 
