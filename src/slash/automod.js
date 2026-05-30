@@ -34,55 +34,102 @@ function fmtDur(s) {
 
 // ── Panel helpers ─────────────────────────────────────────────────────────────
 const RULES = [
-  { key: 'spam',      label: 'Spam',         field: 'spam_enabled'      },
-  { key: 'caps',      label: 'Caps',         field: 'caps_enabled'      },
-  { key: 'links',     label: 'Links',        field: 'links_enabled'     },
-  { key: 'words',     label: 'Words',        field: 'words_enabled'     },
-  { key: 'mentions',  label: 'Mentions',     field: 'mentions_enabled'  },
-  { key: 'emojis',    label: 'Emojis',       field: 'emojis_enabled'    },
-  { key: 'dupes',     label: 'Duplicates',   field: 'dupes_enabled'     },
-  { key: 'newaccts',  label: 'New Accounts', field: 'newaccts_enabled'  },
-  { key: 'zalgo',     label: 'Zalgo',        field: 'zalgo_enabled'     },
-  { key: 'strikes',   label: 'Strikes',      field: 'strikes_enabled'   },
+  { key: 'spam',     label: 'Spam',         field: 'spam_enabled',     emoji: '💬' },
+  { key: 'caps',     label: 'Caps',         field: 'caps_enabled',     emoji: '🔠' },
+  { key: 'links',    label: 'Links',        field: 'links_enabled',    emoji: '🔗' },
+  { key: 'words',    label: 'Words',        field: 'words_enabled',    emoji: '🚫' },
+  { key: 'mentions', label: 'Mentions',     field: 'mentions_enabled', emoji: '📢' },
+  { key: 'emojis',   label: 'Emojis',       field: 'emojis_enabled',   emoji: '😄' },
+  { key: 'dupes',    label: 'Duplicates',   field: 'dupes_enabled',    emoji: '📋' },
+  { key: 'newaccts', label: 'New Accounts', field: 'newaccts_enabled', emoji: '🆕' },
+  { key: 'zalgo',    label: 'Zalgo',        field: 'zalgo_enabled',    emoji: '🌀' },
+  { key: 'strikes',  label: 'Strikes',      field: 'strikes_enabled',  emoji: '⚡' },
 ];
 
+// Brief inline config detail shown next to an enabled rule in the panel
+function ruleDetail(s, key) {
+  switch (key) {
+    case 'spam':     return `${s.spam_limit}msg/${s.spam_interval}s ${ACTION_EMOJI[s.spam_action]}`;
+    case 'caps':     return `≥${s.caps_percent}% ${ACTION_EMOJI[s.caps_action]}`;
+    case 'links':    return `${ACTION_EMOJI[s.links_action]}${s.links_invites ? ' +inv' : ''}`;
+    case 'words':    return `${ACTION_EMOJI[s.words_action]}`;
+    case 'mentions': return `≥${s.mentions_limit} pings ${ACTION_EMOJI[s.mentions_action]}`;
+    case 'emojis':   return `≥${s.emojis_limit} ${ACTION_EMOJI[s.emojis_action]}`;
+    case 'dupes':    return `${s.dupes_limit}×/${s.dupes_interval}s ${ACTION_EMOJI[s.dupes_action]}`;
+    case 'newaccts': return `<${s.newaccts_min_days}d ${ACTION_EMOJI[s.newaccts_action]}`;
+    case 'zalgo':    return `${ACTION_EMOJI[s.zalgo_action]}`;
+    case 'strikes':  return `to@${s.strikes_timeout_at} kick@${s.strikes_kick_at} ban@${s.strikes_ban_at}`;
+    default: return '';
+  }
+}
+
 function buildPanelEmbed(s, guild) {
-  const statusLine = s.enabled
-    ? `✅ **Enabled**  ·  Log: ${s.log_channel ? `<#${s.log_channel}>` : '⚠️ not set'}`
-    : `🔴 **Disabled**  ·  Use \`/automod setup enabled:true\` to turn on`;
-  const ruleLines = RULES.map(r => `${s[r.field] ? '✅' : '🔴'}  **${r.label}**`);
-  return new EmbedBuilder()
-    .setColor(s.enabled ? PURPLE : 0x2B2D31)
-    .setTitle('⚙️ AutoMod Control Panel')
-    .setDescription(statusLine)
+  const activeCount = RULES.filter(r => s[r.field]).length;
+
+  const statusBadge = s.enabled ? '🟢  **Enabled**' : '🔴  **Disabled**';
+  const logBadge    = s.log_channel ? `<#${s.log_channel}>` : '⚠️ *not configured*';
+  const desc = [
+    `${statusBadge}   •   **${activeCount} / ${RULES.length}** rules active`,
+    `> **Log Channel:** ${logBadge}`,
+    s.enabled ? '' : `> Use \`/automod setup enabled:true\` to activate`,
+  ].filter(Boolean).join('\n');
+
+  // Message-based rules (left column)
+  const MSG_KEYS   = ['spam', 'caps', 'links', 'words', 'mentions', 'emojis', 'dupes'];
+  // Member / text / system rules (right column)
+  const OTHER_KEYS = ['newaccts', 'zalgo', 'strikes'];
+
+  function buildBlock(keys) {
+    return keys.map(key => {
+      const r   = RULES.find(r => r.key === key);
+      const on  = !!s[r.field];
+      const det = on ? `  \`${ruleDetail(s, key)}\`` : '';
+      return `${on ? '\u{1F7E2}' : '⚫'} ${r.emoji} **${r.label}**${det}`;
+    }).join('\n');
+  }
+
+  const embed = new EmbedBuilder()
+    .setColor(s.enabled ? 0x57F287 : 0x2B2D31)
+    .setAuthor({
+      name: `${guild.name}  ·  AutoMod Control Panel`,
+      iconURL: guild.iconURL({ dynamic: true }) ?? undefined,
+    })
+    .setDescription(desc)
     .addFields(
-      { name: '​', value: ruleLines.slice(0, 5).join('\n'), inline: true },
-      { name: '​', value: ruleLines.slice(5).join('\n'),    inline: true },
+      { name: ' \n📨  Message Rules', value: buildBlock(MSG_KEYS),   inline: true },
+      { name: ' \n🛡️  Member & System', value: buildBlock(OTHER_KEYS), inline: true },
     )
-    .setFooter({ text: `${guild.name}  ·  Click to toggle  ·  /automod <rule> to configure` })
+    .setFooter({ text: '🟢 = on  ⚫ = off  ·  Click a rule to toggle  ·  /automod <rule> to configure' })
     .setTimestamp();
+
+  const icon = guild.iconURL({ dynamic: true });
+  if (icon) embed.setThumbnail(icon);
+
+  return embed;
 }
 
 function buildPanelRows(s, uid) {
   const row1 = new ActionRowBuilder().addComponents(
     RULES.slice(0, 5).map(r => new ButtonBuilder()
       .setCustomId(`amp_${r.key}_${uid}`)
+      .setEmoji(r.emoji)
       .setLabel(r.label)
       .setStyle(s[r.field] ? ButtonStyle.Success : ButtonStyle.Danger))
   );
   const row2 = new ActionRowBuilder().addComponents(
     RULES.slice(5).map(r => new ButtonBuilder()
       .setCustomId(`amp_${r.key}_${uid}`)
+      .setEmoji(r.emoji)
       .setLabel(r.label)
       .setStyle(s[r.field] ? ButtonStyle.Success : ButtonStyle.Danger))
   );
   const row3 = new ActionRowBuilder().addComponents(
     new ButtonBuilder().setCustomId(`amp_enable_${uid}`)
-      .setLabel('Enable AutoMod').setStyle(ButtonStyle.Success).setDisabled(!!s.enabled),
+      .setEmoji('✅').setLabel('Enable').setStyle(ButtonStyle.Success).setDisabled(!!s.enabled),
     new ButtonBuilder().setCustomId(`amp_disable_${uid}`)
-      .setLabel('Disable AutoMod').setStyle(ButtonStyle.Danger).setDisabled(!s.enabled),
+      .setEmoji('🔴').setLabel('Disable').setStyle(ButtonStyle.Danger).setDisabled(!s.enabled),
     new ButtonBuilder().setCustomId(`amp_close_${uid}`)
-      .setLabel('Close').setStyle(ButtonStyle.Secondary),
+      .setEmoji('✖️').setLabel('Close').setStyle(ButtonStyle.Secondary),
   );
   return [row1, row2, row3];
 }
