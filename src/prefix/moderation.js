@@ -24,10 +24,12 @@ function fmtRel(ts) { return `<t:${Math.floor(ts)}:R>`; }
 
 function parseDuration(str) {
   if (!str) return null;
-  const m = str.match(/^(\d+)(s|m|h|d)$/i);
+  // collapse spaces so "24 h" and "24h" both work
+  const s = str.replace(/\s+/g, '').toLowerCase();
+  const m = s.match(/^(\d+)(s|m|h|d)$/);
   if (!m) return null;
-  const mult = { s: 1000, m: 60_000, h: 3_600_000, d: 86_400_000 };
-  return parseInt(m[1]) * mult[m[2].toLowerCase()];
+  const mult = { s: 1_000, m: 60_000, h: 3_600_000, d: 86_400_000 };
+  return parseInt(m[1]) * mult[m[2]];
 }
 
 function durationLabel(ms) {
@@ -327,11 +329,17 @@ const mute = {
       || (args[0] && await message.guild.members.fetch(args[0]).catch(() => null));
     if (!member) return message.reply({ embeds: [usage(`,mute <@user | id> [10m|2h|7d] [reason]`)] });
 
-    const argStart = message.mentions.members.size ? 1 : 1;
-    const durStr   = args[argStart];
-    const durMs    = parseDuration(durStr) ?? 10 * 60_000;
-    const reason   = args.slice(durStr && parseDuration(durStr) ? argStart + 1 : argStart).join(' ') || 'No reason provided';
-    const label    = durStr && parseDuration(durStr) ? durStr : durationLabel(durMs);
+    const argStart = 1; // index after the member reference
+    // Support both "24h" (1 arg) and "24 h" (2 args)
+    const twoArg = [args[argStart], args[argStart + 1]].filter(Boolean).join(' ');
+    const oneArg = args[argStart] || '';
+    let durStr, durArgCount;
+    if (parseDuration(twoArg)) { durStr = twoArg; durArgCount = 2; }
+    else if (parseDuration(oneArg)) { durStr = oneArg; durArgCount = 1; }
+    else { durStr = null; durArgCount = 0; }
+    const durMs  = durStr ? parseDuration(durStr) : 10 * 60_000;
+    const reason = args.slice(argStart + durArgCount).join(' ') || 'No reason provided';
+    const label  = durStr || durationLabel(durMs);
     const expires  = Math.floor((Date.now() + durMs) / 1000);
 
     await member.timeout(durMs, reason).catch(() => {});
